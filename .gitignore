@@ -1,0 +1,45 @@
+# Binaries / dist
+bin/
+dist/
+lynix
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.out
+*.test
+*.prof
+
+# Go test coverage
+*.coverprofile
+coverage.out
+coverage.html
+
+# Go dependency management
+vendor/
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Go installation files
+*.tar.gz
+go*.linux-*.tar.gz
+go*.darwin-*.tar.gz
+go*.windows-*.zip
+
+# Lynix workspace artifacts
+runs/
+lynix.lock
+env/secrets.local.yaml

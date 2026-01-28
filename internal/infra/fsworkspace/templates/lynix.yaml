@@ -1,0 +1,4 @@
+lynix:
+  workspace: "."
+  masking:
+    enabled: true

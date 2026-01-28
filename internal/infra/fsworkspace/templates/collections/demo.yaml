@@ -1,0 +1,19 @@
+name: Demo API
+vars:
+  base_url: "https://api.example.com"
+
+requests:
+  - name: health
+    method: GET
+    url: "{{base_url}}/health"
+    assert:
+      status: 200
+      max_ms: 1500
+
+  - name: users.list
+    method: GET
+    url: "{{base_url}}/v1/users"
+    headers:
+      Accept: "application/json"
+    assert:
+      status: 200
