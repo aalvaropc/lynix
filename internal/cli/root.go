@@ -15,7 +15,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "lynix",
 	Short: "Lynix - TUI-first API tool for requests, checks, and performance",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		locator := workspacefinder.NewFinder()
 		return tui.Run(tui.Deps{WorkspaceLocator: locator})
 	},
@@ -36,7 +36,7 @@ func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print Lynix version info",
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			fmt.Println(buildinfo.String())
 		},
 	}
@@ -49,7 +49,7 @@ func initCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "init",
 		Short: "Create a Lynix workspace (collections, envs, templates)",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			initializer := fsworkspace.NewInitializer()
 			uc := usecase.NewInitWorkspace(initializer)
 			return uc.Execute(path, force)

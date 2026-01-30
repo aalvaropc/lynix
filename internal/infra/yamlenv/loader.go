@@ -43,8 +43,8 @@ var _ ports.EnvironmentLoader = (*Loader)(nil)
 
 // LoadEnvironment accepts either an env name (e.g., "dev") or a full path to a YAML file.
 func (l *Loader) LoadEnvironment(nameOrPath string) (domain.Environment, error) {
-	envPath := nameOrPath
-	envName := ""
+	var envPath string
+	var envName string
 
 	if strings.HasSuffix(nameOrPath, ".yaml") || strings.HasSuffix(nameOrPath, ".yml") || strings.Contains(nameOrPath, string(filepath.Separator)) {
 		envPath = filepath.Clean(nameOrPath)
