@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -27,20 +28,24 @@ func (m menuItem) FilterValue() string { return m.title }
 
 type model struct {
 	theme Theme
+	deps  Deps
 
 	scr        screen
 	menu       list.Model
 	activeName string
+
+	workspaceFound bool
+	workspaceRoot  string
 }
 
-func Run() error {
-	m := newModel()
+func Run(deps Deps) error {
+	m := newModel(deps)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }
 
-func newModel() model {
+func newModel(deps Deps) model {
 	t := DefaultTheme()
 
 	items := []list.Item{
@@ -60,11 +65,23 @@ func newModel() model {
 	l.SetFilteringEnabled(true)
 	l.SetShowHelp(false)
 
-	return model{
+	m := model{
 		theme: t,
+		deps:  deps,
 		scr:   screenHome,
 		menu:  l,
 	}
+
+	wd, err := os.Getwd()
+	if err == nil && deps.WorkspaceLocator != nil {
+		root, findErr := deps.WorkspaceLocator.FindRoot(wd)
+		if findErr == nil {
+			m.workspaceFound = true
+			m.workspaceRoot = root
+		}
+	}
+
+	return m
 }
 
 func (m model) Init() tea.Cmd { return nil }
@@ -73,7 +90,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		w, h := msg.Width, msg.Height
-		m.menu.SetSize(w-4, h-8)
+		m.menu.SetSize(w-4, h-10)
 		return m, nil
 
 	case tea.KeyMsg:
@@ -122,10 +139,19 @@ func (m model) View() string {
 	header := m.theme.Title.Render("Lynix") + "\n" +
 		m.theme.Subtitle.Render("TUI-first API tool (Go) — requests, checks, and performance") + "\n"
 
+	var workspaceBanner string
+	if m.workspaceFound {
+		workspaceBanner = m.theme.Help.Render(fmt.Sprintf("Workspace: %s", m.workspaceRoot))
+	} else {
+		workspaceBanner = m.theme.Card.Render(
+			"⚠ No workspace found.\n\nCreate one in Settings → Init Workspace.",
+		)
+	}
+
 	switch m.scr {
 	case screenHome:
 		help := m.theme.Help.Render("↑/↓ navigate • enter open • / search • q quit")
-		return wrap.Render(header + "\n" + m.theme.Card.Render(m.menu.View()) + "\n" + help)
+		return wrap.Render(header + "\n" + workspaceBanner + "\n\n" + m.theme.Card.Render(m.menu.View()) + "\n" + help)
 
 	case screenPlaceholder:
 		card := m.theme.Card.Render(
@@ -135,7 +161,7 @@ func (m model) View() string {
 				m.theme.Help.Render("esc/b back • q home"),
 			),
 		)
-		return wrap.Render(header + "\n" + card)
+		return wrap.Render(header + "\n" + workspaceBanner + "\n\n" + card)
 
 	default:
 		return wrap.Render(header + "\n" + "unknown state")

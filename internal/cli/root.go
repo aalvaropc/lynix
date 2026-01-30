@@ -6,6 +6,7 @@ import (
 
 	"github.com/aalvaropc/lynix/internal/buildinfo"
 	"github.com/aalvaropc/lynix/internal/infra/fsworkspace"
+	"github.com/aalvaropc/lynix/internal/infra/workspacefinder"
 	"github.com/aalvaropc/lynix/internal/ui/tui"
 	"github.com/aalvaropc/lynix/internal/usecase"
 	"github.com/spf13/cobra"
@@ -15,7 +16,8 @@ var rootCmd = &cobra.Command{
 	Use:   "lynix",
 	Short: "Lynix - TUI-first API tool for requests, checks, and performance",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return tui.Run()
+		locator := workspacefinder.NewFinder()
+		return tui.Run(tui.Deps{WorkspaceLocator: locator})
 	},
 }
 

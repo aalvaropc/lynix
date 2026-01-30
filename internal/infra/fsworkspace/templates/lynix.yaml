@@ -1,4 +1,9 @@
 lynix:
-  workspace: "."
   masking:
     enabled: true
+  defaults:
+    env: dev
+  paths:
+    collections_dir: collections
+    environments_dir: env
+    runs_dir: runs
