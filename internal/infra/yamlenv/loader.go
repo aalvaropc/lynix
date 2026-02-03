@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/aalvaropc/lynix/internal/domain"
@@ -40,6 +41,7 @@ func NewLoader(root string, opts ...Option) *Loader {
 }
 
 var _ ports.EnvironmentLoader = (*Loader)(nil)
+var _ ports.EnvironmentCatalog = (*Loader)(nil)
 
 // LoadEnvironment accepts either an env name (e.g., "dev") or a full path to a YAML file.
 func (l *Loader) LoadEnvironment(nameOrPath string) (domain.Environment, error) {
@@ -78,6 +80,48 @@ func (l *Loader) LoadEnvironment(nameOrPath string) (domain.Environment, error) 
 		Name: envName,
 		Vars: merged,
 	}, nil
+}
+
+// ListEnvironments lists env YAML files under the configured env directory.
+// It excludes the secrets file.
+func (l *Loader) ListEnvironments(root string) ([]domain.EnvironmentRef, error) {
+	base := strings.TrimSpace(root)
+	if base == "" {
+		base = l.rootDir
+	}
+
+	dir := filepath.Join(base, l.envDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, &domain.OpError{
+			Op:   "yamlenv.list",
+			Kind: domain.KindNotFound,
+			Path: dir,
+			Err:  err,
+		}
+	}
+
+	var refs []domain.EnvironmentRef
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+
+		name := e.Name()
+		if name == l.secretsFile {
+			continue
+		}
+		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
+			continue
+		}
+
+		p := filepath.Join(dir, name)
+		envName := strings.TrimSuffix(name, filepath.Ext(name))
+		refs = append(refs, domain.EnvironmentRef{Name: envName, Path: p})
+	}
+
+	sort.Slice(refs, func(i, j int) bool { return refs[i].Name < refs[j].Name })
+	return refs, nil
 }
 
 type yamlEnv struct {
