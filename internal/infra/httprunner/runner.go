@@ -64,6 +64,7 @@ func (r *Runner) Run(ctx context.Context, req domain.RequestSpec, vars domain.Va
 		Method:     resolved.Method,
 		URL:        resolved.URL,
 		Extracted:  domain.Vars{},
+		Extracts:   []domain.ExtractResult{},
 		Assertions: []domain.AssertionResult{},
 		Response: domain.ResponseSnapshot{
 			Headers: map[string][]string{},
@@ -171,14 +172,14 @@ func (r *Runner) buildHTTPRequest(ctx context.Context, req domain.RequestSpec) (
 	return httpReq, nil
 }
 
-func readBounded(r io.Reader, max int64) ([]byte, bool, error) {
-	lim := io.LimitReader(r, max+1)
+func readBounded(r io.Reader, maxBytes int64) ([]byte, bool, error) {
+	lim := io.LimitReader(r, maxBytes+1)
 	b, err := io.ReadAll(lim)
 	if err != nil {
 		return nil, false, err
 	}
-	if int64(len(b)) > max {
-		return b[:max], true, nil
+	if int64(len(b)) > maxBytes {
+		return b[:maxBytes], true, nil
 	}
 	return b, false, nil
 }

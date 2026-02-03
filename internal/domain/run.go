@@ -20,6 +20,13 @@ const (
 	RunErrorHTTP    RunErrorKind = "http"
 )
 
+// ExtractResult is the output of a single extraction rule.
+type ExtractResult struct {
+	Name    string
+	Success bool
+	Message string
+}
+
 // RunError represents a structured error produced by a runner.
 type RunError struct {
 	Kind    RunErrorKind
@@ -51,7 +58,9 @@ type RequestResult struct {
 	LatencyMS  int64
 
 	Assertions []AssertionResult
-	Extracted  Vars
+
+	Extracts  []ExtractResult
+	Extracted Vars
 
 	Response ResponseSnapshot
 	Error    *RunError

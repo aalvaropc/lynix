@@ -8,7 +8,7 @@ import (
 	"github.com/aalvaropc/lynix/internal/domain"
 )
 
-func AssertStatus(expected int, got int) domain.AssertionResult {
+func Status(expected int, got int) domain.AssertionResult {
 	if got == expected {
 		return domain.AssertionResult{
 			Name:    "status",
@@ -24,7 +24,7 @@ func AssertStatus(expected int, got int) domain.AssertionResult {
 	}
 }
 
-func AssertMaxLatency(maxMs int, latencyMs int64) domain.AssertionResult {
+func MaxLatency(maxMs int, latencyMs int64) domain.AssertionResult {
 	if latencyMs <= int64(maxMs) {
 		return domain.AssertionResult{
 			Name:    "max_ms",
@@ -46,10 +46,10 @@ func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []by
 	var out []domain.AssertionResult
 
 	if spec.Status != nil {
-		out = append(out, AssertStatus(*spec.Status, status))
+		out = append(out, Status(*spec.Status, status))
 	}
 	if spec.MaxLatencyMS != nil {
-		out = append(out, AssertMaxLatency(*spec.MaxLatencyMS, latencyMs))
+		out = append(out, MaxLatency(*spec.MaxLatencyMS, latencyMs))
 	}
 
 	if len(spec.JSONPath) == 0 {

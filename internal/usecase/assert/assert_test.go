@@ -6,8 +6,8 @@ import (
 	"github.com/aalvaropc/lynix/internal/domain"
 )
 
-func TestAssertStatus_FailMessage(t *testing.T) {
-	r := AssertStatus(200, 500)
+func TestStatus_FailMessage(t *testing.T) {
+	r := Status(200, 500)
 	if r.Passed {
 		t.Fatalf("expected fail")
 	}
@@ -16,8 +16,8 @@ func TestAssertStatus_FailMessage(t *testing.T) {
 	}
 }
 
-func TestAssertMaxLatency_FailMessage(t *testing.T) {
-	r := AssertMaxLatency(100, 250)
+func TestMaxLatency_FailMessage(t *testing.T) {
+	r := MaxLatency(100, 250)
 	if r.Passed {
 		t.Fatalf("expected fail")
 	}
