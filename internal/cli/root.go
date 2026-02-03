@@ -13,8 +13,9 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "lynix",
-	Short: "Lynix - TUI-first API tool for requests, checks, and performance",
+	Use:          "lynix",
+	Short:        "Lynix - TUI-first API tool for requests, checks, and performance",
+	SilenceUsage: true,
 	RunE: func(_ *cobra.Command, _ []string) error {
 		locator := workspacefinder.NewFinder()
 		return tui.Run(tui.Deps{WorkspaceLocator: locator})
@@ -30,6 +31,9 @@ func Execute() {
 func init() {
 	rootCmd.AddCommand(versionCmd())
 	rootCmd.AddCommand(initCmd())
+	rootCmd.AddCommand(runCmd())
+	rootCmd.AddCommand(collectionsCmd())
+	rootCmd.AddCommand(envsCmd())
 }
 
 func versionCmd() *cobra.Command {

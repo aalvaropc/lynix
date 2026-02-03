@@ -14,25 +14,38 @@ type RunCollection struct {
 	collections ports.CollectionLoader
 	envs        ports.EnvironmentLoader
 	runner      ports.RequestRunner
+	store       ports.ArtifactStore // optional (can be nil)
 }
 
-func NewRunCollection(cl ports.CollectionLoader, el ports.EnvironmentLoader, rr ports.RequestRunner) *RunCollection {
+func NewRunCollection(
+	cl ports.CollectionLoader,
+	el ports.EnvironmentLoader,
+	rr ports.RequestRunner,
+	store ports.ArtifactStore,
+) *RunCollection {
 	return &RunCollection{
 		collections: cl,
 		envs:        el,
 		runner:      rr,
+		store:       store,
 	}
 }
 
-func (uc *RunCollection) Execute(ctx context.Context, collectionPath string, envNameOrPath string) (domain.RunResult, error) {
+// Execute runs a collection and (optionally) persists the artifact via ArtifactStore.
+// Returns: run result, saved run ID ("" if not saved), error.
+func (uc *RunCollection) Execute(
+	ctx context.Context,
+	collectionPath string,
+	envNameOrPath string,
+) (domain.RunResult, string, error) {
 	col, err := uc.collections.LoadCollection(collectionPath)
 	if err != nil {
-		return domain.RunResult{}, err
+		return domain.RunResult{}, "", err
 	}
 
 	env, err := uc.envs.LoadEnvironment(envNameOrPath)
 	if err != nil {
-		return domain.RunResult{}, err
+		return domain.RunResult{}, "", err
 	}
 
 	// collection vars < env vars < extracted runtime vars (updated per request)
@@ -81,7 +94,19 @@ func (uc *RunCollection) Execute(ctx context.Context, collectionPath string, env
 	}
 
 	run.EndedAt = time.Now()
-	return run, nil
+
+	// Persist artifact (optional).
+	if uc.store == nil {
+		return run, "", nil
+	}
+
+	id, err := uc.store.SaveRun(run)
+	if err != nil {
+		// Return run + error so callers can still inspect result if they want.
+		return run, "", err
+	}
+
+	return run, id, nil
 }
 
 func mergeVars(collectionVars domain.Vars, envVars domain.Vars) domain.Vars {

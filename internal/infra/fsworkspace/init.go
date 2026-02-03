@@ -57,6 +57,12 @@ func (i *Initializer) Init(spec domain.WorkspaceSpec, force bool) error {
 			return err
 		}
 
-		return os.WriteFile(dst, b, 0o644)
+		// Protect secrets by default.
+		mode := fs.FileMode(0o644)
+		if strings.Contains(strings.ToLower(rel), "secrets") {
+			mode = 0o600
+		}
+
+		return os.WriteFile(dst, b, mode)
 	})
 }

@@ -32,6 +32,17 @@ func (f fakeEnvLoader) LoadEnvironment(_ string) (domain.Environment, error) {
 	return f.env, nil
 }
 
+type fakeStore struct {
+	saved bool
+	last  domain.RunArtifact
+}
+
+func (s *fakeStore) SaveRun(run domain.RunArtifact) (string, error) {
+	s.saved = true
+	s.last = run
+	return "run-123", nil
+}
+
 func TestRunCollection_ExtractsAndChainsVars(t *testing.T) {
 	token := "abc123"
 
@@ -100,11 +111,21 @@ func TestRunCollection_ExtractsAndChainsVars(t *testing.T) {
 	cfg.Timeout = 2 * time.Second
 	r := httprunner.New(httpclient.New(cfg))
 
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{env: env}, r)
+	st := &fakeStore{}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{env: env}, r, st)
 
-	out, err := uc.Execute(context.Background(), "demo.yaml", "dev")
+	out, id, err := uc.Execute(context.Background(), "demo.yaml", "dev")
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
+	}
+	if id != "run-123" {
+		t.Fatalf("expected run id, got=%q", id)
+	}
+	if !st.saved {
+		t.Fatalf("expected run saved")
+	}
+	if st.last.CollectionName != "Demo" {
+		t.Fatalf("expected saved collection name Demo, got=%q", st.last.CollectionName)
 	}
 
 	if len(out.Results) != 2 {
@@ -177,9 +198,9 @@ func TestRunCollection_ExtractFail_AllowsNextRequestToFailMissingVar(t *testing.
 	cfg.Timeout = 2 * time.Second
 	r := httprunner.New(httpclient.New(cfg))
 
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{env: env}, r)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{env: env}, r, nil)
 
-	out, err := uc.Execute(context.Background(), "demo.yaml", "dev")
+	out, _, err := uc.Execute(context.Background(), "demo.yaml", "dev")
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
@@ -201,6 +222,7 @@ func TestRunCollection_ExtractFail_AllowsNextRequestToFailMissingVar(t *testing.
 
 func ptrInt(v int) *int { return &v }
 
-// compile-time check (optional)
+// compile-time checks
 var _ ports.CollectionLoader = (*fakeCollectionLoader)(nil)
 var _ ports.EnvironmentLoader = (*fakeEnvLoader)(nil)
+var _ ports.ArtifactStore = (*fakeStore)(nil)
