@@ -1,0 +1,5835 @@
+# FILE: /home/aalvaropc/github/lynix/cmd/lynix/main.go
+package main
+
+import "github.com/aalvaropc/lynix/internal/cli"
+
+func main() {
+	cli.Execute()
+}
+
+# FILE: /home/aalvaropc/github/lynix/collections/demo.yaml
+name: Demo API
+vars:
+  base_url: "https://api.example.com"
+
+requests:
+  - name: health
+    method: GET
+    url: "{{base_url}}/health"
+    assert:
+      status: 200
+      max_ms: 1500
+
+  - name: users.list
+    method: GET
+    url: "{{base_url}}/v1/users"
+    headers:
+      Accept: "application/json"
+    assert:
+      status: 200
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/logger/logger.go
+package logger
+
+import (
+	"errors"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+type Config struct {
+	Root  string
+	Debug bool
+}
+
+var (
+	mu       sync.RWMutex
+	global   = slog.New(slog.NewJSONHandler(io.Discard, nil))
+	logFile  *os.File
+	logPath  string
+	initedAt time.Time
+)
+
+func Setup(cfg Config) (func() error, error) {
+	root := filepath.Clean(cfg.Root)
+	if root == "" {
+		root = "."
+	}
+
+	dir := filepath.Join(root, ".lynix", "logs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		setDiscard()
+		return nil, err
+	}
+
+	path := filepath.Join(dir, "lynix.log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		setDiscard()
+		return nil, err
+	}
+
+	level := slog.LevelInfo
+	addSource := false
+	if cfg.Debug {
+		level = slog.LevelDebug
+		addSource = true
+	}
+
+	h := slog.NewJSONHandler(f, &slog.HandlerOptions{
+		Level:     level,
+		AddSource: addSource,
+		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+
+			if a.Key == slog.TimeKey && a.Value.Kind() == slog.KindTime {
+				t := a.Value.Time().UTC()
+				a.Value = slog.StringValue(t.Format(time.RFC3339Nano))
+			}
+			return a
+		},
+	})
+
+	l := slog.New(h)
+
+	mu.Lock()
+	global = l
+	logFile = f
+	logPath = path
+	initedAt = time.Now().UTC()
+	mu.Unlock()
+
+	global.Info("logger.initialized", "path", path, "debug", cfg.Debug)
+
+	cleanup := func() error {
+		mu.Lock()
+		defer mu.Unlock()
+
+		var cerr error
+		if logFile != nil {
+			cerr = logFile.Close()
+		}
+		logFile = nil
+		logPath = ""
+		initedAt = time.Time{}
+		global = slog.New(slog.NewJSONHandler(io.Discard, nil))
+		return cerr
+	}
+
+	return cleanup, nil
+}
+
+func L() *slog.Logger {
+	mu.RLock()
+	defer mu.RUnlock()
+	return global
+}
+
+func Path() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	return logPath
+}
+
+func InitTime() time.Time {
+	mu.RLock()
+	defer mu.RUnlock()
+	return initedAt
+}
+
+func setDiscard() {
+	mu.Lock()
+	defer mu.Unlock()
+	global = slog.New(slog.NewJSONHandler(io.Discard, nil))
+	logFile = nil
+	logPath = ""
+	initedAt = time.Time{}
+}
+
+func IsReady() error {
+	mu.RLock()
+	defer mu.RUnlock()
+	if logFile == nil || logPath == "" {
+		return errors.New("logger not initialized")
+	}
+	return nil
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/runstore/jsonstore_test.go
+package runstore
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+)
+
+func TestSaveRun_CreatesJSONFile(t *testing.T) {
+	tmp := t.TempDir()
+
+	cfg := domain.DefaultConfig()
+	cfg.Paths.RunsDir = "runs"
+	cfg.Masking.Enabled = false
+
+	store := NewJSONStore(tmp, cfg)
+
+	start := time.Date(2026, 2, 3, 10, 11, 12, 0, time.UTC)
+	run := domain.RunArtifact{
+		CollectionName:  "Demo API",
+		CollectionPath:  "collections/demo.yaml",
+		EnvironmentName: "dev",
+		StartedAt:       start,
+		EndedAt:         start.Add(2 * time.Second),
+		Results: []domain.RequestResult{
+			{
+				Name:       "health",
+				Method:     domain.MethodGet,
+				URL:        "http://x/health",
+				StatusCode: 200,
+				LatencyMS:  10,
+				Assertions: []domain.AssertionResult{
+					{Name: "status", Passed: true, Message: "ok"},
+				},
+				Extracts:  []domain.ExtractResult{},
+				Extracted: domain.Vars{},
+				Response: domain.ResponseSnapshot{
+					Headers: map[string][]string{"X-Test": {"1"}},
+					Body:    []byte("ok"),
+				},
+			},
+		},
+	}
+
+	id, err := store.SaveRun(run)
+	if err != nil {
+		t.Fatalf("SaveRun error: %v", err)
+	}
+
+	wantFile := filepath.Join(tmp, "runs", "20260203T101112Z_demo-api.json")
+	if _, err := os.Stat(wantFile); err != nil {
+		t.Fatalf("expected file at %s, stat err=%v (id=%s)", wantFile, err, id)
+	}
+
+	b, err := os.ReadFile(wantFile)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+
+	var decoded domain.RunResult
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if decoded.CollectionName != "Demo API" {
+		t.Fatalf("expected collection name, got=%q", decoded.CollectionName)
+	}
+	if len(decoded.Results) != 1 {
+		t.Fatalf("expected 1 result, got=%d", len(decoded.Results))
+	}
+	if decoded.Results[0].StatusCode != 200 {
+		t.Fatalf("expected status=200, got=%d", decoded.Results[0].StatusCode)
+	}
+}
+
+func TestSaveRun_MasksSensitiveExtractedWhenEnabled(t *testing.T) {
+	tmp := t.TempDir()
+
+	cfg := domain.DefaultConfig()
+	cfg.Paths.RunsDir = "runs"
+	cfg.Masking.Enabled = true
+
+	store := NewJSONStore(tmp, cfg)
+
+	start := time.Date(2026, 2, 3, 10, 11, 12, 0, time.UTC)
+
+	run := domain.RunArtifact{
+		CollectionName:  "Mask Demo",
+		CollectionPath:  "collections/demo.yaml",
+		EnvironmentName: "dev",
+		StartedAt:       start,
+		EndedAt:         start.Add(1 * time.Second),
+		Results: []domain.RequestResult{
+			{
+				Name: "auth.token",
+				Extracted: domain.Vars{
+					"auth.token":    "abc123",
+					"db_password":   "p@ss",
+					"user.id":       "7",
+					"not_sensitive": "ok",
+				},
+				Response: domain.ResponseSnapshot{Headers: map[string][]string{}},
+			},
+		},
+	}
+
+	
+	origToken := run.Results[0].Extracted["auth.token"]
+
+	_, err := store.SaveRun(run)
+	if err != nil {
+		t.Fatalf("SaveRun error: %v", err)
+	}
+	if run.Results[0].Extracted["auth.token"] != origToken {
+		t.Fatalf("expected original run not mutated")
+	}
+
+	path := filepath.Join(tmp, "runs", "20260203T101112Z_mask-demo.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+
+	var decoded domain.RunResult
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	got := decoded.Results[0].Extracted
+	if got["auth.token"] != maskValue {
+		t.Fatalf("expected auth.token masked, got=%q", got["auth.token"])
+	}
+	if got["db_password"] != maskValue {
+		t.Fatalf("expected db_password masked, got=%q", got["db_password"])
+	}
+	if got["user.id"] != "7" {
+		t.Fatalf("expected user.id preserved, got=%q", got["user.id"])
+	}
+	if got["not_sensitive"] != "ok" {
+		t.Fatalf("expected not_sensitive preserved, got=%q", got["not_sensitive"])
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/runstore/jsonstore.go
+package runstore
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/ports"
+)
+
+const defaultRunsDir = "runs"
+const maskValue = "********"
+
+type JSONStore struct {
+	rootDir        string
+	runsDirName    string
+	maskingEnabled bool
+	writeIndex     bool
+	now            func() time.Time
+}
+
+type Option func(*JSONStore)
+
+
+func WithIndex(enabled bool) Option {
+	return func(s *JSONStore) { s.writeIndex = enabled }
+}
+
+
+func WithNow(now func() time.Time) Option {
+	return func(s *JSONStore) { s.now = now }
+}
+
+func NewJSONStore(root string, cfg domain.Config, opts ...Option) *JSONStore {
+	runsDir := cfg.Paths.RunsDir
+	if strings.TrimSpace(runsDir) == "" {
+		runsDir = defaultRunsDir
+	}
+
+	s := &JSONStore{
+		rootDir:        root,
+		runsDirName:    runsDir,
+		maskingEnabled: cfg.Masking.Enabled,
+		writeIndex:     false,
+		now:            time.Now,
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+var _ ports.ArtifactStore = (*JSONStore)(nil)
+
+func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
+	dir := filepath.Join(s.rootDir, s.runsDirName)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", &domain.OpError{
+			Op:   "runstore.mkdir",
+			Kind: domain.KindExecution,
+			Path: dir,
+			Err:  err,
+		}
+	}
+
+	ts := run.StartedAt
+	if ts.IsZero() {
+		ts = s.now()
+	}
+	ts = ts.UTC()
+
+	collectionPart := run.CollectionName
+	if strings.TrimSpace(collectionPart) == "" {
+		collectionPart = strings.TrimSuffix(filepath.Base(run.CollectionPath), filepath.Ext(run.CollectionPath))
+	}
+	slug := slugify(collectionPart)
+	if slug == "" {
+		slug = "run"
+	}
+
+	filename := fmt.Sprintf("%s_%s.json", ts.Format("20060102T150405Z"), slug)
+	id := strings.TrimSuffix(filename, ".json")
+	path := filepath.Join(dir, filename)
+
+	toSave := run
+	if s.maskingEnabled {
+		toSave = maskArtifact(toSave)
+	}
+
+	b, err := json.MarshalIndent(toSave, "", "  ")
+	if err != nil {
+		return "", &domain.OpError{
+			Op:   "runstore.marshal",
+			Kind: domain.KindExecution,
+			Path: path,
+			Err:  err,
+		}
+	}
+
+	
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return "", &domain.OpError{
+			Op:   "runstore.write",
+			Kind: domain.KindExecution,
+			Path: tmp,
+			Err:  err,
+		}
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return "", &domain.OpError{
+			Op:   "runstore.rename",
+			Kind: domain.KindExecution,
+			Path: path,
+			Err:  err,
+		}
+	}
+
+	if s.writeIndex {
+		_ = s.appendIndex(dir, id, filename, run)
+	}
+
+	return id, nil
+}
+
+func (s *JSONStore) appendIndex(dir, id, filename string, run domain.RunArtifact) error {
+	type idx struct {
+		ID         string    `json:"id"`
+		File       string    `json:"file"`
+		Collection string    `json:"collection"`
+		Env        string    `json:"env"`
+		StartedAt  time.Time `json:"started_at"`
+	}
+	line, err := json.Marshal(idx{
+		ID:         id,
+		File:       filename,
+		Collection: run.CollectionName,
+		Env:        run.EnvironmentName,
+		StartedAt:  run.StartedAt,
+	})
+	if err != nil {
+		return err
+	}
+
+	indexPath := filepath.Join(dir, "index.jsonl")
+	f, err := os.OpenFile(indexPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, _ = f.Write(append(line, '\n'))
+	return nil
+}
+
+
+
+
+func maskArtifact(run domain.RunArtifact) domain.RunArtifact {
+	out := run
+	out.Results = make([]domain.RequestResult, 0, len(run.Results))
+
+	for _, rr := range run.Results {
+		c := rr
+
+		
+		c.Extracted = cloneVars(rr.Extracted)
+		c.Extracts = cloneExtractResults(rr.Extracts)
+		c.Assertions = cloneAssertionResults(rr.Assertions)
+		c.Response = cloneResponseSnapshot(rr.Response)
+
+		for k := range c.Extracted {
+			if isSensitiveKey(k) {
+				c.Extracted[k] = maskValue
+			}
+		}
+
+		out.Results = append(out.Results, c)
+	}
+
+	return out
+}
+
+func isSensitiveKey(k string) bool {
+	kk := strings.ToLower(k)
+	return strings.Contains(kk, "token") ||
+		strings.Contains(kk, "secret") ||
+		strings.Contains(kk, "password")
+}
+
+func cloneVars(in domain.Vars) domain.Vars {
+	if in == nil {
+		return domain.Vars{}
+	}
+	out := domain.Vars{}
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneExtractResults(in []domain.ExtractResult) []domain.ExtractResult {
+	if in == nil {
+		return []domain.ExtractResult{}
+	}
+	out := make([]domain.ExtractResult, len(in))
+	copy(out, in)
+	return out
+}
+
+func cloneAssertionResults(in []domain.AssertionResult) []domain.AssertionResult {
+	if in == nil {
+		return []domain.AssertionResult{}
+	}
+	out := make([]domain.AssertionResult, len(in))
+	copy(out, in)
+	return out
+}
+
+func cloneResponseSnapshot(in domain.ResponseSnapshot) domain.ResponseSnapshot {
+	out := domain.ResponseSnapshot{
+		Truncated: in.Truncated,
+	}
+
+	
+	if in.Headers != nil {
+		out.Headers = make(map[string][]string, len(in.Headers))
+		for k, v := range in.Headers {
+			cp := make([]string, len(v))
+			copy(cp, v)
+			out.Headers[k] = cp
+		}
+	} else {
+		out.Headers = map[string][]string{}
+	}
+
+	
+	if in.Body != nil {
+		out.Body = make([]byte, len(in.Body))
+		copy(out.Body, in.Body)
+	}
+
+	return out
+}
+
+
+func slugify(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	b.Grow(len(s))
+
+	lastDash := false
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+			lastDash = false
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastDash = false
+		case r == ' ' || r == '_' || r == '-' || r == '.':
+			if !lastDash {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		default:
+			
+			if !lastDash {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+
+	out := strings.Trim(b.String(), "-")
+	out = strings.ReplaceAll(out, "--", "-")
+	return out
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/httpclient/client.go
+package httpclient
+
+import (
+	"net"
+	"net/http"
+	"time"
+)
+
+type Config struct {
+	
+	
+	Timeout time.Duration
+
+	
+	DialTimeout     time.Duration
+	KeepAlive       time.Duration
+	TLSHandshake    time.Duration
+	ResponseHeader  time.Duration
+	ExpectContinue  time.Duration
+	IdleConnTimeout time.Duration
+
+	MaxIdleConns        int
+	MaxIdleConnsPerHost int
+}
+
+func DefaultConfig() Config {
+	return Config{
+		Timeout:             30 * time.Second,
+		DialTimeout:         5 * time.Second,
+		KeepAlive:           30 * time.Second,
+		TLSHandshake:        5 * time.Second,
+		ResponseHeader:      10 * time.Second,
+		ExpectContinue:      1 * time.Second,
+		IdleConnTimeout:     90 * time.Second,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 20,
+	}
+}
+
+func New(cfg Config) *http.Client {
+	dialer := &net.Dialer{
+		Timeout:   cfg.DialTimeout,
+		KeepAlive: cfg.KeepAlive,
+	}
+
+	tr := &http.Transport{
+		Proxy:       http.ProxyFromEnvironment,
+		DialContext: dialer.DialContext,
+
+		ForceAttemptHTTP2: true,
+
+		MaxIdleConns:        cfg.MaxIdleConns,
+		MaxIdleConnsPerHost: cfg.MaxIdleConnsPerHost,
+		IdleConnTimeout:     cfg.IdleConnTimeout,
+
+		TLSHandshakeTimeout:   cfg.TLSHandshake,
+		ResponseHeaderTimeout: cfg.ResponseHeader,
+		ExpectContinueTimeout: cfg.ExpectContinue,
+	}
+
+	return &http.Client{
+		Transport: tr,
+		Timeout:   cfg.Timeout,
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/fsworkspace/init.go
+package fsworkspace
+
+import (
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+)
+
+type Initializer struct{}
+
+func NewInitializer() *Initializer {
+	return &Initializer{}
+}
+
+func (i *Initializer) Init(spec domain.WorkspaceSpec, force bool) error {
+	root := filepath.Clean(spec.Root)
+
+	dirs := []string{
+		filepath.Join(root, "collections"),
+		filepath.Join(root, "env"),
+		filepath.Join(root, "runs"),
+		filepath.Join(root, ".lynix", "logs"),
+	}
+
+	for _, d := range dirs {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return err
+		}
+	}
+
+	return fs.WalkDir(templatesFS, "templates", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		rel := strings.TrimPrefix(p, "templates/")
+		dst := filepath.Join(root, rel)
+
+		if !force {
+			if _, statErr := os.Stat(dst); statErr == nil {
+				return nil
+			}
+		}
+
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return err
+		}
+
+		b, err := fs.ReadFile(templatesFS, p)
+		if err != nil {
+			return err
+		}
+
+		mode := fs.FileMode(0o644)
+		if strings.Contains(strings.ToLower(rel), "secrets") {
+			mode = 0o600
+		}
+
+		return os.WriteFile(dst, b, mode)
+	})
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/fsworkspace/templates.go
+package fsworkspace
+
+import "embed"
+
+
+var templatesFS embed.FS
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/fsworkspace/templates/lynix.yaml
+lynix:
+  masking:
+    enabled: true
+  defaults:
+    env: dev
+  paths:
+    collections_dir: collections
+    environments_dir: env
+    runs_dir: runs
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/fsworkspace/templates/collections/demo.yaml
+name: Demo API
+vars:
+  base_url: "https://api.example.com"
+
+requests:
+  - name: health
+    method: GET
+    url: "{{base_url}}/health"
+    assert:
+      status: 200
+      max_ms: 1500
+
+  - name: users.list
+    method: GET
+    url: "{{base_url}}/v1/users"
+    headers:
+      Accept: "application/json"
+    assert:
+      status: 200
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/fsworkspace/templates/env/secrets.local.yaml
+vars:
+  token: "REPLACE_ME"
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/fsworkspace/templates/env/stg.yaml
+vars:
+  base_url: "https://stg.api.example.com"
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/fsworkspace/templates/env/dev.yaml
+vars:
+  base_url: "http://localhost:8080"
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/yamlenv/loader.go
+package yamlenv
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/ports"
+	"gopkg.in/yaml.v3"
+)
+
+type Loader struct {
+	rootDir     string
+	envDir      string
+	secretsFile string
+}
+
+type Option func(*Loader)
+
+func WithEnvDir(dir string) Option {
+	return func(l *Loader) { l.envDir = dir }
+}
+
+func WithSecretsFile(name string) Option {
+	return func(l *Loader) { l.secretsFile = name }
+}
+
+func NewLoader(root string, opts ...Option) *Loader {
+	l := &Loader{
+		rootDir:     root,
+		envDir:      "env",
+		secretsFile: "secrets.local.yaml",
+	}
+	for _, opt := range opts {
+		opt(l)
+	}
+	return l
+}
+
+var _ ports.EnvironmentLoader = (*Loader)(nil)
+var _ ports.EnvironmentCatalog = (*Loader)(nil)
+
+
+func (l *Loader) LoadEnvironment(nameOrPath string) (domain.Environment, error) {
+	var envPath string
+	var envName string
+
+	if strings.HasSuffix(nameOrPath, ".yaml") || strings.HasSuffix(nameOrPath, ".yml") || strings.Contains(nameOrPath, string(filepath.Separator)) {
+		envPath = filepath.Clean(nameOrPath)
+		envName = strings.TrimSuffix(filepath.Base(envPath), filepath.Ext(envPath))
+	} else {
+		envName = nameOrPath
+		envPath = filepath.Join(l.rootDir, l.envDir, envName+".yaml")
+	}
+
+	base, err := readVars(envPath)
+	if err != nil {
+		return domain.Environment{}, err
+	}
+
+	
+	secretsPath := filepath.Join(filepath.Dir(envPath), l.secretsFile)
+	secrets, secErr := readVarsOptional(secretsPath)
+	if secErr != nil {
+		return domain.Environment{}, secErr
+	}
+
+	merged := domain.Vars{}
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, v := range secrets {
+		merged[k] = v
+	}
+
+	return domain.Environment{
+		Name: envName,
+		Vars: merged,
+	}, nil
+}
+
+
+
+func (l *Loader) ListEnvironments(root string) ([]domain.EnvironmentRef, error) {
+	base := strings.TrimSpace(root)
+	if base == "" {
+		base = l.rootDir
+	}
+
+	dir := filepath.Join(base, l.envDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, &domain.OpError{
+			Op:   "yamlenv.list",
+			Kind: domain.KindNotFound,
+			Path: dir,
+			Err:  err,
+		}
+	}
+
+	var refs []domain.EnvironmentRef
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+
+		name := e.Name()
+		if name == l.secretsFile {
+			continue
+		}
+		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
+			continue
+		}
+
+		p := filepath.Join(dir, name)
+		envName := strings.TrimSuffix(name, filepath.Ext(name))
+		refs = append(refs, domain.EnvironmentRef{Name: envName, Path: p})
+	}
+
+	sort.Slice(refs, func(i, j int) bool { return refs[i].Name < refs[j].Name })
+	return refs, nil
+}
+
+type yamlEnv struct {
+	Vars map[string]string `yaml:"vars"`
+}
+
+func readVars(path string) (domain.Vars, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, &domain.OpError{
+			Op:   "yamlenv.load",
+			Kind: domain.KindNotFound,
+			Path: path,
+			Err:  err,
+		}
+	}
+
+	var y yamlEnv
+	if err := yaml.Unmarshal(b, &y); err != nil {
+		return nil, &domain.OpError{
+			Op:   "yamlenv.load",
+			Kind: domain.KindInvalidConfig,
+			Path: path,
+			Err:  err,
+		}
+	}
+
+	if y.Vars == nil {
+		y.Vars = map[string]string{}
+	}
+
+	return domain.Vars(y.Vars), nil
+}
+
+func readVarsOptional(path string) (domain.Vars, error) {
+	_, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return domain.Vars{}, nil
+		}
+		return nil, &domain.OpError{
+			Op:   "yamlenv.secrets",
+			Kind: domain.KindExecution,
+			Path: path,
+			Err:  err,
+		}
+	}
+
+	v, err := readVars(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load secrets: %w", err)
+	}
+	return v, nil
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/yamlenv/loader_test.go
+package yamlenv
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestLoadEnvironment_MergesSecrets(t *testing.T) {
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "ws")
+	envDir := filepath.Join(root, "env")
+	if err := os.MkdirAll(envDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(envDir, "dev.yaml"), []byte("vars:\n  base_url: http://localhost:8080\n  token: base\n"), 0o644); err != nil {
+		t.Fatalf("write dev: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(envDir, "secrets.local.yaml"), []byte("vars:\n  token: secret\n"), 0o644); err != nil {
+		t.Fatalf("write secrets: %v", err)
+	}
+
+	l := NewLoader(root)
+	env, err := l.LoadEnvironment("dev")
+	if err != nil {
+		t.Fatalf("LoadEnvironment error: %v", err)
+	}
+
+	if env.Vars["base_url"] != "http://localhost:8080" {
+		t.Fatalf("expected base_url, got=%s", env.Vars["base_url"])
+	}
+	if env.Vars["token"] != "secret" {
+		t.Fatalf("expected token=secret override, got=%s", env.Vars["token"])
+	}
+}
+
+func TestLoadEnvironment_SecretsMissing(t *testing.T) {
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "ws")
+	envDir := filepath.Join(root, "env")
+	if err := os.MkdirAll(envDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(envDir, "dev.yaml"), []byte("vars:\n  base_url: http://localhost:8080\n"), 0o644); err != nil {
+		t.Fatalf("write dev: %v", err)
+	}
+
+	l := NewLoader(root)
+	env, err := l.LoadEnvironment("dev")
+	if err != nil {
+		t.Fatalf("LoadEnvironment error: %v", err)
+	}
+
+	if env.Vars["base_url"] != "http://localhost:8080" {
+		t.Fatalf("expected base_url, got=%s", env.Vars["base_url"])
+	}
+}
+
+func TestLoadEnvironment_EnvMissing(t *testing.T) {
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "ws")
+	envDir := filepath.Join(root, "env")
+	if err := os.MkdirAll(envDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	l := NewLoader(root)
+	_, err := l.LoadEnvironment("dev")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/workspacefinder/config.go
+package workspacefinder
+
+import (
+	"os"
+	"path/filepath"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+	"gopkg.in/yaml.v3"
+)
+
+
+func LoadConfig(root string) (domain.Config, error) {
+	cfg := domain.DefaultConfig()
+
+	path := filepath.Join(root, "lynix.yaml")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return cfg, &domain.OpError{
+			Op:   "workspacefinder.loadconfig",
+			Kind: domain.KindNotFound,
+			Path: path,
+			Err:  err,
+		}
+	}
+
+	var y yamlConfig
+	if err := yaml.Unmarshal(b, &y); err != nil {
+		return cfg, &domain.OpError{
+			Op:   "workspacefinder.loadconfig",
+			Kind: domain.KindInvalidConfig,
+			Path: path,
+			Err:  err,
+		}
+	}
+
+	
+	if y.Lynix.Masking.Enabled != nil {
+		cfg.Masking.Enabled = *y.Lynix.Masking.Enabled
+	}
+	if y.Lynix.Defaults.Env != "" {
+		cfg.Defaults.Environment = y.Lynix.Defaults.Env
+	}
+	if y.Lynix.Paths.CollectionsDir != "" {
+		cfg.Paths.CollectionsDir = y.Lynix.Paths.CollectionsDir
+	}
+	if y.Lynix.Paths.EnvironmentsDir != "" {
+		cfg.Paths.EnvironmentsDir = y.Lynix.Paths.EnvironmentsDir
+	}
+	if y.Lynix.Paths.RunsDir != "" {
+		cfg.Paths.RunsDir = y.Lynix.Paths.RunsDir
+	}
+
+	return cfg, nil
+}
+
+type yamlConfig struct {
+	Lynix struct {
+		Masking struct {
+			Enabled *bool `yaml:"enabled"`
+		} `yaml:"masking"`
+
+		Defaults struct {
+			Env string `yaml:"env"`
+		} `yaml:"defaults"`
+
+		Paths struct {
+			CollectionsDir  string `yaml:"collections_dir"`
+			EnvironmentsDir string `yaml:"environments_dir"`
+			RunsDir         string `yaml:"runs_dir"`
+		} `yaml:"paths"`
+	} `yaml:"lynix"`
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/workspacefinder/finder.go
+package workspacefinder
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+)
+
+
+type Finder struct {
+	ConfigFile string 
+}
+
+func NewFinder() *Finder {
+	return &Finder{ConfigFile: "lynix.yaml"}
+}
+
+func (f *Finder) FindRoot(startDir string) (string, error) {
+	if startDir == "" {
+		return "", &domain.OpError{
+			Op:   "workspacefinder.findroot",
+			Kind: domain.KindInvalidConfig,
+			Err:  errors.New("startDir is empty"),
+		}
+	}
+
+	abs, err := filepath.Abs(startDir)
+	if err != nil {
+		return "", &domain.OpError{
+			Op:   "workspacefinder.findroot",
+			Kind: domain.KindExecution,
+			Err:  err,
+		}
+	}
+
+	
+	info, statErr := os.Stat(abs)
+	if statErr == nil && !info.IsDir() {
+		abs = filepath.Dir(abs)
+	}
+
+	cur := filepath.Clean(abs)
+	for {
+		cfgPath := filepath.Join(cur, f.ConfigFile)
+		if _, err := os.Stat(cfgPath); err == nil {
+			return cur, nil
+		}
+
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			
+			return "", &domain.OpError{
+				Op:   "workspacefinder.findroot",
+				Kind: domain.KindNotFound,
+				Err:  domain.ErrNotFound,
+			}
+		}
+		cur = parent
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/workspacefinder/config_test.go
+package workspacefinder
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestLoadConfig_AppliesDefaults(t *testing.T) {
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "ws")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	
+	content := []byte("lynix:\n  masking:\n    enabled: false\n")
+	if err := os.WriteFile(filepath.Join(root, "lynix.yaml"), content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cfg, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if cfg.Masking.Enabled != false {
+		t.Fatalf("expected masking=false, got=%v", cfg.Masking.Enabled)
+	}
+	if cfg.Defaults.Environment != "dev" {
+		t.Fatalf("expected default env=dev, got=%s", cfg.Defaults.Environment)
+	}
+	if cfg.Paths.CollectionsDir != "collections" {
+		t.Fatalf("expected collections dir=collections, got=%s", cfg.Paths.CollectionsDir)
+	}
+	if cfg.Paths.EnvironmentsDir != "env" {
+		t.Fatalf("expected env dir=env, got=%s", cfg.Paths.EnvironmentsDir)
+	}
+	if cfg.Paths.RunsDir != "runs" {
+		t.Fatalf("expected runs dir=runs, got=%s", cfg.Paths.RunsDir)
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/workspacefinder/finder_test.go
+package workspacefinder
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+)
+
+func TestFindRoot_FindsWorkspaceFromNestedDir(t *testing.T) {
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "ws")
+	nested := filepath.Join(root, "a", "b", "c")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	
+	if err := os.WriteFile(filepath.Join(root, "lynix.yaml"), []byte("lynix:\n  masking:\n    enabled: true\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	f := NewFinder()
+	got, err := f.FindRoot(nested)
+	if err != nil {
+		t.Fatalf("FindRoot returned error: %v", err)
+	}
+	if got != root {
+		t.Fatalf("expected root=%s, got=%s", root, got)
+	}
+}
+
+func TestFindRoot_NotFound(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmp, "a", "b"), 0o755)
+
+	f := NewFinder()
+	_, err := f.FindRoot(filepath.Join(tmp, "a", "b"))
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+
+	if !domain.IsKind(err, domain.KindNotFound) {
+		t.Fatalf("expected KindNotFound, got: %v", err)
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/yamlcollection/loader.go
+package yamlcollection
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/ports"
+	"gopkg.in/yaml.v3"
+)
+
+type Loader struct {
+	collectionsDir string
+}
+
+func NewLoader(opts ...Option) *Loader {
+	l := &Loader{collectionsDir: "collections"}
+	for _, opt := range opts {
+		opt(l)
+	}
+	return l
+}
+
+type Option func(*Loader)
+
+func WithCollectionsDir(dir string) Option {
+	return func(l *Loader) { l.collectionsDir = dir }
+}
+
+var _ ports.CollectionLoader = (*Loader)(nil)
+
+func (l *Loader) LoadCollection(path string) (domain.Collection, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return domain.Collection{}, &domain.OpError{
+			Op:   "yamlcollection.load",
+			Kind: domain.KindNotFound,
+			Path: path,
+			Err:  err,
+		}
+	}
+
+	var yc yamlCollection
+	if err := yaml.Unmarshal(b, &yc); err != nil {
+		return domain.Collection{}, &domain.OpError{
+			Op:   "yamlcollection.load",
+			Kind: domain.KindInvalidConfig,
+			Path: path,
+			Err:  err,
+		}
+	}
+
+	col, err := mapAndValidate(path, yc)
+	if err != nil {
+		return domain.Collection{}, err
+	}
+
+	return col, nil
+}
+
+func (l *Loader) ListCollections(root string) ([]domain.CollectionRef, error) {
+	dir := filepath.Join(root, l.collectionsDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, &domain.OpError{
+			Op:   "yamlcollection.list",
+			Kind: domain.KindNotFound,
+			Path: dir,
+			Err:  err,
+		}
+	}
+
+	var refs []domain.CollectionRef
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
+			continue
+		}
+
+		p := filepath.Join(dir, name)
+		n, _ := readCollectionName(p)
+		if strings.TrimSpace(n) == "" {
+			n = strings.TrimSuffix(name, filepath.Ext(name))
+		}
+
+		refs = append(refs, domain.CollectionRef{Name: n, Path: p})
+	}
+
+	sort.Slice(refs, func(i, j int) bool { return refs[i].Name < refs[j].Name })
+	return refs, nil
+}
+
+func readCollectionName(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	var v struct {
+		Name string `yaml:"name"`
+	}
+	if err := yaml.Unmarshal(b, &v); err != nil {
+		return "", err
+	}
+	return v.Name, nil
+}
+
+type yamlCollection struct {
+	Name     string            `yaml:"name"`
+	Vars     map[string]string `yaml:"vars"`
+	Requests []yamlRequest     `yaml:"requests"`
+}
+
+type yamlRequest struct {
+	Name    string            `yaml:"name"`
+	Method  string            `yaml:"method"`
+	URL     string            `yaml:"url"`
+	Headers map[string]string `yaml:"headers"`
+
+	JSON map[string]any    `yaml:"json"`
+	Form map[string]string `yaml:"form"`
+	Raw  string            `yaml:"raw"`
+
+	Assert  yamlAssertions    `yaml:"assert"`
+	Extract map[string]string `yaml:"extract"`
+}
+
+type yamlAssertions struct {
+	Status *int `yaml:"status"`
+	MaxMS  *int `yaml:"max_ms"`
+
+	JSONPath map[string]yamlJSONPathAssertion `yaml:"jsonpath"`
+}
+
+type yamlJSONPathAssertion struct {
+	Exists bool `yaml:"exists"`
+}
+
+func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
+	if strings.TrimSpace(yc.Name) == "" {
+		return domain.Collection{}, invalidField(path, "name", "collection name is required")
+	}
+
+	col := domain.Collection{
+		Name:     yc.Name,
+		Vars:     domain.Vars(yc.Vars),
+		Requests: make([]domain.RequestSpec, 0, len(yc.Requests)),
+	}
+
+	for i, r := range yc.Requests {
+		fieldPrefix := fmt.Sprintf("requests[%d]", i)
+
+		if strings.TrimSpace(r.Name) == "" {
+			return domain.Collection{}, invalidField(path, fieldPrefix+".name", "request name is required")
+		}
+		if strings.TrimSpace(r.URL) == "" {
+			return domain.Collection{}, invalidField(path, fieldPrefix+".url", "request url is required")
+		}
+
+		method, err := parseMethod(r.Method)
+		if err != nil {
+			return domain.Collection{}, invalidField(path, fieldPrefix+".method", err.Error())
+		}
+
+		req := domain.RequestSpec{
+			Name:    r.Name,
+			Method:  method,
+			URL:     r.URL,
+			Headers: domain.Headers(r.Headers),
+			Assert: domain.AssertionsSpec{
+				Status:       r.Assert.Status,
+				MaxLatencyMS: r.Assert.MaxMS,
+				JSONPath:     mapJSONPath(r.Assert.JSONPath),
+			},
+			Extract: domain.ExtractSpec(r.Extract),
+		}
+
+		if req.Headers == nil {
+			req.Headers = domain.Headers{}
+		}
+		if req.Assert.JSONPath == nil {
+			req.Assert.JSONPath = map[string]domain.JSONPathAssertion{}
+		}
+		if req.Extract == nil {
+			req.Extract = domain.ExtractSpec{}
+		}
+
+		
+		req.Body = domain.BodySpec{Type: domain.BodyNone}
+		if r.JSON != nil {
+			req.Body = domain.BodySpec{Type: domain.BodyJSON, JSON: r.JSON}
+		} else if r.Form != nil {
+			req.Body = domain.BodySpec{Type: domain.BodyForm, Form: r.Form}
+		} else if strings.TrimSpace(r.Raw) != "" {
+			req.Body = domain.BodySpec{Type: domain.BodyRaw, Raw: r.Raw}
+		}
+
+		col.Requests = append(col.Requests, req)
+	}
+
+	return col, nil
+}
+
+func mapJSONPath(in map[string]yamlJSONPathAssertion) map[string]domain.JSONPathAssertion {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]domain.JSONPathAssertion, len(in))
+	for k, v := range in {
+		out[k] = domain.JSONPathAssertion{Exists: v.Exists}
+	}
+	return out
+}
+
+func parseMethod(m string) (domain.HTTPMethod, error) {
+	up := strings.ToUpper(strings.TrimSpace(m))
+	switch domain.HTTPMethod(up) {
+	case domain.MethodGet,
+		domain.MethodPost,
+		domain.MethodPut,
+		domain.MethodPatch,
+		domain.MethodDelete,
+		domain.MethodHead,
+		domain.MethodOptions:
+		return domain.HTTPMethod(up), nil
+	default:
+		return "", fmt.Errorf("unsupported method %q", m)
+	}
+}
+
+func invalidField(path, field, msg string) error {
+	return &domain.OpError{
+		Op:   "yamlcollection.validate",
+		Kind: domain.KindInvalidConfig,
+		Path: path,
+		Err:  fmt.Errorf("field %s: %s", field, msg),
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/yamlcollection/loader_test.go
+package yamlcollection
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestLoadCollection_Valid(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "demo.yaml")
+
+	content := []byte(`
+name: Demo API
+vars:
+  base_url: "https://api.example.com"
+requests:
+  - name: health
+    method: GET
+    url: "{{base_url}}/health"
+    assert:
+      status: 200
+      max_ms: 1500
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	c, err := l.LoadCollection(p)
+	if err != nil {
+		t.Fatalf("LoadCollection error: %v", err)
+	}
+
+	if c.Name != "Demo API" {
+		t.Fatalf("expected name=Demo API, got=%s", c.Name)
+	}
+	if len(c.Requests) != 1 {
+		t.Fatalf("expected 1 request, got=%d", len(c.Requests))
+	}
+	if c.Requests[0].Name != "health" {
+		t.Fatalf("expected request name=health, got=%s", c.Requests[0].Name)
+	}
+}
+
+func TestLoadCollection_InvalidMethod(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "bad.yaml")
+
+	content := []byte(`
+name: Demo API
+requests:
+  - name: health
+    method: FETCH
+    url: "http://x"
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	_, err := l.LoadCollection(p)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestLoadCollection_MissingRequestName(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "bad.yaml")
+
+	content := []byte(`
+name: Demo API
+requests:
+  - method: GET
+    url: "http://x"
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	_, err := l.LoadCollection(p)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/httprunner/runner.go
+package httprunner
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/ports"
+)
+
+const defaultMaxBodyBytes = 256 * 1024 
+
+type Runner struct {
+	client       *http.Client
+	maxBodyBytes int64
+	resolver     *domain.VarResolver
+}
+
+type Option func(*Runner)
+
+func WithMaxBodyBytes(n int64) Option {
+	return func(r *Runner) { r.maxBodyBytes = n }
+}
+
+func WithResolver(vr *domain.VarResolver) Option {
+	return func(r *Runner) { r.resolver = vr }
+}
+
+func New(client *http.Client, opts ...Option) *Runner {
+	r := &Runner{
+		client:       client,
+		maxBodyBytes: defaultMaxBodyBytes,
+		resolver:     domain.NewVarResolver(),
+	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
+}
+
+var _ ports.RequestRunner = (*Runner)(nil)
+
+func (r *Runner) Run(ctx context.Context, req domain.RequestSpec, vars domain.Vars) (domain.RequestResult, error) {
+	rt, err := r.resolver.NewRuntime(vars)
+	if err != nil {
+		return domain.RequestResult{}, err
+	}
+
+	resolved, err := rt.ResolveRequest(req)
+	if err != nil {
+		
+		return domain.RequestResult{}, err
+	}
+
+	result := domain.RequestResult{
+		Name:       resolved.Name,
+		Method:     resolved.Method,
+		URL:        resolved.URL,
+		Extracted:  domain.Vars{},
+		Extracts:   []domain.ExtractResult{},
+		Assertions: []domain.AssertionResult{},
+		Response: domain.ResponseSnapshot{
+			Headers: map[string][]string{},
+		},
+	}
+
+	httpReq, err := r.buildHTTPRequest(ctx, resolved)
+	if err != nil {
+		return domain.RequestResult{}, err
+	}
+
+	start := time.Now()
+	resp, err := r.client.Do(httpReq)
+	lat := time.Since(start)
+	result.LatencyMS = lat.Milliseconds()
+
+	if err != nil {
+		result.Error = domain.NewRunError(err)
+		return result, nil
+	}
+	defer resp.Body.Close()
+
+	result.StatusCode = resp.StatusCode
+	result.Response.Headers = cloneHeaders(resp.Header)
+
+	body, truncated, readErr := readBounded(resp.Body, r.maxBodyBytes)
+	if readErr != nil {
+		result.Error = domain.NewRunError(readErr)
+		return result, nil
+	}
+
+	result.Response.Body = body
+	result.Response.Truncated = truncated
+	return result, nil
+}
+
+func (r *Runner) buildHTTPRequest(ctx context.Context, req domain.RequestSpec) (*http.Request, error) {
+	u := strings.TrimSpace(req.URL)
+	if u == "" {
+		return nil, &domain.OpError{
+			Op:   "httprunner.build",
+			Kind: domain.KindInvalidConfig,
+			Err:  errors.New("empty url"),
+		}
+	}
+
+	var body io.Reader
+	headers := http.Header{}
+	for k, v := range req.Headers {
+		headers.Set(k, v)
+	}
+
+	switch req.Body.Type {
+	case domain.BodyJSON:
+		if req.Body.JSON != nil {
+			b, err := json.Marshal(req.Body.JSON)
+			if err != nil {
+				return nil, &domain.OpError{
+					Op:   "httprunner.build.json",
+					Kind: domain.KindInvalidConfig,
+					Err:  err,
+				}
+			}
+			body = bytes.NewReader(b)
+			if req.Body.ContentType != "" {
+				headers.Set("Content-Type", req.Body.ContentType)
+			} else if headers.Get("Content-Type") == "" {
+				headers.Set("Content-Type", "application/json")
+			}
+		}
+
+	case domain.BodyForm:
+		if req.Body.Form != nil {
+			vals := url.Values{}
+			for k, v := range req.Body.Form {
+				vals.Set(k, v)
+			}
+			encoded := vals.Encode()
+			body = strings.NewReader(encoded)
+			if req.Body.ContentType != "" {
+				headers.Set("Content-Type", req.Body.ContentType)
+			} else if headers.Get("Content-Type") == "" {
+				headers.Set("Content-Type", "application/x-www-form-urlencoded")
+			}
+		}
+
+	case domain.BodyRaw:
+		if req.Body.Raw != "" {
+			body = strings.NewReader(req.Body.Raw)
+			if req.Body.ContentType != "" && headers.Get("Content-Type") == "" {
+				headers.Set("Content-Type", req.Body.ContentType)
+			}
+		}
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, string(req.Method), u, body)
+	if err != nil {
+		return nil, &domain.OpError{
+			Op:   "httprunner.build",
+			Kind: domain.KindInvalidConfig,
+			Err:  err,
+		}
+	}
+	httpReq.Header = headers
+	return httpReq, nil
+}
+
+func readBounded(r io.Reader, maxBytes int64) ([]byte, bool, error) {
+	lim := io.LimitReader(r, maxBytes+1)
+	b, err := io.ReadAll(lim)
+	if err != nil {
+		return nil, false, err
+	}
+	if int64(len(b)) > maxBytes {
+		return b[:maxBytes], true, nil
+	}
+	return b, false, nil
+}
+
+func cloneHeaders(h http.Header) map[string][]string {
+	out := make(map[string][]string, len(h))
+	for k, v := range h {
+		cp := make([]string, len(v))
+		copy(cp, v)
+		out[k] = cp
+	}
+	return out
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/infra/httprunner/runner_test.go
+package httprunner
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/infra/httpclient"
+)
+
+func TestRunner_TruncatesBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Test", "1")
+		w.WriteHeader(http.StatusOK)
+		
+		w.Write([]byte(strings.Repeat("a", 300*1024)))
+	}))
+	defer srv.Close()
+
+	c := httpclient.New(httpclient.DefaultConfig())
+	r := New(c) 
+
+	req := domain.RequestSpec{
+		Name:   "big",
+		Method: domain.MethodGet,
+		URL:    srv.URL,
+		Headers: domain.Headers{
+			"Accept": "text/plain",
+		},
+		Body: domain.BodySpec{Type: domain.BodyNone},
+	}
+
+	res, err := r.Run(context.Background(), req, domain.Vars{})
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if res.Error != nil {
+		t.Fatalf("expected no run error, got: %+v", res.Error)
+	}
+	if res.StatusCode != 200 {
+		t.Fatalf("expected 200, got=%d", res.StatusCode)
+	}
+	if !res.Response.Truncated {
+		t.Fatalf("expected truncated=true")
+	}
+	if len(res.Response.Body) != 256*1024 {
+		t.Fatalf("expected body len=256KB, got=%d", len(res.Response.Body))
+	}
+	if res.Response.Headers["X-Test"][0] != "1" {
+		t.Fatalf("expected header X-Test=1")
+	}
+}
+
+func TestRunner_ClassifiesTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg := httpclient.DefaultConfig()
+	cfg.Timeout = 50 * time.Millisecond
+	c := httpclient.New(cfg)
+	r := New(c)
+
+	req := domain.RequestSpec{
+		Name:    "slow",
+		Method:  domain.MethodGet,
+		URL:     srv.URL,
+		Body:    domain.BodySpec{Type: domain.BodyNone},
+		Headers: domain.Headers{},
+	}
+
+	res, err := r.Run(context.Background(), req, domain.Vars{})
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if res.Error == nil {
+		t.Fatalf("expected a run error")
+	}
+	if res.Error.Kind != domain.RunErrorTimeout {
+		t.Fatalf("expected timeout kind, got=%s (msg=%s)", res.Error.Kind, res.Error.Message)
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/domain/config.go
+package domain
+
+
+type Config struct {
+	Masking  MaskingConfig
+	Defaults DefaultsConfig
+	Paths    PathsConfig
+}
+
+type MaskingConfig struct {
+	Enabled bool
+}
+
+type DefaultsConfig struct {
+	Environment string
+}
+
+type PathsConfig struct {
+	CollectionsDir  string
+	EnvironmentsDir string
+	RunsDir         string
+}
+
+
+func DefaultConfig() Config {
+	return Config{
+		Masking: MaskingConfig{Enabled: true},
+		Defaults: DefaultsConfig{
+			Environment: "dev",
+		},
+		Paths: PathsConfig{
+			CollectionsDir:  "collections",
+			EnvironmentsDir: "env",
+			RunsDir:         "runs",
+		},
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/domain/workspace.go
+package domain
+
+
+type WorkspaceSpec struct {
+	Root string
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/domain/environment_ref.go
+package domain
+
+type EnvironmentRef struct {
+	Name string
+	Path string
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/domain/vars_resolver.go
+package domain
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+)
+
+
+
+
+
+type VarResolver struct {
+	now    func() time.Time
+	uuidV4 func() (string, error)
+}
+
+
+type VarResolverOption func(*VarResolver)
+
+
+func WithNow(now func() time.Time) VarResolverOption {
+	return func(r *VarResolver) { r.now = now }
+}
+
+
+func WithUUID(gen func() (string, error)) VarResolverOption {
+	return func(r *VarResolver) { r.uuidV4 = gen }
+}
+
+func NewVarResolver(opts ...VarResolverOption) *VarResolver {
+	r := &VarResolver{
+		now:    time.Now,
+		uuidV4: uuidV4,
+	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
+}
+
+
+
+type RuntimeResolver struct {
+	base     Vars
+	builtins Vars
+	inner    *VarResolver
+}
+
+func (r *VarResolver) NewRuntime(vars Vars) (*RuntimeResolver, error) {
+	ts := strconv.FormatInt(r.now().Unix(), 10)
+
+	u, err := r.uuidV4()
+	if err != nil {
+		return nil, &OpError{
+			Op:   "vars.builtins.uuid",
+			Kind: KindExecution,
+			Err:  err,
+		}
+	}
+
+	baseCopy := Vars{}
+	for k, v := range vars {
+		baseCopy[k] = v
+	}
+
+	return &RuntimeResolver{
+		base: baseCopy,
+		builtins: Vars{
+			"$timestamp": ts,
+			"$uuid":      u,
+		},
+		inner: r,
+	}, nil
+}
+
+
+
+func (rr *RuntimeResolver) ResolveString(s string) (string, error) {
+	return rr.inner.resolveStringWith(rr.base, rr.builtins, s)
+}
+
+
+func (rr *RuntimeResolver) ResolveHeaders(h Headers) (Headers, error) {
+	out := Headers{}
+	for k, v := range h {
+		rv, err := rr.ResolveString(v)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = rv
+	}
+	return out, nil
+}
+
+
+
+
+
+func (rr *RuntimeResolver) ResolveBodySpec(b BodySpec) (BodySpec, error) {
+	out := b
+
+	switch b.Type {
+	case BodyJSON:
+		if b.JSON == nil {
+			out.JSON = nil
+			return out, nil
+		}
+		clone, err := rr.ResolveJSONValue(b.JSON)
+		if err != nil {
+			return BodySpec{}, err
+		}
+		m, ok := clone.(map[string]any)
+		if !ok {
+			
+			return BodySpec{}, &OpError{
+				Op:   "vars.resolve.json",
+				Kind: KindInvalidConfig,
+				Err:  errors.New("json body must be an object"),
+			}
+		}
+		out.JSON = m
+		return out, nil
+
+	case BodyForm:
+		if b.Form == nil {
+			out.Form = nil
+			return out, nil
+		}
+		f := map[string]string{}
+		for k, v := range b.Form {
+			rv, err := rr.ResolveString(v)
+			if err != nil {
+				return BodySpec{}, err
+			}
+			f[k] = rv
+		}
+		out.Form = f
+		return out, nil
+
+	case BodyRaw:
+		rv, err := rr.ResolveString(b.Raw)
+		if err != nil {
+			return BodySpec{}, err
+		}
+		out.Raw = rv
+		return out, nil
+
+	default:
+		return out, nil
+	}
+}
+
+
+
+func (rr *RuntimeResolver) ResolveRequest(req RequestSpec) (RequestSpec, error) {
+	out := req
+
+	url, err := rr.ResolveString(req.URL)
+	if err != nil {
+		return RequestSpec{}, wrapField(err, "request.url")
+	}
+	out.URL = url
+
+	if req.Headers != nil {
+		h, err := rr.ResolveHeaders(req.Headers)
+		if err != nil {
+			return RequestSpec{}, wrapField(err, "request.headers")
+		}
+		out.Headers = h
+	} else {
+		out.Headers = Headers{}
+	}
+
+	body, err := rr.ResolveBodySpec(req.Body)
+	if err != nil {
+		return RequestSpec{}, wrapField(err, "request.body")
+	}
+	out.Body = body
+
+	return out, nil
+}
+
+
+
+func (rr *RuntimeResolver) ResolveJSONValue(v any) (any, error) {
+	switch t := v.(type) {
+	case string:
+		return rr.ResolveString(t)
+
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, vv := range t {
+			rv, err := rr.ResolveJSONValue(vv)
+			if err != nil {
+				return nil, err
+			}
+			out[k] = rv
+		}
+		return out, nil
+
+	case []any:
+		out := make([]any, 0, len(t))
+		for _, it := range t {
+			rv, err := rr.ResolveJSONValue(it)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, rv)
+		}
+		return out, nil
+
+	default:
+		
+		return v, nil
+	}
+}
+
+func (r *VarResolver) resolveStringWith(vars Vars, builtins Vars, s string) (string, error) {
+	
+	if !strings.Contains(s, "{{") {
+		return s, nil
+	}
+
+	var b strings.Builder
+	b.Grow(len(s) + 16)
+
+	for i := 0; i < len(s); {
+		
+		if i+1 < len(s) && s[i] == '{' && s[i+1] == '{' {
+			start := i + 2
+
+			
+			end := strings.Index(s[start:], "}}")
+			if end < 0 {
+				return "", &OpError{
+					Op:   "vars.resolve",
+					Kind: KindInvalidConfig,
+					Err:  errors.New("unclosed placeholder"),
+				}
+			}
+			end = start + end
+
+			name := strings.TrimSpace(s[start:end])
+			if name == "" {
+				return "", &OpError{
+					Op:   "vars.resolve",
+					Kind: KindInvalidConfig,
+					Err:  errors.New("empty placeholder"),
+				}
+			}
+
+			val, ok := builtins[name]
+			if !ok {
+				val, ok = vars[name]
+			}
+			if !ok {
+				return "", &OpError{
+					Op:   "vars.resolve",
+					Kind: KindMissingVar,
+					Err:  fmt.Errorf("missing variable: %s", name),
+				}
+			}
+
+			b.WriteString(val)
+			i = end + 2
+			continue
+		}
+
+		b.WriteByte(s[i])
+		i++
+	}
+
+	return b.String(), nil
+}
+
+func wrapField(err error, field string) error {
+	
+	return &OpError{
+		Op:   "vars.resolve",
+		Kind: kindFrom(err),
+		Err:  fmt.Errorf("%s: %w", field, err),
+	}
+}
+
+func kindFrom(err error) ErrorKind {
+	var oe *OpError
+	if errors.As(err, &oe) {
+		return oe.Kind
+	}
+	return KindExecution
+}
+
+
+func uuidV4() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+
+	
+	b[6] = (b[6] & 0x0f) | 0x40
+	
+	b[8] = (b[8] & 0x3f) | 0x80
+
+	hexed := make([]byte, 36)
+	hex.Encode(hexed[0:8], b[0:4])
+	hexed[8] = '-'
+	hex.Encode(hexed[9:13], b[4:6])
+	hexed[13] = '-'
+	hex.Encode(hexed[14:18], b[6:8])
+	hexed[18] = '-'
+	hex.Encode(hexed[19:23], b[8:10])
+	hexed[23] = '-'
+	hex.Encode(hexed[24:36], b[10:16])
+
+	return string(hexed), nil
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/domain/environment.go
+package domain
+
+
+type Vars map[string]string
+
+
+
+type Environment struct {
+	Name string
+	Vars Vars
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/domain/errors.go
+package domain
+
+import (
+	"errors"
+	"fmt"
+)
+
+
+var (
+	ErrNotFound      = errors.New("not found")
+	ErrInvalidConfig = errors.New("invalid config")
+	ErrMissingVar    = errors.New("missing variable")
+	ErrExecution     = errors.New("execution error")
+)
+
+
+type ErrorKind string
+
+const (
+	KindNotFound      ErrorKind = "not_found"
+	KindInvalidConfig ErrorKind = "invalid_config"
+	KindMissingVar    ErrorKind = "missing_variable"
+	KindExecution     ErrorKind = "execution"
+)
+
+
+type OpError struct {
+	Op   string
+	Kind ErrorKind
+	Path string 
+	Err  error
+}
+
+func (e *OpError) Error() string {
+	if e == nil {
+		return "<nil>"
+	}
+
+	base := fmt.Sprintf("%s: %s", e.Op, e.Kind)
+	if e.Path != "" {
+		base += fmt.Sprintf(" (path=%s)", e.Path)
+	}
+	if e.Err != nil {
+		base += fmt.Sprintf(": %v", e.Err)
+	}
+	return base
+}
+
+func (e *OpError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+
+func IsKind(err error, kind ErrorKind) bool {
+	var oe *OpError
+	if errors.As(err, &oe) {
+		return oe.Kind == kind
+	}
+	return false
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/domain/collection.go
+package domain
+
+
+type HTTPMethod string
+
+const (
+	MethodGet     HTTPMethod = "GET"
+	MethodPost    HTTPMethod = "POST"
+	MethodPut     HTTPMethod = "PUT"
+	MethodPatch   HTTPMethod = "PATCH"
+	MethodDelete  HTTPMethod = "DELETE"
+	MethodHead    HTTPMethod = "HEAD"
+	MethodOptions HTTPMethod = "OPTIONS"
+)
+
+
+type BodyType string
+
+const (
+	BodyNone BodyType = "none"
+	BodyJSON BodyType = "json"
+	BodyForm BodyType = "form"
+	BodyRaw  BodyType = "raw"
+)
+
+
+
+type Header struct {
+	Name  string
+	Value string
+}
+
+
+type Headers map[string]string
+
+
+
+type BodySpec struct {
+	Type        BodyType
+	JSON        map[string]any
+	Form        map[string]string
+	Raw         string
+	ContentType string 
+}
+
+
+
+type JSONPathAssertion struct {
+	Exists bool
+}
+
+
+type AssertionsSpec struct {
+	
+	Status *int
+
+	
+	MaxLatencyMS *int
+
+	
+	
+	JSONPath map[string]JSONPathAssertion
+}
+
+
+
+type ExtractSpec map[string]string
+
+
+type RequestSpec struct {
+	Name    string
+	Method  HTTPMethod
+	URL     string
+	Headers Headers
+	Body    BodySpec
+
+	Assert  AssertionsSpec
+	Extract ExtractSpec
+}
+
+
+type Collection struct {
+	Name string
+
+	
+	
+	Vars Vars
+
+	Requests []RequestSpec
+}
+
+
+type CollectionRef struct {
+	Name string
+	Path string
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/domain/vars_resolver_test.go
+package domain
+
+import (
+	"errors"
+	"testing"
+	"time"
+)
+
+func TestResolveString_MissingVar(t *testing.T) {
+	r := NewVarResolver(
+		WithNow(func() time.Time { return time.Unix(100, 0) }),
+		WithUUID(func() (string, error) { return "00000000-0000-0000-0000-000000000000", nil }),
+	)
+
+	rt, err := r.NewRuntime(Vars{"base_url": "http://x"})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	_, err = rt.ResolveString("{{token}}")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !IsKind(err, KindMissingVar) {
+		t.Fatalf("expected KindMissingVar, got: %v", err)
+	}
+	if !contains(err.Error(), "missing variable: token") {
+		t.Fatalf("expected message to contain 'missing variable: token', got: %v", err)
+	}
+}
+
+func TestResolveString_Builtins(t *testing.T) {
+	r := NewVarResolver(
+		WithNow(func() time.Time { return time.Unix(1700000000, 0) }),
+		WithUUID(func() (string, error) { return "11111111-1111-1111-1111-111111111111", nil }),
+	)
+
+	rt, err := r.NewRuntime(Vars{})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	got, err := rt.ResolveString("ts={{$timestamp}} uuid={{$uuid}}")
+	if err != nil {
+		t.Fatalf("ResolveString: %v", err)
+	}
+	want := "ts=1700000000 uuid=11111111-1111-1111-1111-111111111111"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestResolveJSON_Nested(t *testing.T) {
+	r := NewVarResolver(
+		WithNow(func() time.Time { return time.Unix(170, 0) }),
+		WithUUID(func() (string, error) { return "22222222-2222-2222-2222-222222222222", nil }),
+	)
+	rt, err := r.NewRuntime(Vars{"base_url": "http://example"})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	in := map[string]any{
+		"a": "{{base_url}}",
+		"b": []any{
+			map[string]any{"c": "{{$uuid}}"},
+			"nope",
+			123,
+		},
+	}
+
+	out, err := rt.ResolveJSONValue(in)
+	if err != nil {
+		t.Fatalf("ResolveJSONValue: %v", err)
+	}
+
+	m := out.(map[string]any)
+	if m["a"].(string) != "http://example" {
+		t.Fatalf("expected a=http://example, got=%v", m["a"])
+	}
+
+	arr := m["b"].([]any)
+	obj := arr[0].(map[string]any)
+	if obj["c"].(string) != "22222222-2222-2222-2222-222222222222" {
+		t.Fatalf("expected uuid, got=%v", obj["c"])
+	}
+}
+
+func TestResolveString_UnclosedPlaceholder(t *testing.T) {
+	r := NewVarResolver()
+	rt, err := r.NewRuntime(Vars{"x": "y"})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	_, err = rt.ResolveString("{{x")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !IsKind(err, KindInvalidConfig) {
+		t.Fatalf("expected KindInvalidConfig, got: %v", err)
+	}
+	var oe *OpError
+	if !errors.As(err, &oe) {
+		t.Fatalf("expected OpError")
+	}
+}
+
+func contains(s, sub string) bool {
+	return len(sub) == 0 || (len(s) >= len(sub) && (stringIndex(s, sub) >= 0))
+}
+
+func stringIndex(s, sub string) int {
+	
+	
+outer:
+	for i := 0; i+len(sub) <= len(s); i++ {
+		for j := 0; j < len(sub); j++ {
+			if s[i+j] != sub[j] {
+				continue outer
+			}
+		}
+		return i
+	}
+	return -1
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/domain/run.go
+package domain
+
+import (
+	"context"
+	"errors"
+	"net"
+	"net/url"
+	"syscall"
+	"time"
+)
+
+
+type RunErrorKind string
+
+const (
+	RunErrorUnknown RunErrorKind = "unknown"
+	RunErrorTimeout RunErrorKind = "timeout"
+	RunErrorDNS     RunErrorKind = "dns"
+	RunErrorConn    RunErrorKind = "connection"
+	RunErrorHTTP    RunErrorKind = "http"
+)
+
+
+type ExtractResult struct {
+	Name    string
+	Success bool
+	Message string
+}
+
+
+type RunError struct {
+	Kind    RunErrorKind
+	Message string
+}
+
+
+type AssertionResult struct {
+	Name    string
+	Passed  bool
+	Message string
+}
+
+
+
+type ResponseSnapshot struct {
+	Headers   map[string][]string
+	Body      []byte
+	Truncated bool
+}
+
+
+type RequestResult struct {
+	Name   string
+	Method HTTPMethod
+	URL    string
+
+	StatusCode int
+	LatencyMS  int64
+
+	Assertions []AssertionResult
+
+	Extracts  []ExtractResult
+	Extracted Vars
+
+	Response ResponseSnapshot
+	Error    *RunError
+}
+
+
+type RunResult struct {
+	CollectionName string
+	CollectionPath string
+
+	EnvironmentName string
+
+	StartedAt time.Time
+	EndedAt   time.Time
+
+	Results []RequestResult
+}
+
+
+type RunArtifact = RunResult
+
+
+func NewRunError(err error) *RunError {
+	if err == nil {
+		return nil
+	}
+	return &RunError{
+		Kind:    ClassifyRunError(err),
+		Message: err.Error(),
+	}
+}
+
+
+
+func ClassifyRunError(err error) RunErrorKind {
+	if err == nil {
+		return RunErrorUnknown
+	}
+
+	
+	if errors.Is(err, context.DeadlineExceeded) {
+		return RunErrorTimeout
+	}
+
+	
+	var uerr *url.Error
+	if errors.As(err, &uerr) {
+		if uerr.Timeout() {
+			return RunErrorTimeout
+		}
+		
+		return ClassifyRunError(uerr.Unwrap())
+	}
+
+	
+	var nerr net.Error
+	if errors.As(err, &nerr) && nerr.Timeout() {
+		return RunErrorTimeout
+	}
+
+	
+	var dnserr *net.DNSError
+	if errors.As(err, &dnserr) {
+		return RunErrorDNS
+	}
+
+	
+	if errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ETIMEDOUT) {
+		return RunErrorConn
+	}
+
+	
+	var operr *net.OpError
+	if errors.As(err, &operr) {
+		if errors.Is(operr.Err, syscall.ECONNREFUSED) ||
+			errors.Is(operr.Err, syscall.ECONNRESET) ||
+			errors.Is(operr.Err, syscall.EPIPE) ||
+			errors.Is(operr.Err, syscall.ETIMEDOUT) {
+			return RunErrorConn
+		}
+	}
+
+	return RunErrorUnknown
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/domain/run_test.go
+package domain
+
+import (
+	"context"
+	"net"
+	"net/url"
+	"syscall"
+	"testing"
+)
+
+func TestClassifyRunError_Timeout_ContextDeadline(t *testing.T) {
+	if got := ClassifyRunError(context.DeadlineExceeded); got != RunErrorTimeout {
+		t.Fatalf("expected timeout, got=%s", got)
+	}
+}
+
+func TestClassifyRunError_Timeout_NetError(t *testing.T) {
+	
+	err := &net.OpError{Op: "read", Net: "tcp", Err: syscall.ETIMEDOUT}
+	if got := ClassifyRunError(err); got != RunErrorConn && got != RunErrorTimeout {
+		
+		t.Fatalf("expected conn/timeout, got=%s", got)
+	}
+}
+
+func TestClassifyRunError_DNS(t *testing.T) {
+	err := &net.DNSError{Err: "no such host", Name: "example.invalid"}
+	if got := ClassifyRunError(err); got != RunErrorDNS {
+		t.Fatalf("expected dns, got=%s", got)
+	}
+}
+
+func TestClassifyRunError_ConnReset(t *testing.T) {
+	err := &net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}
+	if got := ClassifyRunError(err); got != RunErrorConn {
+		t.Fatalf("expected conn, got=%s", got)
+	}
+}
+
+func TestClassifyRunError_URLWraps(t *testing.T) {
+	inner := &net.DNSError{Err: "no such host", Name: "x.invalid"}
+	err := &url.Error{Op: "Get", URL: "http://x.invalid", Err: inner}
+
+	if got := ClassifyRunError(err); got != RunErrorDNS {
+		t.Fatalf("expected dns, got=%s", got)
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/ui/tui/safe_model.go
+package tui
+
+import (
+	"fmt"
+	"io"
+	"log/slog"
+	"runtime/debug"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+type safeModel struct {
+	m   model
+	log *slog.Logger
+}
+
+func wrapSafe(m model, log *slog.Logger) safeModel {
+	if log == nil {
+		log = slog.New(slog.NewJSONHandler(io.Discard, nil))
+	}
+	return safeModel{m: m, log: log}
+}
+
+func (s safeModel) Init() tea.Cmd {
+	return s.m.Init()
+}
+
+func (s safeModel) Update(msg tea.Msg) (tm tea.Model, cmd tea.Cmd) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Error("panic.recovered",
+				"where", "tui.update",
+				"panic", fmt.Sprint(r),
+				"stack", string(debug.Stack()),
+			)
+
+			s.m.scr = screenHome
+			s.m.wizardStep = 0
+			s.m.running = false
+			s.m.toast = "Unexpected error (see logs)"
+			tm = s
+			cmd = nil
+		}
+	}()
+
+	inner, c := s.m.Update(msg)
+
+	if mm, ok := inner.(model); ok {
+		s.m = mm
+	} else if sm, ok := inner.(safeModel); ok {
+		s = sm
+	}
+
+	return s, c
+}
+
+func (s safeModel) View() (out string) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Error("panic.recovered",
+				"where", "tui.view",
+				"panic", fmt.Sprint(r),
+				"stack", string(debug.Stack()),
+			)
+			out = "Unexpected error (see logs)"
+		}
+	}()
+	return s.m.View()
+}
+
+var _ tea.Model = (*safeModel)(nil)
+
+# FILE: /home/aalvaropc/github/lynix/internal/ui/tui/error_ux.go
+package tui
+
+import (
+	"errors"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+)
+
+var reLine = regexp.MustCompile(`(?i)\bline\s+(\d+)\b`)
+
+func userMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	var oe *domain.OpError
+	if errors.As(err, &oe) {
+		switch oe.Kind {
+
+		case domain.KindNotFound:
+			if strings.Contains(oe.Op, "yamlcollection") {
+				return "Collection not found"
+			}
+			if strings.Contains(oe.Op, "yamlenv") {
+				return "Environment not found"
+			}
+			if strings.Contains(oe.Op, "workspacefinder.findroot") {
+				return "Workspace not found"
+			}
+			return "Not found"
+
+		case domain.KindMissingVar:
+			v := extractMissingVarName(err.Error())
+			if v == "" {
+				return "Missing variable"
+			}
+			return "Missing variable " + v
+
+		case domain.KindInvalidConfig:
+			base := "config"
+			if strings.TrimSpace(oe.Path) != "" {
+				base = filepath.Base(oe.Path)
+			}
+
+			line := extractLine(err.Error())
+			if line != "" {
+				return "Invalid YAML at " + base + " line " + line
+			}
+
+			if looksLikeYAMLProblem(err.Error()) {
+				return "Invalid YAML at " + base
+			}
+			return "Invalid config"
+
+		default:
+			return "Unexpected error (see logs)"
+		}
+	}
+
+	if looksLikeYAMLProblem(err.Error()) {
+		line := extractLine(err.Error())
+		if line != "" {
+			return "Invalid YAML line " + line
+		}
+		return "Invalid YAML"
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "missing variable") {
+		v := extractMissingVarName(err.Error())
+		if v != "" {
+			return "Missing variable " + v
+		}
+		return "Missing variable"
+	}
+
+	return "Unexpected error (see logs)"
+}
+
+func looksLikeYAMLProblem(s string) bool {
+	ls := strings.ToLower(s)
+	return strings.Contains(ls, "yaml:") || strings.Contains(ls, "did not find expected") || strings.Contains(ls, "cannot unmarshal")
+}
+
+func extractLine(s string) string {
+	m := reLine.FindStringSubmatch(s)
+	if len(m) == 2 {
+		return m[1]
+	}
+	return ""
+}
+
+func extractMissingVarName(s string) string {
+	ls := strings.ToLower(s)
+
+	i := strings.LastIndex(ls, "missing variable:")
+	if i >= 0 {
+		part := strings.TrimSpace(s[i+len("missing variable:"):])
+		part = strings.Trim(part, " .,:;\"'")
+		part = strings.Fields(part)[0]
+		part = strings.Trim(part, " .,:;\"'")
+		return part
+	}
+
+	i = strings.LastIndex(ls, "missing variable ")
+	if i >= 0 {
+		part := strings.TrimSpace(s[i+len("missing variable "):])
+		part = strings.Trim(part, " .,:;\"'")
+		part = strings.Fields(part)[0]
+		part = strings.Trim(part, " .,:;\"'")
+		return part
+	}
+
+	return ""
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/ui/tui/theme.go
+package tui
+
+import "github.com/charmbracelet/lipgloss"
+
+type Theme struct {
+	Title    lipgloss.Style
+	Subtitle lipgloss.Style
+	Help     lipgloss.Style
+	Card     lipgloss.Style
+}
+
+func DefaultTheme() Theme {
+	return Theme{
+		Title:    lipgloss.NewStyle().Bold(true),
+		Subtitle: lipgloss.NewStyle().Faint(true),
+		Help:     lipgloss.NewStyle().Faint(true),
+		Card: lipgloss.NewStyle().
+			Padding(1, 2).
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("63")),
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/ui/tui/app.go
+package tui
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"path/filepath"
+	"strings"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/table"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+type screen int
+
+const (
+	screenHome screen = iota
+	screenCollections
+	screenSettings
+	screenRunWizard
+	screenResults
+	screenPlaceholder
+)
+
+type menuItem struct {
+	title string
+	desc  string
+}
+
+func (m menuItem) Title() string       { return m.title }
+func (m menuItem) Description() string { return m.desc }
+func (m menuItem) FilterValue() string { return m.title }
+
+type collectionItem struct {
+	ref domain.CollectionRef
+}
+
+func (c collectionItem) Title() string       { return c.ref.Name }
+func (c collectionItem) Description() string { return filepath.Base(c.ref.Path) }
+func (c collectionItem) FilterValue() string { return c.ref.Name }
+
+type envItem struct {
+	ref domain.EnvironmentRef
+}
+
+func (e envItem) Title() string       { return e.ref.Name }
+func (e envItem) Description() string { return filepath.Base(e.ref.Path) }
+func (e envItem) FilterValue() string { return e.ref.Name }
+
+type model struct {
+	theme                  Theme
+	deps                   Deps
+	log                    *slog.Logger
+	scr                    screen
+	width                  int
+	height                 int
+	menu                   list.Model
+	cwd                    string
+	workspaceFound         bool
+	workspaceRoot          string
+	workspaceErr           error
+	toast                  string
+	collectionsList        list.Model
+	collectionsRefs        []domain.CollectionRef
+	previewPath            string
+	previewText            string
+	previewErr             error
+	lastInitErr            error
+	wizardStep             int
+	runColList             list.Model
+	runEnvList             list.Model
+	selectedCollectionPath string
+	selectedEnvName        string
+	running                bool
+	spin                   spinner.Model
+	runCh                  chan runnerDoneMsg
+	runResult              domain.RunResult
+	runID                  string
+	runErr                 error
+	resultsTable           table.Model
+	resultTab              int 
+}
+
+func Run(deps Deps) error {
+	m := newModel(deps)
+	sm := wrapSafe(m, m.log)
+	p := tea.NewProgram(sm, tea.WithAltScreen())
+	_, err := p.Run()
+	return err
+}
+
+func newModel(deps Deps) model {
+	t := DefaultTheme()
+
+	log := deps.Logger
+	if log == nil {
+		log = slog.New(slog.NewJSONHandler(io.Discard, nil))
+	}
+
+	items := []list.Item{
+		menuItem{"Run (Functional)", "Execute requests and checks (MVP target)"},
+		menuItem{"Bench (Performance)", "Load testing and metrics (v0.2)"},
+		menuItem{"Compare (Baselines)", "Detect regressions (v1.0)"},
+		menuItem{"Collections", "Browse and validate YAML collections"},
+		menuItem{"Environments", "Manage env vars and secrets (MVP target)"},
+		menuItem{"Reports", "View/export reports (MVP+)"},
+		menuItem{"Settings", "Workspace and defaults"},
+		menuItem{"Quit", "Exit Lynix"},
+	}
+
+	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
+	l.Title = "Lynix"
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(true)
+	l.SetShowHelp(false)
+
+	colList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	colList.Title = "Collections"
+	colList.SetShowStatusBar(false)
+	colList.SetFilteringEnabled(true)
+	colList.SetShowHelp(false)
+
+	runCol := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	runCol.Title = "Step 1/4 — Select collection"
+	runCol.SetShowStatusBar(false)
+	runCol.SetFilteringEnabled(true)
+	runCol.SetShowHelp(false)
+
+	runEnv := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	runEnv.Title = "Step 2/4 — Select environment"
+	runEnv.SetShowStatusBar(false)
+	runEnv.SetFilteringEnabled(true)
+	runEnv.SetShowHelp(false)
+
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+
+	return model{
+		theme:           t,
+		deps:            deps,
+		log:             log,
+		scr:             screenHome,
+		menu:            l,
+		collectionsList: colList,
+		runColList:      runCol,
+		runEnvList:      runEnv,
+		wizardStep:      0,
+		spin:            sp,
+		resultTab:       0,
+	}
+}
+
+func (m model) Init() tea.Cmd {
+	return cmdRefreshWorkspace(m.deps)
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		m.resize()
+		return m, nil
+
+	case workspaceRefreshedMsg:
+		m.cwd = msg.cwd
+		m.workspaceFound = msg.found
+		m.workspaceRoot = msg.root
+		m.workspaceErr = msg.err
+
+		m.collectionsRefs = nil
+		m.previewPath = ""
+		m.previewText = ""
+		m.previewErr = nil
+		m.selectedCollectionPath = ""
+		m.selectedEnvName = ""
+		m.runErr = nil
+		m.runID = ""
+		m.toast = ""
+
+		if m.workspaceFound {
+			return m, tea.Batch(
+				cmdLoadCollections(m.workspaceRoot),
+				cmdLoadEnvironments(m.workspaceRoot),
+			)
+		}
+		return m, nil
+
+	case initWorkspaceDoneMsg:
+		m.lastInitErr = msg.err
+		if msg.err != nil {
+			m.toast = userMessage(msg.err)
+		} else {
+			m.toast = "Workspace initialized."
+		}
+		return m, cmdRefreshWorkspace(m.deps)
+
+	case collectionsLoadedMsg:
+		if msg.err != nil {
+			m.toast = userMessage(msg.err)
+			m.collectionsRefs = nil
+			m.collectionsList.SetItems([]list.Item{})
+			m.runColList.SetItems([]list.Item{})
+			return m, nil
+		}
+
+		m.collectionsRefs = msg.refs
+		items := make([]list.Item, 0, len(msg.refs))
+		for _, r := range msg.refs {
+			items = append(items, collectionItem{ref: r})
+		}
+		m.collectionsList.SetItems(items)
+		m.runColList.SetItems(items)
+
+		if len(msg.refs) > 0 {
+			m.previewPath = msg.refs[0].Path
+			return m, cmdPreviewCollection(m.previewPath)
+		}
+		return m, nil
+
+	case envsLoadedMsg:
+		if msg.err != nil {
+			m.toast = userMessage(msg.err)
+			m.runEnvList.SetItems([]list.Item{})
+			return m, nil
+		}
+
+		items := make([]list.Item, 0, len(msg.refs))
+		for _, r := range msg.refs {
+			items = append(items, envItem{ref: r})
+		}
+		m.runEnvList.SetItems(items)
+		return m, nil
+
+	case collectionPreviewMsg:
+		m.previewPath = msg.path
+		m.previewText = msg.preview
+		m.previewErr = msg.err
+		return m, nil
+
+	case runnerDoneMsg:
+		m.running = false
+		m.runErr = msg.err
+		m.runID = msg.id
+		m.runResult = msg.run
+
+		m.buildResultsTable()
+		m.scr = screenResults
+		m.toast = ""
+		if msg.err != nil {
+			m.toast = userMessage(msg.err)
+		} else {
+			m.toast = "Run saved: " + msg.id
+		}
+		return m, nil
+
+	case tea.KeyMsg:
+		key := msg.String()
+
+		if key == "ctrl+c" {
+			return m, tea.Quit
+		}
+		if key == "q" {
+			if m.scr == screenHome {
+				return m, tea.Quit
+			}
+			m.scr = screenHome
+			m.wizardStep = 0
+			m.running = false
+			m.toast = ""
+			return m, nil
+		}
+
+		switch m.scr {
+
+		case screenHome:
+			switch key {
+			case "enter":
+				it, ok := m.menu.SelectedItem().(menuItem)
+				if !ok {
+					return m, nil
+				}
+				switch {
+				case strings.EqualFold(it.title, "Quit"):
+					return m, tea.Quit
+				case strings.EqualFold(it.title, "Settings"):
+					m.scr = screenSettings
+					return m, nil
+				case strings.EqualFold(it.title, "Collections"):
+					m.scr = screenCollections
+					return m, m.maybePreviewSelectedCollection(m.collectionsList)
+				case strings.HasPrefix(it.title, "Run"):
+					m.scr = screenRunWizard
+					m.wizardStep = 1
+					m.toast = ""
+					return m, m.maybePreviewSelectedCollection(m.runColList)
+				default:
+					m.scr = screenPlaceholder
+					m.toast = it.title
+					return m, nil
+				}
+			}
+
+		case screenSettings:
+			switch key {
+			case "esc", "b":
+				m.scr = screenHome
+				return m, nil
+			case "i", "I":
+				root := m.cwd
+				if strings.TrimSpace(root) == "" {
+					root = m.workspaceRoot
+				}
+				if strings.TrimSpace(root) == "" {
+					m.toast = "Cannot init: unknown current directory"
+					return m, nil
+				}
+				return m, cmdInitWorkspaceHere(m.deps, root)
+			}
+
+		case screenCollections:
+			switch key {
+			case "esc", "b":
+				m.scr = screenHome
+				return m, nil
+			}
+
+		case screenRunWizard:
+			switch key {
+			case "esc", "b":
+				if m.running {
+					m.toast = "Run in progress..."
+					return m, nil
+				}
+				if m.wizardStep <= 1 {
+					m.scr = screenHome
+					m.wizardStep = 0
+					return m, nil
+				}
+				m.wizardStep--
+				return m, nil
+
+			case "enter":
+				if !m.workspaceFound {
+					m.toast = "Workspace not found"
+					return m, nil
+				}
+
+				switch m.wizardStep {
+				case 1:
+					ci, ok := m.runColList.SelectedItem().(collectionItem)
+					if !ok {
+						return m, nil
+					}
+					m.selectedCollectionPath = ci.ref.Path
+					m.wizardStep = 2
+					return m, nil
+
+				case 2:
+					ei, ok := m.runEnvList.SelectedItem().(envItem)
+					if !ok {
+						return m, nil
+					}
+					m.selectedEnvName = ei.ref.Name
+					m.wizardStep = 3
+					return m, nil
+
+				case 3:
+					if strings.TrimSpace(m.selectedCollectionPath) == "" || strings.TrimSpace(m.selectedEnvName) == "" {
+						m.toast = "Missing selection"
+						return m, nil
+					}
+
+					m.wizardStep = 4
+					m.running = true
+					m.toast = ""
+
+					ch, listenCmd := startRunAsync(
+						m.workspaceRoot,
+						m.selectedCollectionPath,
+						m.selectedEnvName,
+						m.log,
+						m.deps.Debug,
+					)
+					m.runCh = ch
+
+					return m, tea.Batch(
+						m.spin.Tick,
+						listenCmd,
+					)
+				}
+			}
+
+		case screenResults:
+			switch key {
+			case "esc", "b":
+				m.scr = screenHome
+				return m, nil
+			case "tab":
+				m.resultTab = (m.resultTab + 1) % 2
+				return m, nil
+			}
+		}
+	}
+
+	switch m.scr {
+
+	case screenHome:
+		var cmd tea.Cmd
+		m.menu, cmd = m.menu.Update(msg)
+		return m, cmd
+
+	case screenCollections:
+		var cmd tea.Cmd
+		m.collectionsList, cmd = m.collectionsList.Update(msg)
+		return m, tea.Batch(cmd, m.maybePreviewSelectedCollection(m.collectionsList))
+
+	case screenRunWizard:
+		if m.running {
+			var cmd tea.Cmd
+			m.spin, cmd = m.spin.Update(msg)
+			return m, cmd
+		}
+
+		if m.wizardStep == 1 {
+			var cmd tea.Cmd
+			m.runColList, cmd = m.runColList.Update(msg)
+			return m, tea.Batch(cmd, m.maybePreviewSelectedCollection(m.runColList))
+		}
+		if m.wizardStep == 2 {
+			var cmd tea.Cmd
+			m.runEnvList, cmd = m.runEnvList.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+
+	case screenResults:
+		var cmd tea.Cmd
+		m.resultsTable, cmd = m.resultsTable.Update(msg)
+		return m, cmd
+
+	default:
+		return m, nil
+	}
+}
+
+func (m *model) resize() {
+	if m.width <= 0 || m.height <= 0 {
+		return
+	}
+	m.menu.SetSize(m.width-4, m.height-10)
+
+	leftW := (m.width - 8) / 2
+	rightW := (m.width - 8) - leftW
+	listH := m.height - 10
+	if listH < 8 {
+		listH = 8
+	}
+	m.collectionsList.SetSize(leftW, listH)
+	m.runColList.SetSize(leftW, listH)
+	m.runEnvList.SetSize(leftW, listH)
+
+	m.resultsTable.SetWidth(leftW)
+	m.resultsTable.SetHeight(listH)
+	_ = rightW
+}
+
+func (m *model) maybePreviewSelectedCollection(l list.Model) tea.Cmd {
+	sel := l.SelectedItem()
+	ci, ok := sel.(collectionItem)
+	if !ok {
+		return nil
+	}
+	if strings.TrimSpace(ci.ref.Path) == "" {
+		return nil
+	}
+	if filepath.Clean(ci.ref.Path) == filepath.Clean(m.previewPath) && (m.previewErr == nil || m.previewText != "") {
+		return nil
+	}
+	return cmdPreviewCollection(ci.ref.Path)
+}
+
+func (m *model) buildResultsTable() {
+	cols := []table.Column{
+		{Title: "Name", Width: 24},
+		{Title: "Method", Width: 6},
+		{Title: "Status", Width: 6},
+		{Title: "ms", Width: 6},
+	}
+
+	rows := make([]table.Row, 0, len(m.runResult.Results))
+	for _, rr := range m.runResult.Results {
+		status := fmt.Sprintf("%d", rr.StatusCode)
+		if rr.Error != nil && rr.StatusCode == 0 {
+			status = "ERR"
+		}
+		rows = append(rows, table.Row{
+			clampString(rr.Name, 24),
+			string(rr.Method),
+			status,
+			fmt.Sprintf("%d", rr.LatencyMS),
+		})
+	}
+
+	t := table.New(
+		table.WithColumns(cols),
+		table.WithRows(rows),
+		table.WithFocused(true),
+	)
+	m.resultsTable = t
+	m.resize()
+}
+
+func (m model) View() string {
+	wrap := lipgloss.NewStyle().Padding(1, 2)
+
+	header := m.theme.Title.Render("Lynix") + "\n" +
+		m.theme.Subtitle.Render("TUI-first API tool (Go) — requests, checks, and performance") + "\n"
+
+	workspaceLine := m.workspaceBanner()
+
+	footer := ""
+	if strings.TrimSpace(m.toast) != "" {
+		footer = "\n" + m.theme.Help.Render(m.toast)
+	}
+
+	switch m.scr {
+
+	case screenHome:
+		help := m.theme.Help.Render("↑/↓ navigate • enter open • / search • q quit")
+		return wrap.Render(header + "\n" + workspaceLine + "\n\n" + m.theme.Card.Render(m.menu.View()) + "\n" + help + footer)
+
+	case screenSettings:
+		return wrap.Render(header + "\n" + workspaceLine + "\n\n" + m.viewSettings() + footer)
+
+	case screenCollections:
+		return wrap.Render(header + "\n" + workspaceLine + "\n\n" + m.viewCollections() + footer)
+
+	case screenRunWizard:
+		return wrap.Render(header + "\n" + workspaceLine + "\n\n" + m.viewRunWizard() + footer)
+
+	case screenResults:
+		return wrap.Render(header + "\n" + workspaceLine + "\n\n" + m.viewResults() + footer)
+
+	case screenPlaceholder:
+		card := m.theme.Card.Render(
+			fmt.Sprintf("%s\n\n%s\n\n%s",
+				m.theme.Title.Render("Placeholder"),
+				"This screen is not implemented yet.",
+				m.theme.Help.Render("esc/b back • q home"),
+			),
+		)
+		return wrap.Render(header + "\n" + workspaceLine + "\n\n" + card + footer)
+
+	default:
+		return wrap.Render(header + "\n" + "unknown state" + footer)
+	}
+}
+
+func (m model) workspaceBanner() string {
+	if m.workspaceFound {
+		return m.theme.Help.Render(fmt.Sprintf("Workspace: FOUND  %s", m.workspaceRoot))
+	}
+
+	msg := "Workspace: NOT FOUND"
+	if m.workspaceErr != nil {
+		msg += "  (" + userMessage(m.workspaceErr) + ")"
+	}
+	return m.theme.Card.Render("⚠ " + msg + "\n\nGo to Settings → press I to init workspace here (force).")
+}
+
+func (m model) viewSettings() string {
+	var b strings.Builder
+	b.WriteString(m.theme.Title.Render("Settings"))
+	b.WriteString("\n\n")
+	b.WriteString("Workspace init:\n")
+	b.WriteString("  - Press ")
+	b.WriteString(m.theme.Title.Render("I"))
+	b.WriteString(" to init workspace in current directory (force=true)\n\n")
+
+	if m.lastInitErr != nil {
+		b.WriteString("Last init error:\n  ")
+		b.WriteString(userMessage(m.lastInitErr))
+		b.WriteString("\n\n")
+	}
+
+	b.WriteString(m.theme.Help.Render("i init • esc/b back • q home"))
+	return m.theme.Card.Render(b.String())
+}
+
+func (m model) viewCollections() string {
+	left := m.theme.Card.Render(m.collectionsList.View())
+
+	right := ""
+	if m.previewErr != nil {
+		right = m.theme.Card.Render(
+			m.theme.Title.Render("Preview") + "\n\n" +
+				userMessage(m.previewErr) + "\n\n" +
+				m.theme.Help.Render("Fix the file, preview will update."),
+		)
+	} else if strings.TrimSpace(m.previewText) != "" {
+		right = m.theme.Card.Render(
+			m.theme.Title.Render("Preview") + "\n\n" + m.previewText,
+		)
+	} else {
+		right = m.theme.Card.Render(
+			m.theme.Title.Render("Preview") + "\n\n" + "(select a collection)",
+		)
+	}
+
+	help := m.theme.Help.Render("↑/↓ select • / filter • esc/b back • q home")
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right),
+		"\n"+help,
+	)
+}
+
+func (m model) viewRunWizard() string {
+	switch m.wizardStep {
+
+	case 1:
+		left := m.theme.Card.Render(m.runColList.View())
+		right := m.previewPanel()
+		help := m.theme.Help.Render("enter next • ↑/↓ select • / filter • esc/b back • q home")
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right),
+			"\n"+help,
+		)
+
+	case 2:
+		left := m.theme.Card.Render(m.runEnvList.View())
+		right := m.theme.Card.Render(
+			m.theme.Title.Render("Step 2/4 — Environment") + "\n\n" +
+				"Select the environment YAML (dev/stg/etc).\n",
+		)
+		help := m.theme.Help.Render("enter next • ↑/↓ select • / filter • esc/b back • q home")
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right),
+			"\n"+help,
+		)
+
+	case 3:
+		card := m.theme.Card.Render(
+			m.theme.Title.Render("Step 3/4 — Confirm") + "\n\n" +
+				fmt.Sprintf("Collection:\n  %s\n\nEnvironment:\n  %s\n\n", m.selectedCollectionPath, m.selectedEnvName) +
+				m.theme.Help.Render("enter run • esc/b back • q home"),
+		)
+		return card
+
+	case 4:
+		card := m.theme.Card.Render(
+			m.theme.Title.Render("Step 4/4 — Running") + "\n\n" +
+				m.spin.View() + " Executing collection...\n\n" +
+				m.theme.Help.Render("please wait"),
+		)
+		return card
+
+	default:
+		return m.theme.Card.Render("Wizard not started.")
+	}
+}
+
+func (m model) previewPanel() string {
+	if m.previewErr != nil {
+		return m.theme.Card.Render(
+			m.theme.Title.Render("Preview") + "\n\n" + userMessage(m.previewErr),
+		)
+	}
+	if strings.TrimSpace(m.previewText) == "" {
+		return m.theme.Card.Render(m.theme.Title.Render("Preview") + "\n\n(select a collection)")
+	}
+	return m.theme.Card.Render(m.theme.Title.Render("Preview") + "\n\n" + m.previewText)
+}
+
+func (m model) viewResults() string {
+	left := m.theme.Card.Render(m.resultsTable.View())
+
+	rightTitle := "Details"
+	if m.resultTab == 1 {
+		rightTitle = "Response"
+	}
+
+	rr := m.selectedResult()
+	rightBody := "(no selection)"
+	if rr != nil {
+		if m.resultTab == 0 {
+			rightBody = renderResultDetails(*rr)
+		} else {
+			rightBody = renderResultResponse(*rr)
+		}
+	}
+
+	right := m.theme.Card.Render(
+		m.theme.Title.Render("Result — "+rightTitle) + "\n\n" + rightBody,
+	)
+
+	help := m.theme.Help.Render("↑/↓ select • tab toggle • esc/b back • q home")
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right),
+		"\n"+help,
+	)
+}
+
+func (m model) selectedResult() *domain.RequestResult {
+	i := m.resultsTable.Cursor()
+	if i < 0 || i >= len(m.runResult.Results) {
+		return nil
+	}
+	return &m.runResult.Results[i]
+}
+
+var _ tea.Model = (*model)(nil)
+
+func (m model) validate() error {
+	if m.deps.WorkspaceLocator == nil {
+		return errors.New("WorkspaceLocator is nil")
+	}
+	return nil
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/ui/tui/deps.go
+package tui
+
+import (
+	"log/slog"
+
+	"github.com/aalvaropc/lynix/internal/ports"
+)
+
+type Deps struct {
+	WorkspaceLocator     ports.WorkspaceLocator
+	WorkspaceInitializer ports.WorkspaceInitializer
+
+	Logger *slog.Logger
+	Debug  bool
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/ui/tui/commands.go
+package tui
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/infra/httpclient"
+	"github.com/aalvaropc/lynix/internal/infra/httprunner"
+	"github.com/aalvaropc/lynix/internal/infra/runstore"
+	"github.com/aalvaropc/lynix/internal/infra/workspacefinder"
+	"github.com/aalvaropc/lynix/internal/infra/yamlcollection"
+	"github.com/aalvaropc/lynix/internal/infra/yamlenv"
+	"github.com/aalvaropc/lynix/internal/usecase"
+)
+
+func cmdRefreshWorkspace(deps Deps) tea.Cmd {
+	return func() tea.Msg {
+		wd, err := os.Getwd()
+		if err != nil {
+			return workspaceRefreshedMsg{cwd: "", found: false, err: fmt.Errorf("getwd: %w", err)}
+		}
+		if deps.WorkspaceLocator == nil {
+			return workspaceRefreshedMsg{cwd: wd, found: false, err: errors.New("WorkspaceLocator is nil")}
+		}
+
+		root, findErr := deps.WorkspaceLocator.FindRoot(wd)
+		if findErr != nil {
+			return workspaceRefreshedMsg{cwd: wd, found: false, err: findErr}
+		}
+
+		return workspaceRefreshedMsg{cwd: wd, found: true, root: root, err: nil}
+	}
+}
+
+func cmdInitWorkspaceHere(deps Deps, root string) tea.Cmd {
+	return func() tea.Msg {
+		if deps.WorkspaceInitializer == nil {
+			return initWorkspaceDoneMsg{root: root, err: errors.New("WorkspaceInitializer is nil")}
+		}
+
+		err := deps.WorkspaceInitializer.Init(domain.WorkspaceSpec{Root: root}, true)
+		return initWorkspaceDoneMsg{root: root, err: err}
+	}
+}
+
+func cmdLoadCollections(root string) tea.Cmd {
+	return func() tea.Msg {
+		cfg, err := workspacefinder.LoadConfig(root)
+		if err != nil {
+			return collectionsLoadedMsg{root: root, err: err}
+		}
+
+		loader := yamlcollection.NewLoader(
+			yamlcollection.WithCollectionsDir(cfg.Paths.CollectionsDir),
+		)
+
+		refs, err := loader.ListCollections(root)
+		return collectionsLoadedMsg{root: root, refs: refs, err: err}
+	}
+}
+
+func cmdLoadEnvironments(root string) tea.Cmd {
+	return func() tea.Msg {
+		cfg, err := workspacefinder.LoadConfig(root)
+		if err != nil {
+			return envsLoadedMsg{root: root, err: err}
+		}
+
+		loader := yamlenv.NewLoader(
+			root,
+			yamlenv.WithEnvDir(cfg.Paths.EnvironmentsDir),
+		)
+
+		refs, err := loader.ListEnvironments(root)
+		return envsLoadedMsg{root: root, refs: refs, err: err}
+	}
+}
+
+func cmdPreviewCollection(path string) tea.Cmd {
+	return func() tea.Msg {
+		p := filepath.Clean(path)
+
+		loader := yamlcollection.NewLoader()
+		col, err := loader.LoadCollection(p)
+		if err != nil {
+			return collectionPreviewMsg{path: p, preview: "", err: err}
+		}
+
+		var b strings.Builder
+		b.WriteString("Collection: ")
+		b.WriteString(col.Name)
+		b.WriteString("\n\n")
+
+		if len(col.Vars) > 0 {
+			b.WriteString("Vars:\n")
+			for k, v := range col.Vars {
+				b.WriteString("  - ")
+				b.WriteString(k)
+				b.WriteString(" = ")
+				b.WriteString(v)
+				b.WriteString("\n")
+			}
+			b.WriteString("\n")
+		}
+
+		b.WriteString("Requests:\n")
+		for _, r := range col.Requests {
+			b.WriteString("  - ")
+			b.WriteString(string(r.Method))
+			b.WriteString("  ")
+			b.WriteString(r.Name)
+			b.WriteString("\n    ")
+			b.WriteString(r.URL)
+			b.WriteString("\n")
+		}
+
+		return collectionPreviewMsg{path: p, preview: b.String(), err: nil}
+	}
+}
+
+func listenRunner(ch <-chan runnerDoneMsg) tea.Cmd {
+	return func() tea.Msg {
+		msg, ok := <-ch
+		if !ok {
+			return runnerDoneMsg{err: errors.New("runner channel closed")}
+		}
+		return msg
+	}
+}
+
+func startRunAsync(
+	workspaceRoot, collectionPath, envName string,
+	log *slog.Logger,
+	debug bool,
+) (chan runnerDoneMsg, tea.Cmd) {
+	ch := make(chan runnerDoneMsg, 1)
+
+	if log == nil {
+		log = slog.Default()
+	}
+
+	go func() {
+		defer close(ch)
+
+		log.Info("run.start",
+			"workspace", workspaceRoot,
+			"collection_path", collectionPath,
+			"env", envName,
+			"debug", debug,
+		)
+
+		cfg, err := workspacefinder.LoadConfig(workspaceRoot)
+		if err != nil {
+			log.Error("run.load_config.failed", "err", err)
+			ch <- runnerDoneMsg{err: err}
+			return
+		}
+
+		colLoader := yamlcollection.NewLoader(
+			yamlcollection.WithCollectionsDir(cfg.Paths.CollectionsDir),
+		)
+		envLoader := yamlenv.NewLoader(
+			workspaceRoot,
+			yamlenv.WithEnvDir(cfg.Paths.EnvironmentsDir),
+		)
+
+		client := httpclient.New(httpclient.DefaultConfig())
+		runner := httprunner.New(client)
+		store := runstore.NewJSONStore(workspaceRoot, cfg, runstore.WithIndex(true))
+
+		uc := usecase.NewRunCollection(colLoader, envLoader, runner, store)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		run, id, execErr := uc.Execute(ctx, collectionPath, envName)
+
+		if execErr != nil {
+			log.Error("run.failed", "err", execErr, "saved_id", id)
+		} else {
+			log.Info("run.ok", "saved_id", id)
+		}
+
+		for _, rr := range run.Results {
+			if rr.Error != nil {
+				log.Warn("request.error",
+					"name", rr.Name,
+					"method", string(rr.Method),
+					"url", rr.URL,
+					"kind", string(rr.Error.Kind),
+					"message", rr.Error.Message,
+					"status", rr.StatusCode,
+					"latency_ms", rr.LatencyMS,
+				)
+			} else if debug {
+				log.Debug("request.ok",
+					"name", rr.Name,
+					"method", string(rr.Method),
+					"url", rr.URL,
+					"status", rr.StatusCode,
+					"latency_ms", rr.LatencyMS,
+					"truncated", rr.Response.Truncated,
+					"body_bytes", len(rr.Response.Body),
+				)
+			}
+		}
+
+		ch <- runnerDoneMsg{run: run, id: id, err: execErr}
+	}()
+
+	return ch, listenRunner(ch)
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/ui/tui/view_helper.go
+package tui
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+)
+
+func clampString(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	if utf8.RuneCountInString(s) <= max {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+
+	n := 0
+	for _, r := range s {
+		if n >= max {
+			break
+		}
+		b.WriteRune(r)
+		n++
+	}
+	return b.String() + "…"
+}
+func prettyBody(body []byte) string {
+	if len(body) == 0 {
+		return "(empty)"
+	}
+	var js any
+	if err := json.Unmarshal(body, &js); err == nil {
+		b, _ := json.MarshalIndent(js, "", "  ")
+		return string(b)
+	}
+	return string(bytes.TrimSpace(body))
+}
+
+func renderResultDetails(rr domain.RequestResult) string {
+	var b strings.Builder
+
+	if rr.Error != nil {
+		b.WriteString("Error:\n")
+		b.WriteString("  - kind: ")
+		b.WriteString(string(rr.Error.Kind))
+		b.WriteString("\n  - msg: ")
+		b.WriteString(rr.Error.Message)
+		b.WriteString("\n\n")
+	}
+
+	b.WriteString(fmt.Sprintf("Status: %d\nLatency: %dms\n\n", rr.StatusCode, rr.LatencyMS))
+
+	if len(rr.Assertions) > 0 {
+		b.WriteString("Assertions:\n")
+		for _, a := range rr.Assertions {
+			status := "FAIL"
+			if a.Passed {
+				status = "PASS"
+			}
+			b.WriteString("  - ")
+			b.WriteString(a.Name)
+			b.WriteString(" [")
+			b.WriteString(status)
+			b.WriteString("] ")
+			b.WriteString(a.Message)
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
+	if len(rr.Extracts) > 0 {
+		b.WriteString("Extracts:\n")
+		for _, e := range rr.Extracts {
+			status := "FAIL"
+			if e.Success {
+				status = "OK"
+			}
+			b.WriteString("  - ")
+			b.WriteString(e.Name)
+			b.WriteString(" [")
+			b.WriteString(status)
+			b.WriteString("] ")
+			b.WriteString(e.Message)
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
+	if len(rr.Extracted) > 0 {
+		b.WriteString("Extracted Vars:\n")
+		for k, v := range rr.Extracted {
+			b.WriteString("  - ")
+			b.WriteString(k)
+			b.WriteString(" = ")
+			b.WriteString(v)
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+func renderResultResponse(rr domain.RequestResult) string {
+	var b strings.Builder
+
+	b.WriteString("Headers:\n")
+	if len(rr.Response.Headers) == 0 {
+		b.WriteString("  (none)\n")
+	} else {
+		for k, vals := range rr.Response.Headers {
+			b.WriteString("  - ")
+			b.WriteString(k)
+			b.WriteString(": ")
+			b.WriteString(strings.Join(vals, ", "))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\nBody:\n")
+	body := prettyBody(rr.Response.Body)
+	if rr.Response.Truncated {
+		body += "\n\n(truncated)"
+	}
+	b.WriteString(body)
+	b.WriteString("\n")
+
+	return b.String()
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/ui/tui/messages.go
+package tui
+
+import "github.com/aalvaropc/lynix/internal/domain"
+
+type workspaceRefreshedMsg struct {
+	cwd   string
+	found bool
+	root  string
+	err   error
+}
+
+type initWorkspaceDoneMsg struct {
+	root string
+	err  error
+}
+
+type collectionsLoadedMsg struct {
+	root string
+	refs []domain.CollectionRef
+	err  error
+}
+
+type envsLoadedMsg struct {
+	root string
+	refs []domain.EnvironmentRef
+	err  error
+}
+
+type collectionPreviewMsg struct {
+	path    string
+	preview string
+	err     error
+}
+
+type runnerDoneMsg struct {
+	run domain.RunResult
+	id  string
+	err error
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/buildinfo/buildinfo.go
+package buildinfo
+
+import "fmt"
+
+var (
+	Version = "dev"
+	Commit  = "none"
+	Date    = "unknown"
+)
+
+func String() string {
+	return fmt.Sprintf("lynix %s (commit=%s, date=%s)", Version, Commit, Date)
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/usecase/run_collection.go
+package usecase
+
+import (
+	"context"
+	"time"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/ports"
+	ucassert "github.com/aalvaropc/lynix/internal/usecase/assert"
+	ucextract "github.com/aalvaropc/lynix/internal/usecase/extract"
+)
+
+type RunCollection struct {
+	collections ports.CollectionLoader
+	envs        ports.EnvironmentLoader
+	runner      ports.RequestRunner
+	store       ports.ArtifactStore 
+}
+
+func NewRunCollection(
+	cl ports.CollectionLoader,
+	el ports.EnvironmentLoader,
+	rr ports.RequestRunner,
+	store ports.ArtifactStore,
+) *RunCollection {
+	return &RunCollection{
+		collections: cl,
+		envs:        el,
+		runner:      rr,
+		store:       store,
+	}
+}
+
+
+
+func (uc *RunCollection) Execute(
+	ctx context.Context,
+	collectionPath string,
+	envNameOrPath string,
+) (domain.RunResult, string, error) {
+	col, err := uc.collections.LoadCollection(collectionPath)
+	if err != nil {
+		return domain.RunResult{}, "", err
+	}
+
+	env, err := uc.envs.LoadEnvironment(envNameOrPath)
+	if err != nil {
+		return domain.RunResult{}, "", err
+	}
+
+	
+	vars := mergeVars(col.Vars, env.Vars)
+
+	run := domain.RunResult{
+		CollectionName:  col.Name,
+		CollectionPath:  collectionPath,
+		EnvironmentName: env.Name,
+		StartedAt:       time.Now(),
+		Results:         make([]domain.RequestResult, 0, len(col.Requests)),
+	}
+
+	for _, req := range col.Requests {
+		rr, runErr := uc.runner.Run(ctx, req, vars)
+		if runErr != nil {
+			
+			run.Results = append(run.Results, domain.RequestResult{
+				Name:       req.Name,
+				Method:     req.Method,
+				URL:        req.URL,
+				Assertions: []domain.AssertionResult{},
+				Extracts:   []domain.ExtractResult{},
+				Extracted:  domain.Vars{},
+				Response: domain.ResponseSnapshot{
+					Headers: map[string][]string{},
+				},
+				Error: domain.NewRunError(runErr),
+			})
+			continue
+		}
+
+		
+		rr.Assertions = ucassert.Evaluate(req.Assert, rr.StatusCode, rr.LatencyMS, rr.Response.Body)
+
+		extracted, extractResults := ucextract.Apply(rr.Response.Body, req.Extract)
+		rr.Extracts = extractResults
+		rr.Extracted = extracted
+
+		
+		for k, v := range extracted {
+			vars[k] = v
+		}
+
+		run.Results = append(run.Results, rr)
+	}
+
+	run.EndedAt = time.Now()
+
+	
+	if uc.store == nil {
+		return run, "", nil
+	}
+
+	id, err := uc.store.SaveRun(run)
+	if err != nil {
+		
+		return run, "", err
+	}
+
+	return run, id, nil
+}
+
+func mergeVars(collectionVars domain.Vars, envVars domain.Vars) domain.Vars {
+	out := domain.Vars{}
+
+	
+	for k, v := range collectionVars {
+		out[k] = v
+	}
+	
+	for k, v := range envVars {
+		out[k] = v
+	}
+	return out
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/usecase/run_collection_test.go
+package usecase
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/infra/httpclient"
+	"github.com/aalvaropc/lynix/internal/infra/httprunner"
+	"github.com/aalvaropc/lynix/internal/ports"
+)
+
+type fakeCollectionLoader struct {
+	col domain.Collection
+}
+
+func (f fakeCollectionLoader) LoadCollection(_ string) (domain.Collection, error) {
+	return f.col, nil
+}
+func (f fakeCollectionLoader) ListCollections(_ string) ([]domain.CollectionRef, error) {
+	return nil, nil
+}
+
+type fakeEnvLoader struct {
+	env domain.Environment
+}
+
+func (f fakeEnvLoader) LoadEnvironment(_ string) (domain.Environment, error) {
+	return f.env, nil
+}
+
+type fakeStore struct {
+	saved bool
+	last  domain.RunArtifact
+}
+
+func (s *fakeStore) SaveRun(run domain.RunArtifact) (string, error) {
+	s.saved = true
+	s.last = run
+	return "run-123", nil
+}
+
+func TestRunCollection_ExtractsAndChainsVars(t *testing.T) {
+	token := "abc123"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"token":"` + token + `"}`))
+		case "/users":
+			if r.Header.Get("Authorization") != "Bearer "+token {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"ok":true}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	col := domain.Collection{
+		Name: "Demo",
+		Vars: domain.Vars{
+			"base_url": srv.URL,
+		},
+		Requests: []domain.RequestSpec{
+			{
+				Name:   "auth.token",
+				Method: domain.MethodGet,
+				URL:    "{{base_url}}/auth",
+				Headers: domain.Headers{
+					"Accept": "application/json",
+				},
+				Body: domain.BodySpec{Type: domain.BodyNone},
+				Assert: domain.AssertionsSpec{
+					Status: ptrInt(200),
+				},
+				Extract: domain.ExtractSpec{
+					"auth.token": "$.token",
+				},
+			},
+			{
+				Name:   "users.list",
+				Method: domain.MethodGet,
+				URL:    "{{base_url}}/users",
+				Headers: domain.Headers{
+					"Authorization": "Bearer {{auth.token}}",
+				},
+				Body: domain.BodySpec{Type: domain.BodyNone},
+				Assert: domain.AssertionsSpec{
+					Status: ptrInt(200),
+				},
+			},
+		},
+	}
+
+	env := domain.Environment{
+		Name: "dev",
+		Vars: domain.Vars{}, 
+	}
+
+	cfg := httpclient.DefaultConfig()
+	cfg.Timeout = 2 * time.Second
+	r := httprunner.New(httpclient.New(cfg))
+
+	st := &fakeStore{}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{env: env}, r, st)
+
+	out, id, err := uc.Execute(context.Background(), "demo.yaml", "dev")
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if id != "run-123" {
+		t.Fatalf("expected run id, got=%q", id)
+	}
+	if !st.saved {
+		t.Fatalf("expected run saved")
+	}
+	if st.last.CollectionName != "Demo" {
+		t.Fatalf("expected saved collection name Demo, got=%q", st.last.CollectionName)
+	}
+
+	if len(out.Results) != 2 {
+		t.Fatalf("expected 2 results, got=%d", len(out.Results))
+	}
+
+	first := out.Results[0]
+	if first.Error != nil {
+		t.Fatalf("expected no error in first request, got=%+v", first.Error)
+	}
+	if first.Extracted["auth.token"] != token {
+		t.Fatalf("expected extracted auth.token=%s, got=%q", token, first.Extracted["auth.token"])
+	}
+	if len(first.Extracts) != 1 || !first.Extracts[0].Success {
+		t.Fatalf("expected extract success, got=%+v", first.Extracts)
+	}
+
+	second := out.Results[1]
+	if second.StatusCode != 200 {
+		t.Fatalf("expected second status=200, got=%d", second.StatusCode)
+	}
+	if second.Error != nil {
+		t.Fatalf("expected no error in second request, got=%+v", second.Error)
+	}
+	if len(second.Assertions) != 1 || !second.Assertions[0].Passed {
+		t.Fatalf("expected assertions pass, got=%+v", second.Assertions)
+	}
+}
+
+func TestRunCollection_ExtractFail_AllowsNextRequestToFailMissingVar(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"no_token":true}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	col := domain.Collection{
+		Name: "Demo",
+		Vars: domain.Vars{"base_url": srv.URL},
+		Requests: []domain.RequestSpec{
+			{
+				Name:   "auth.token",
+				Method: domain.MethodGet,
+				URL:    "{{base_url}}/auth",
+				Body:   domain.BodySpec{Type: domain.BodyNone},
+				Extract: domain.ExtractSpec{
+					"auth.token": "$.token",
+				},
+			},
+			{
+				Name:   "users.list",
+				Method: domain.MethodGet,
+				URL:    "{{base_url}}/users",
+				Headers: domain.Headers{
+					"Authorization": "Bearer {{auth.token}}", 
+				},
+				Body: domain.BodySpec{Type: domain.BodyNone},
+			},
+		},
+	}
+
+	env := domain.Environment{Name: "dev", Vars: domain.Vars{}}
+
+	cfg := httpclient.DefaultConfig()
+	cfg.Timeout = 2 * time.Second
+	r := httprunner.New(httpclient.New(cfg))
+
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{env: env}, r, nil)
+
+	out, _, err := uc.Execute(context.Background(), "demo.yaml", "dev")
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	if len(out.Results) != 2 {
+		t.Fatalf("expected 2 results, got=%d", len(out.Results))
+	}
+
+	
+	if len(out.Results[0].Extracts) != 1 || out.Results[0].Extracts[0].Success {
+		t.Fatalf("expected extract failure, got=%+v", out.Results[0].Extracts)
+	}
+
+	
+	if out.Results[1].Error == nil {
+		t.Fatalf("expected error in second request")
+	}
+}
+
+func ptrInt(v int) *int { return &v }
+
+
+var _ ports.CollectionLoader = (*fakeCollectionLoader)(nil)
+var _ ports.EnvironmentLoader = (*fakeEnvLoader)(nil)
+var _ ports.ArtifactStore = (*fakeStore)(nil)
+
+# FILE: /home/aalvaropc/github/lynix/internal/usecase/init_workspace.go
+package usecase
+
+import (
+	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/ports"
+)
+
+type InitWorkspace struct {
+	initializer ports.WorkspaceInitializer
+}
+
+func NewInitWorkspace(initializer ports.WorkspaceInitializer) *InitWorkspace {
+	return &InitWorkspace{initializer: initializer}
+}
+
+func (uc *InitWorkspace) Execute(root string, force bool) error {
+	return uc.initializer.Init(domain.WorkspaceSpec{Root: root}, force)
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/usecase/extract/extract.go
+package extract
+
+import (
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/PaesslerAG/jsonpath"
+	"github.com/aalvaropc/lynix/internal/domain"
+)
+
+
+
+
+
+
+
+func Apply(body []byte, rules domain.ExtractSpec) (domain.Vars, []domain.ExtractResult) {
+	if len(rules) == 0 {
+		return domain.Vars{}, []domain.ExtractResult{}
+	}
+
+	keys := make([]string, 0, len(rules))
+	for k := range rules {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys) 
+
+	doc, err := parseJSON(body)
+	if err != nil {
+		out := make([]domain.ExtractResult, 0, len(keys))
+		for _, name := range keys {
+			expr := strings.TrimSpace(rules[name])
+			out = append(out, domain.ExtractResult{
+				Name:    name,
+				Success: false,
+				Message: fmt.Sprintf("extract %q (%s): response body is not valid JSON", name, expr),
+			})
+		}
+		return domain.Vars{}, out
+	}
+
+	extracted := domain.Vars{}
+	results := make([]domain.ExtractResult, 0, len(keys))
+
+	for _, name := range keys {
+		expr := strings.TrimSpace(rules[name])
+		if expr == "" {
+			results = append(results, domain.ExtractResult{
+				Name:    name,
+				Success: false,
+				Message: fmt.Sprintf("extract %q: empty jsonpath expression", name),
+			})
+			continue
+		}
+
+		val, getErr := jsonpath.Get(expr, doc)
+		if getErr != nil {
+			results = append(results, domain.ExtractResult{
+				Name:    name,
+				Success: false,
+				Message: fmt.Sprintf("extract %q (%s): jsonpath error: %v", name, expr, getErr),
+			})
+			continue
+		}
+
+		if isEmptyValue(val) {
+			results = append(results, domain.ExtractResult{
+				Name:    name,
+				Success: false,
+				Message: fmt.Sprintf("extract %q (%s): no value found", name, expr),
+			})
+			continue
+		}
+
+		s, convErr := toString(val)
+		if convErr != nil {
+			results = append(results, domain.ExtractResult{
+				Name:    name,
+				Success: false,
+				Message: fmt.Sprintf("extract %q (%s): cannot convert value to string: %v", name, expr, convErr),
+			})
+			continue
+		}
+
+		extracted[name] = s
+		results = append(results, domain.ExtractResult{
+			Name:    name,
+			Success: true,
+			Message: fmt.Sprintf("extracted %q", name),
+		})
+	}
+
+	return extracted, results
+}
+
+func parseJSON(body []byte) (any, error) {
+	var doc any
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+func isEmptyValue(v any) bool {
+	if v == nil {
+		return true
+	}
+	switch t := v.(type) {
+	case string:
+		return t == ""
+	case []any:
+		return len(t) == 0
+	case map[string]any:
+		return len(t) == 0
+	default:
+		return false
+	}
+}
+
+func toString(v any) (string, error) {
+	
+	if arr, ok := v.([]any); ok {
+		if len(arr) == 0 {
+			return "", fmt.Errorf("empty array")
+		}
+		if len(arr) == 1 {
+			return toString(arr[0])
+		}
+		b, err := json.Marshal(arr)
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	}
+
+	switch t := v.(type) {
+	case string:
+		return t, nil
+	case float64, bool, int, int64, uint64:
+		return fmt.Sprint(t), nil
+	case map[string]any:
+		b, err := json.Marshal(t)
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	default:
+		
+		return fmt.Sprint(t), nil
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/usecase/extract/extract_test.go
+package extract
+
+import (
+	"testing"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+)
+
+func TestApply_Success(t *testing.T) {
+	body := []byte(`{"token":"abc123","user":{"id":7}}`)
+	rules := domain.ExtractSpec{
+		"auth.token": "$.token",
+		"user.id":    "$.user.id",
+	}
+
+	vars, res := Apply(body, rules)
+
+	if vars["auth.token"] != "abc123" {
+		t.Fatalf("expected token=abc123, got=%q", vars["auth.token"])
+	}
+	if vars["user.id"] != "7" {
+		t.Fatalf("expected user.id=7, got=%q", vars["user.id"])
+	}
+
+	if len(res) != 2 {
+		t.Fatalf("expected 2 results, got=%d", len(res))
+	}
+	for _, r := range res {
+		if !r.Success {
+			t.Fatalf("expected all success, got fail: %+v", r)
+		}
+	}
+}
+
+func TestApply_NonJSONBody_FailsAll(t *testing.T) {
+	body := []byte("hello")
+	rules := domain.ExtractSpec{
+		"auth.token": "$.token",
+	}
+
+	vars, res := Apply(body, rules)
+	if len(vars) != 0 {
+		t.Fatalf("expected no vars, got=%v", vars)
+	}
+	if len(res) != 1 {
+		t.Fatalf("expected 1 result, got=%d", len(res))
+	}
+	if res[0].Success {
+		t.Fatalf("expected failure")
+	}
+}
+
+func TestApply_InvalidJSONPath_FailsRule(t *testing.T) {
+	body := []byte(`{"token":"abc"}`)
+	rules := domain.ExtractSpec{
+		"auth.token": "$.token[",
+	}
+
+	vars, res := Apply(body, rules)
+
+	if len(vars) != 0 {
+		t.Fatalf("expected no vars, got=%v", vars)
+	}
+	if len(res) != 1 {
+		t.Fatalf("expected 1 result, got=%d", len(res))
+	}
+	if res[0].Success {
+		t.Fatalf("expected failure")
+	}
+}
+
+func TestApply_MissingValue_FailsRule(t *testing.T) {
+	body := []byte(`{"x":1}`)
+	rules := domain.ExtractSpec{
+		"auth.token": "$.token",
+	}
+
+	vars, res := Apply(body, rules)
+
+	if len(vars) != 0 {
+		t.Fatalf("expected no vars, got=%v", vars)
+	}
+	if len(res) != 1 {
+		t.Fatalf("expected 1 result, got=%d", len(res))
+	}
+	if res[0].Success {
+		t.Fatalf("expected failure")
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/usecase/assert/assert.go
+package assert
+
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/PaesslerAG/jsonpath"
+	"github.com/aalvaropc/lynix/internal/domain"
+)
+
+func Status(expected int, got int) domain.AssertionResult {
+	if got == expected {
+		return domain.AssertionResult{
+			Name:    "status",
+			Passed:  true,
+			Message: fmt.Sprintf("status %d", got),
+		}
+	}
+
+	return domain.AssertionResult{
+		Name:    "status",
+		Passed:  false,
+		Message: fmt.Sprintf("expected status %d, got %d", expected, got),
+	}
+}
+
+func MaxLatency(maxMs int, latencyMs int64) domain.AssertionResult {
+	if latencyMs <= int64(maxMs) {
+		return domain.AssertionResult{
+			Name:    "max_ms",
+			Passed:  true,
+			Message: fmt.Sprintf("latency %dms <= %dms", latencyMs, maxMs),
+		}
+	}
+
+	return domain.AssertionResult{
+		Name:    "max_ms",
+		Passed:  false,
+		Message: fmt.Sprintf("expected latency <= %dms, got %dms", maxMs, latencyMs),
+	}
+}
+
+
+
+func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []byte) []domain.AssertionResult {
+	var out []domain.AssertionResult
+
+	if spec.Status != nil {
+		out = append(out, Status(*spec.Status, status))
+	}
+	if spec.MaxLatencyMS != nil {
+		out = append(out, MaxLatency(*spec.MaxLatencyMS, latencyMs))
+	}
+
+	if len(spec.JSONPath) == 0 {
+		return out
+	}
+
+	doc, err := parseJSON(body)
+	if err != nil {
+		for expr := range spec.JSONPath {
+			out = append(out, domain.AssertionResult{
+				Name:    "jsonpath.exists",
+				Passed:  false,
+				Message: fmt.Sprintf("jsonpath %q: response body is not valid JSON", expr),
+			})
+		}
+		return out
+	}
+
+	for expr, a := range spec.JSONPath {
+		if !a.Exists {
+			continue
+		}
+		out = append(out, assertJSONPathExists(expr, doc))
+	}
+
+	return out
+}
+
+func assertJSONPathExists(expr string, doc any) domain.AssertionResult {
+	val, err := jsonpath.Get(expr, doc)
+	if err != nil {
+		return domain.AssertionResult{
+			Name:    "jsonpath.exists",
+			Passed:  false,
+			Message: fmt.Sprintf("invalid jsonpath %q: %v", expr, err),
+		}
+	}
+
+	if isEmptyJSONPathValue(val) {
+		return domain.AssertionResult{
+			Name:    "jsonpath.exists",
+			Passed:  false,
+			Message: fmt.Sprintf("jsonpath %q: expected value to exist, got empty", expr),
+		}
+	}
+
+	return domain.AssertionResult{
+		Name:    "jsonpath.exists",
+		Passed:  true,
+		Message: fmt.Sprintf("jsonpath %q exists", expr),
+	}
+}
+
+func parseJSON(body []byte) (any, error) {
+	var doc any
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+func isEmptyJSONPathValue(v any) bool {
+	if v == nil {
+		return true
+	}
+
+	switch t := v.(type) {
+	case string:
+		return t == ""
+	case []any:
+		return len(t) == 0
+	case map[string]any:
+		return len(t) == 0
+	default:
+		return false
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/usecase/assert/assert_test.go
+package assert
+
+import (
+	"testing"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+)
+
+func TestStatus_FailMessage(t *testing.T) {
+	r := Status(200, 500)
+	if r.Passed {
+		t.Fatalf("expected fail")
+	}
+	if r.Message != "expected status 200, got 500" {
+		t.Fatalf("unexpected message: %q", r.Message)
+	}
+}
+
+func TestMaxLatency_FailMessage(t *testing.T) {
+	r := MaxLatency(100, 250)
+	if r.Passed {
+		t.Fatalf("expected fail")
+	}
+	if r.Message != "expected latency <= 100ms, got 250ms" {
+		t.Fatalf("unexpected message: %q", r.Message)
+	}
+}
+
+func TestEvaluate_JSONPathExists_True(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.data.id": {Exists: true},
+		},
+	}
+
+	body := []byte(`{"data":{"id":123}}`)
+	out := Evaluate(spec, 200, 10, body)
+
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got=%d", len(out))
+	}
+	if !out[0].Passed {
+		t.Fatalf("expected pass, got fail: %s", out[0].Message)
+	}
+}
+
+func TestEvaluate_JSONPathExists_False(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.data.missing": {Exists: true},
+		},
+	}
+
+	body := []byte(`{"data":{"id":123}}`)
+	out := Evaluate(spec, 200, 10, body)
+
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got=%d", len(out))
+	}
+	if out[0].Passed {
+		t.Fatalf("expected fail")
+	}
+}
+
+func TestEvaluate_JSONPath_NonJSONBody(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.data.id": {Exists: true},
+		},
+	}
+
+	out := Evaluate(spec, 200, 10, []byte("hello"))
+
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got=%d", len(out))
+	}
+	if out[0].Passed {
+		t.Fatalf("expected fail")
+	}
+}
+
+func TestEvaluate_JSONPath_InvalidExpr(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.data[": {Exists: true},
+		},
+	}
+
+	body := []byte(`{"data":{"id":123}}`)
+	out := Evaluate(spec, 200, 10, body)
+
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got=%d", len(out))
+	}
+	if out[0].Passed {
+		t.Fatalf("expected fail")
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/cli/collections.go
+package cli
+
+import (
+	"fmt"
+	"path/filepath"
+
+	"github.com/spf13/cobra"
+)
+
+func collectionsCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "collections",
+		Short: "Manage collections in a workspace",
+	}
+
+	c.AddCommand(collectionsListCmd())
+	return c
+}
+
+func collectionsListCmd() *cobra.Command {
+	var workspace string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List collections",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			ws, err := loadWorkspace(workspace)
+			if err != nil {
+				return err
+			}
+
+			refs, err := ws.collections.ListCollections(ws.root)
+			if err != nil {
+				return err
+			}
+
+			if len(refs) == 0 {
+				fmt.Println("(no collections found)")
+				return nil
+			}
+
+			fmt.Printf("Workspace: %s\n\n", ws.root)
+			for _, r := range refs {
+				rel, _ := filepath.Rel(ws.root, r.Path)
+				fmt.Printf("- %s  (%s)\n", r.Name, rel)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&workspace, "workspace", "w", "", "Workspace root (optional; autodetected if omitted)")
+	return cmd
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/cli/workspace.go
+package cli
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/infra/httpclient"
+	"github.com/aalvaropc/lynix/internal/infra/httprunner"
+	"github.com/aalvaropc/lynix/internal/infra/runstore"
+	"github.com/aalvaropc/lynix/internal/infra/workspacefinder"
+	"github.com/aalvaropc/lynix/internal/infra/yamlcollection"
+	"github.com/aalvaropc/lynix/internal/infra/yamlenv"
+	"github.com/aalvaropc/lynix/internal/ports"
+)
+
+type workspaceCtx struct {
+	root string
+	cfg  domain.Config
+
+	collections ports.CollectionLoader
+
+	envs       ports.EnvironmentLoader
+	envCatalog ports.EnvironmentCatalog
+
+	runner ports.RequestRunner
+	store  ports.ArtifactStore
+}
+
+func loadWorkspace(workspaceFlag string) (*workspaceCtx, error) {
+	root, err := resolveWorkspaceRoot(workspaceFlag)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := workspacefinder.LoadConfig(root)
+	if err != nil {
+		return nil, err
+	}
+
+	colLoader := yamlcollection.NewLoader(
+		yamlcollection.WithCollectionsDir(cfg.Paths.CollectionsDir),
+	)
+
+	envLoader := yamlenv.NewLoader(
+		root,
+		yamlenv.WithEnvDir(cfg.Paths.EnvironmentsDir),
+	)
+
+	client := httpclient.New(httpclient.DefaultConfig())
+	runner := httprunner.New(client)
+
+	store := runstore.NewJSONStore(root, cfg, runstore.WithIndex(true))
+
+	return &workspaceCtx{
+		root:        root,
+		cfg:         cfg,
+		collections: colLoader,
+		envs:        envLoader,
+		envCatalog:  envLoader,
+		runner:      runner,
+		store:       store,
+	}, nil
+}
+
+func resolveWorkspaceRoot(workspaceFlag string) (string, error) {
+	w := strings.TrimSpace(workspaceFlag)
+	if w != "" {
+		abs, err := filepath.Abs(w)
+		if err != nil {
+			return "", fmt.Errorf("invalid workspace path: %w", err)
+		}
+		return abs, nil
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("get working directory: %w", err)
+	}
+
+	locator := workspacefinder.NewFinder()
+	root, err := locator.FindRoot(wd)
+	if err != nil {
+		return "", fmt.Errorf("workspace not found from %q (tip: run `lynix init`): %w", wd, err)
+	}
+	return root, nil
+}
+
+func resolveCollectionPath(ws *workspaceCtx, arg string) (string, error) {
+	in := strings.TrimSpace(arg)
+	if in == "" {
+		return "", fmt.Errorf("collection is required (use --collection or -c)")
+	}
+
+	
+	if looksLikePath(in) {
+		p := in
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(ws.root, p)
+		}
+		return filepath.Clean(p), nil
+	}
+
+	collectionsDir := filepath.Join(ws.root, ws.cfg.Paths.CollectionsDir)
+
+	
+	if hasYAMLExt(in) {
+		p := filepath.Join(collectionsDir, in)
+		if fileExists(p) {
+			return p, nil
+		}
+	}
+
+	
+	p1 := filepath.Join(collectionsDir, in+".yaml")
+	if fileExists(p1) {
+		return p1, nil
+	}
+	p2 := filepath.Join(collectionsDir, in+".yml")
+	if fileExists(p2) {
+		return p2, nil
+	}
+
+	
+	refs, err := ws.collections.ListCollections(ws.root)
+	if err == nil {
+		for _, r := range refs {
+			if strings.EqualFold(r.Name, in) {
+				return r.Path, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("collection %q not found in %q", in, collectionsDir)
+}
+
+func resolveEnvironmentArg(ws *workspaceCtx, arg string) (string, error) {
+	in := strings.TrimSpace(arg)
+	if in == "" {
+		return ws.cfg.Defaults.Environment, nil
+	}
+
+	
+	if looksLikePath(in) {
+		p := in
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(ws.root, p)
+		}
+		return filepath.Clean(p), nil
+	}
+
+	
+	if hasYAMLExt(in) {
+		envDir := filepath.Join(ws.root, ws.cfg.Paths.EnvironmentsDir)
+		p := filepath.Join(envDir, in)
+		if fileExists(p) {
+			return p, nil
+		}
+		
+		return p, nil
+	}
+
+	
+	return in, nil
+}
+
+func looksLikePath(s string) bool {
+	return strings.Contains(s, "/") || strings.Contains(s, string(filepath.Separator))
+}
+
+func hasYAMLExt(s string) bool {
+	ext := strings.ToLower(filepath.Ext(s))
+	return ext == ".yaml" || ext == ".yml"
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/cli/envs.go
+package cli
+
+import (
+	"fmt"
+	"path/filepath"
+
+	"github.com/spf13/cobra"
+)
+
+func envsCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "envs",
+		Short: "Manage environments in a workspace",
+	}
+
+	c.AddCommand(envsListCmd())
+	return c
+}
+
+func envsListCmd() *cobra.Command {
+	var workspace string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List environments",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			ws, err := loadWorkspace(workspace)
+			if err != nil {
+				return err
+			}
+
+			refs, err := ws.envCatalog.ListEnvironments(ws.root)
+			if err != nil {
+				return err
+			}
+
+			if len(refs) == 0 {
+				fmt.Println("(no environments found)")
+				return nil
+			}
+
+			fmt.Printf("Workspace: %s\n", ws.root)
+			fmt.Printf("Default:   %s\n\n", ws.cfg.Defaults.Environment)
+
+			for _, r := range refs {
+				rel, _ := filepath.Rel(ws.root, r.Path)
+				fmt.Printf("- %s  (%s)\n", r.Name, rel)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&workspace, "workspace", "w", "", "Workspace root (optional; autodetected if omitted)")
+	return cmd
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/cli/root.go
+package cli
+
+import (
+	"os"
+	"path/filepath"
+
+	"github.com/spf13/cobra"
+
+	"github.com/aalvaropc/lynix/internal/infra/fsworkspace"
+	"github.com/aalvaropc/lynix/internal/infra/logger"
+	"github.com/aalvaropc/lynix/internal/infra/workspacefinder"
+	"github.com/aalvaropc/lynix/internal/ui/tui"
+)
+
+func Execute() {
+	cmd := newRootCmd()
+	if err := cmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func newRootCmd() *cobra.Command {
+	var debug bool
+
+	cmd := &cobra.Command{
+		Use:          "lynix",
+		Short:        "Lynix — TUI-first API tool",
+		SilenceUsage: true,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			wd, err := os.Getwd()
+			if err != nil {
+				wd = "."
+			}
+			wd, _ = filepath.Abs(wd)
+
+			finder := workspacefinder.NewFinder()
+
+			logRoot := wd
+			if root, ferr := finder.FindRoot(wd); ferr == nil && root != "" {
+				logRoot = root
+			}
+
+			cleanup, _ := logger.Setup(logger.Config{
+				Root:  logRoot,
+				Debug: debug,
+			})
+			if cleanup != nil {
+				defer func() { _ = cleanup() }()
+			}
+
+			deps := tui.Deps{
+				WorkspaceLocator:     finder,
+				WorkspaceInitializer: fsworkspace.NewInitializer(),
+				Logger:               logger.L(),
+				Debug:                debug,
+			}
+
+			return tui.Run(deps)
+		},
+	}
+
+	cmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable verbose logging to .lynix/logs/lynix.log")
+	return cmd
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/cli/run.go
+package cli
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"time"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/usecase"
+	"github.com/spf13/cobra"
+)
+
+func runCmd() *cobra.Command {
+	var workspace string
+	var collection string
+	var env string
+	var noSave bool
+	var format string
+
+	c := &cobra.Command{
+		Use:   "run",
+		Short: "Run a collection (functional checks) from a Lynix workspace",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ws, err := loadWorkspace(workspace)
+			if err != nil {
+				return err
+			}
+
+			collectionPath, err := resolveCollectionPath(ws, collection)
+			if err != nil {
+				return err
+			}
+
+			envArg, err := resolveEnvironmentArg(ws, env)
+			if err != nil {
+				return err
+			}
+
+			var store = ws.store
+			if noSave {
+				store = nil
+			}
+
+			uc := usecase.NewRunCollection(ws.collections, ws.envs, ws.runner, store)
+
+			run, runID, err := uc.Execute(cmd.Context(), collectionPath, envArg)
+			if err != nil {
+				
+				
+				_ = printRun(os.Stdout, run, runID, format)
+				return err
+			}
+
+			if err := printRun(os.Stdout, run, runID, format); err != nil {
+				return err
+			}
+
+			fails := countFailures(run)
+			if fails > 0 {
+				return fmt.Errorf("run failed (%d failed request(s))", fails)
+			}
+			return nil
+		},
+	}
+
+	c.Flags().StringVarP(&workspace, "workspace", "w", "", "Workspace root (optional; autodetected if omitted)")
+	c.Flags().StringVarP(&collection, "collection", "c", "", "Collection name or path (required)")
+	c.Flags().StringVarP(&env, "env", "e", "", "Environment name or path (optional; defaults to workspace default env)")
+	c.Flags().BoolVar(&noSave, "no-save", false, "Do not save run artifact under runs/")
+	c.Flags().StringVar(&format, "format", "pretty", "Output format: pretty|json")
+
+	_ = c.MarkFlagRequired("collection")
+	return c
+}
+
+func printRun(w io.Writer, run domain.RunResult, runID string, format string) error {
+	switch format {
+	case "json":
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		
+		payload := map[string]any{
+			"run_id": runID,
+			"run":    run,
+		}
+		return enc.Encode(payload)
+	case "pretty", "":
+		printPrettyRun(w, run, runID)
+		return nil
+	default:
+		return fmt.Errorf("unsupported format %q (expected pretty|json)", format)
+	}
+}
+
+func printPrettyRun(w io.Writer, run domain.RunResult, runID string) {
+	total := run.EndedAt.Sub(run.StartedAt)
+	if run.StartedAt.IsZero() || run.EndedAt.IsZero() {
+		total = 0
+	}
+
+	fmt.Fprintf(w, "Collection: %s\n", run.CollectionName)
+	fmt.Fprintf(w, "Env:        %s\n", run.EnvironmentName)
+	fmt.Fprintf(w, "Started:    %s\n", run.StartedAt.Format(time.RFC3339))
+	fmt.Fprintf(w, "Ended:      %s\n", run.EndedAt.Format(time.RFC3339))
+	fmt.Fprintf(w, "Duration:   %s\n", total)
+	if runID != "" {
+		fmt.Fprintf(w, "Run ID:     %s\n", runID)
+	}
+	fmt.Fprintln(w)
+
+	for _, r := range run.Results {
+		status := "OK"
+		if isRequestFailed(r) {
+			status = "FAIL"
+		}
+
+		fmt.Fprintf(w, "- [%s] %s (%s) %dms\n", status, r.Name, r.Method, r.LatencyMS)
+
+		if r.Error != nil {
+			fmt.Fprintf(w, "  error: %s (%s)\n", r.Error.Message, r.Error.Kind)
+		} else {
+			fmt.Fprintf(w, "  status: %d\n", r.StatusCode)
+		}
+
+		if len(r.Assertions) > 0 {
+			pass, fail := countAssertionPassFail(r.Assertions)
+			fmt.Fprintf(w, "  assertions: %d pass / %d fail\n", pass, fail)
+			for _, a := range r.Assertions {
+				mark := "✓"
+				if !a.Passed {
+					mark = "✗"
+				}
+				fmt.Fprintf(w, "    %s %s — %s\n", mark, a.Name, a.Message)
+			}
+		}
+
+		if len(r.Extracts) > 0 {
+			ok, bad := countExtractPassFail(r.Extracts)
+			fmt.Fprintf(w, "  extracts: %d ok / %d fail\n", ok, bad)
+			for _, e := range r.Extracts {
+				mark := "✓"
+				if !e.Success {
+					mark = "✗"
+				}
+				fmt.Fprintf(w, "    %s %s — %s\n", mark, e.Name, e.Message)
+			}
+		}
+
+		if len(r.Extracted) > 0 {
+			fmt.Fprintf(w, "  extracted vars:\n")
+			for k, v := range r.Extracted {
+				fmt.Fprintf(w, "    - %s = %s\n", k, v)
+			}
+		}
+
+		fmt.Fprintln(w)
+	}
+}
+
+func countFailures(run domain.RunResult) int {
+	n := 0
+	for _, r := range run.Results {
+		if isRequestFailed(r) {
+			n++
+		}
+	}
+	return n
+}
+
+func isRequestFailed(r domain.RequestResult) bool {
+	if r.Error != nil {
+		return true
+	}
+	for _, a := range r.Assertions {
+		if !a.Passed {
+			return true
+		}
+	}
+	for _, e := range r.Extracts {
+		if !e.Success {
+			return true
+		}
+	}
+	return false
+}
+
+func countAssertionPassFail(in []domain.AssertionResult) (pass int, fail int) {
+	for _, a := range in {
+		if a.Passed {
+			pass++
+		} else {
+			fail++
+		}
+	}
+	return pass, fail
+}
+
+func countExtractPassFail(in []domain.ExtractResult) (ok int, bad int) {
+	for _, e := range in {
+		if e.Success {
+			ok++
+		} else {
+			bad++
+		}
+	}
+	return ok, bad
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/tui/collections_types.go
+package tui
+
+type CollectionItem struct {
+	Name         string
+	Path         string
+	RequestNames []string
+	ParseErr     error
+}
+
+type collectionsLoadedMsg []CollectionItem
+type collectionPreviewMsg struct {
+	Index int
+	Names []string
+	Err   error
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/tui/cmd.go
+package tui
+
+import (
+	"os"
+	"path/filepath"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+type Deps struct {
+	WorkspaceFinder interface {
+		FindRoot(start string) (string, error)
+	}
+	InitWorkspaceUC interface {
+		Execute(path string, force bool) error
+	}
+}
+
+func cmdRefreshWorkspace(d Deps) tea.Cmd {
+	return func() tea.Msg {
+		cwd, _ := os.Getwd()
+		root, err := d.WorkspaceFinder.FindRoot(cwd)
+		if err != nil || root == "" {
+			return workspaceRefreshedMsg(WorkspaceStatus{Found: false, Root: "", Err: err})
+		}
+		return workspaceRefreshedMsg(WorkspaceStatus{Found: true, Root: root, Err: nil})
+	}
+}
+
+func cmdInitWorkspaceHere(d Deps, force bool) tea.Cmd {
+	return func() tea.Msg {
+		cwd, _ := os.Getwd()
+
+		err := d.InitWorkspaceUC.Execute(cwd, force)
+
+		root, findErr := d.WorkspaceFinder.FindRoot(filepath.Clean(cwd))
+		st := WorkspaceStatus{Found: findErr == nil && root != "", Root: root, Err: findErr}
+		return initWorkspaceDoneMsg{Status: st, Err: err}
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/tui/run_cmd.go
+package tui
+
+import tea "github.com/charmbracelet/bubbletea"
+
+func listenRunner(ch <-chan tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		msg, ok := <-ch
+		if !ok {
+			return runnerDoneMsg{Err: nil}
+		}
+		return msg
+	}
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/tui/run_msgs.go
+package tui
+
+import "time"
+
+type RunnerEvent struct {
+	RequestName     string
+	Index           int
+	Total           int
+	Status          int
+	Latency         time.Duration
+	Pass            bool
+	Explain         string
+	AssertionsText  string
+	ResponseSnippet string
+}
+
+type runnerEventMsg RunnerEvent
+type runnerDoneMsg struct {
+	Err error
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/tui/collections_cmd.go
+package tui
+
+import (
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+type CollectionsUC interface {
+	List(root string) ([]CollectionItem, error)
+	Preview(path string) ([]string, error)
+}
+
+func cmdLoadCollections(uc CollectionsUC, root string) tea.Cmd {
+	return func() tea.Msg {
+		items, _ := uc.List(root)
+		return collectionsLoadedMsg(items)
+	}
+}
+
+func cmdPreviewCollection(uc CollectionsUC, idx int, path string) tea.Cmd {
+	return func() tea.Msg {
+		names, err := uc.Preview(path)
+		return collectionPreviewMsg{Index: idx, Names: names, Err: err}
+	}
+}
+
+func scanCollections(root string) []CollectionItem {
+	dir := filepath.Join(root, "collections")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	var items []CollectionItem
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		low := strings.ToLower(name)
+		if !(strings.HasSuffix(low, ".yaml") || strings.HasSuffix(low, ".yml")) {
+			continue
+		}
+		items = append(items, CollectionItem{
+			Name: name,
+			Path: filepath.Join(dir, name),
+		})
+	}
+
+	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+	return items
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/tui/msg.go
+package tui
+
+type WorkspaceStatus struct {
+	Found bool
+	Root  string
+	Err   error
+}
+
+type workspaceRefreshedMsg WorkspaceStatus
+
+type initWorkspaceDoneMsg struct {
+	Status WorkspaceStatus
+	Err    error
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/ports/workspace.go
+package ports
+
+import "github.com/aalvaropc/lynix/internal/domain"
+
+
+type WorkspaceInitializer interface {
+	Init(spec domain.WorkspaceSpec, force bool) error
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/ports/artifact_store.go
+package ports
+
+import "github.com/aalvaropc/lynix/internal/domain"
+
+
+type ArtifactStore interface {
+	SaveRun(run domain.RunArtifact) (id string, err error)
+	
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/ports/workspace_locator.go
+package ports
+
+
+type WorkspaceLocator interface {
+	FindRoot(startDir string) (string, error)
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/ports/environment_loader.go
+package ports
+
+import "github.com/aalvaropc/lynix/internal/domain"
+
+
+type EnvironmentLoader interface {
+	LoadEnvironment(path string) (domain.Environment, error)
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/ports/request_runner.go
+package ports
+
+import (
+	"context"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+)
+
+
+type RequestRunner interface {
+	Run(ctx context.Context, req domain.RequestSpec, vars domain.Vars) (domain.RequestResult, error)
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/ports/collection_loader.go
+package ports
+
+import "github.com/aalvaropc/lynix/internal/domain"
+
+
+type CollectionLoader interface {
+	LoadCollection(path string) (domain.Collection, error)
+	ListCollections(root string) ([]domain.CollectionRef, error)
+}
+
+# FILE: /home/aalvaropc/github/lynix/internal/ports/environment_catalog.go
+package ports
+
+import "github.com/aalvaropc/lynix/internal/domain"
+
+type EnvironmentCatalog interface {
+	ListEnvironments(root string) ([]domain.EnvironmentRef, error)
+}
+
+# FILE: /home/aalvaropc/github/lynix/env/secrets.local.yaml
+vars:
+  token: "REPLACE_ME"
+
+# FILE: /home/aalvaropc/github/lynix/env/stg.yaml
+vars:
+  base_url: "https://stg.api.example.com"
+
+# FILE: /home/aalvaropc/github/lynix/env/dev.yaml
+vars:
+  base_url: "http://localhost:8080"
+
