@@ -1,66 +1,64 @@
 package cli
 
 import (
-	"fmt"
 	"os"
+	"path/filepath"
 
-	"github.com/aalvaropc/lynix/internal/buildinfo"
+	"github.com/spf13/cobra"
+
 	"github.com/aalvaropc/lynix/internal/infra/fsworkspace"
+	"github.com/aalvaropc/lynix/internal/infra/logger"
 	"github.com/aalvaropc/lynix/internal/infra/workspacefinder"
 	"github.com/aalvaropc/lynix/internal/ui/tui"
-	"github.com/aalvaropc/lynix/internal/usecase"
-	"github.com/spf13/cobra"
 )
 
-var rootCmd = &cobra.Command{
-	Use:          "lynix",
-	Short:        "Lynix - TUI-first API tool for requests, checks, and performance",
-	SilenceUsage: true,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		locator := workspacefinder.NewFinder()
-		return tui.Run(tui.Deps{WorkspaceLocator: locator})
-	},
-}
-
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
+	cmd := newRootCmd()
+	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }
 
-func init() {
-	rootCmd.AddCommand(versionCmd())
-	rootCmd.AddCommand(initCmd())
-	rootCmd.AddCommand(runCmd())
-	rootCmd.AddCommand(collectionsCmd())
-	rootCmd.AddCommand(envsCmd())
-}
+func newRootCmd() *cobra.Command {
+	var debug bool
 
-func versionCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Print Lynix version info",
-		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Println(buildinfo.String())
-		},
-	}
-}
-
-func initCmd() *cobra.Command {
-	var path string
-	var force bool
-
-	c := &cobra.Command{
-		Use:   "init",
-		Short: "Create a Lynix workspace (collections, envs, templates)",
+	cmd := &cobra.Command{
+		Use:          "lynix",
+		Short:        "Lynix — TUI-first API tool",
+		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			initializer := fsworkspace.NewInitializer()
-			uc := usecase.NewInitWorkspace(initializer)
-			return uc.Execute(path, force)
+			wd, err := os.Getwd()
+			if err != nil {
+				wd = "."
+			}
+			wd, _ = filepath.Abs(wd)
+
+			finder := workspacefinder.NewFinder()
+
+			logRoot := wd
+			if root, ferr := finder.FindRoot(wd); ferr == nil && root != "" {
+				logRoot = root
+			}
+
+			cleanup, _ := logger.Setup(logger.Config{
+				Root:  logRoot,
+				Debug: debug,
+			})
+			if cleanup != nil {
+				defer func() { _ = cleanup() }()
+			}
+
+			deps := tui.Deps{
+				WorkspaceLocator:     finder,
+				WorkspaceInitializer: fsworkspace.NewInitializer(),
+				Logger:               logger.L(),
+				Debug:                debug,
+			}
+
+			return tui.Run(deps)
 		},
 	}
 
-	c.Flags().StringVarP(&path, "path", "p", ".", "Target directory")
-	c.Flags().BoolVar(&force, "force", false, "Overwrite existing files (where applicable)")
-	return c
+	cmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable verbose logging to .lynix/logs/lynix.log")
+	return cmd
 }

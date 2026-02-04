@@ -43,3 +43,4 @@ go*.windows-*.zip
 runs/
 lynix.lock
 env/secrets.local.yaml
+.lynix/
