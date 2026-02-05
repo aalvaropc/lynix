@@ -22,6 +22,7 @@ func (i *Initializer) Init(spec domain.WorkspaceSpec, force bool) error {
 		filepath.Join(root, "collections"),
 		filepath.Join(root, "env"),
 		filepath.Join(root, "runs"),
+		filepath.Join(root, ".lynix", "logs"),
 	}
 
 	for _, d := range dirs {
@@ -43,7 +44,6 @@ func (i *Initializer) Init(spec domain.WorkspaceSpec, force bool) error {
 
 		if !force {
 			if _, statErr := os.Stat(dst); statErr == nil {
-				// Skip existing files unless --force is set.
 				return nil
 			}
 		}
@@ -57,7 +57,6 @@ func (i *Initializer) Init(spec domain.WorkspaceSpec, force bool) error {
 			return err
 		}
 
-		// Protect secrets by default.
 		mode := fs.FileMode(0o644)
 		if strings.Contains(strings.ToLower(rel), "secrets") {
 			mode = 0o600
