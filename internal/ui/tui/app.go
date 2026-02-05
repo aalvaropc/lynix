@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -719,10 +718,3 @@ func (m model) selectedResult() *domain.RequestResult {
 }
 
 var _ tea.Model = (*model)(nil)
-
-func (m model) validate() error {
-	if m.deps.WorkspaceLocator == nil {
-		return errors.New("WorkspaceLocator is nil")
-	}
-	return nil
-}

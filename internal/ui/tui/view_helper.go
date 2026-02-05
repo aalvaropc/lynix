@@ -10,11 +10,11 @@ import (
 	"github.com/aalvaropc/lynix/internal/domain"
 )
 
-func clampString(s string, max int) string {
-	if max <= 0 {
+func clampString(s string, maxLen int) string {
+	if maxLen <= 0 {
 		return ""
 	}
-	if utf8.RuneCountInString(s) <= max {
+	if utf8.RuneCountInString(s) <= maxLen {
 		return s
 	}
 	var b strings.Builder
@@ -22,7 +22,7 @@ func clampString(s string, max int) string {
 
 	n := 0
 	for _, r := range s {
-		if n >= max {
+		if n >= maxLen {
 			break
 		}
 		b.WriteRune(r)

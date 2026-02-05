@@ -73,6 +73,10 @@ func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
 	}
 	ts = ts.UTC()
 
+	toSave := run
+	if toSave.StartedAt.IsZero() {
+		toSave.StartedAt = ts
+	}
 	collectionPart := run.CollectionName
 	if strings.TrimSpace(collectionPart) == "" {
 		collectionPart = strings.TrimSuffix(filepath.Base(run.CollectionPath), filepath.Ext(run.CollectionPath))
@@ -86,7 +90,6 @@ func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
 	id := strings.TrimSuffix(filename, ".json")
 	path := filepath.Join(dir, filename)
 
-	toSave := run
 	if s.maskingEnabled {
 		toSave = maskArtifact(toSave)
 	}
@@ -157,8 +160,6 @@ func (s *JSONStore) appendIndex(dir, id, filename string, run domain.RunArtifact
 	_, _ = f.Write(append(line, '\n'))
 	return nil
 }
-
-// ---- Masking ----
 
 // maskArtifact returns a masked copy (does NOT mutate the input).
 func maskArtifact(run domain.RunArtifact) domain.RunArtifact {
