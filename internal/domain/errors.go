@@ -25,14 +25,14 @@ const (
 	KindExecution      ErrorKind = "execution"
 )
 
-// DomainError provides consistent error metadata for domain logic.
-type DomainError struct {
+// Error provides consistent error metadata for domain logic.
+type Error struct {
 	Kind  ErrorKind
 	Msg   string
 	Cause error
 }
 
-func (e *DomainError) Error() string {
+func (e *Error) Error() string {
 	if e == nil {
 		return "<nil>"
 	}
@@ -42,7 +42,7 @@ func (e *DomainError) Error() string {
 	return fmt.Sprintf("%s: %s", e.Kind, e.Msg)
 }
 
-func (e *DomainError) Unwrap() error {
+func (e *Error) Unwrap() error {
 	if e == nil {
 		return nil
 	}
@@ -85,7 +85,7 @@ func IsKind(err error, kind ErrorKind) bool {
 	if errors.As(err, &oe) {
 		return oe.Kind == kind
 	}
-	var de *DomainError
+	var de *Error
 	if errors.As(err, &de) {
 		return de.Kind == kind
 	}

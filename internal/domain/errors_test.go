@@ -7,7 +7,7 @@ import (
 
 func TestDomainErrorWrapUnwrap(t *testing.T) {
 	root := errors.New("root")
-	err := &DomainError{
+	err := &Error{
 		Kind:  KindInvalidRequest,
 		Msg:   "bad request spec",
 		Cause: root,
@@ -17,9 +17,9 @@ func TestDomainErrorWrapUnwrap(t *testing.T) {
 		t.Fatalf("expected errors.Is to match cause")
 	}
 
-	var got *DomainError
+	var got *Error
 	if !errors.As(err, &got) {
-		t.Fatalf("expected errors.As to match DomainError")
+		t.Fatalf("expected errors.As to match Error")
 	}
 	if got.Kind != KindInvalidRequest {
 		t.Fatalf("expected kind %s", KindInvalidRequest)
@@ -27,7 +27,7 @@ func TestDomainErrorWrapUnwrap(t *testing.T) {
 }
 
 func TestIsKindForDomainError(t *testing.T) {
-	err := &DomainError{
+	err := &Error{
 		Kind: KindInvalidConfig,
 		Msg:  "invalid",
 	}
