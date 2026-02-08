@@ -1,0 +1,4 @@
+name: Sample
+requests:
+  - name: Missing method
+    url: https://example.com
