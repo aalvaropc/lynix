@@ -75,6 +75,7 @@ type model struct {
 	runEnvList             list.Model
 	selectedCollectionPath string
 	selectedEnvName        string
+	saveRun                bool
 	running                bool
 	spin                   spinner.Model
 	runCh                  chan runnerDoneMsg
@@ -149,6 +150,7 @@ func newModel(deps Deps) model {
 		runColList:      runCol,
 		runEnvList:      runEnv,
 		wizardStep:      0,
+		saveRun:         true,
 		spin:            sp,
 		resultTab:       0,
 	}
@@ -178,6 +180,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.previewErr = nil
 		m.selectedCollectionPath = ""
 		m.selectedEnvName = ""
+		m.saveRun = true
 		m.runErr = nil
 		m.runID = ""
 		m.toast = ""
@@ -254,7 +257,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.toast = userMessage(msg.err)
 		} else {
-			m.toast = "Run saved: " + msg.id
+			if msg.id != "" {
+				m.toast = "Run saved: " + msg.id
+			} else {
+				m.toast = "Run completed."
+			}
 		}
 		return m, nil
 
@@ -343,6 +350,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.wizardStep--
 				return m, nil
+			case "s", "S":
+				if m.wizardStep == 3 && !m.running {
+					m.saveRun = !m.saveRun
+					return m, nil
+				}
 
 			case "enter":
 				if !m.workspaceFound {
@@ -383,6 +395,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.workspaceRoot,
 						m.selectedCollectionPath,
 						m.selectedEnvName,
+						m.saveRun,
 						m.log,
 						m.deps.Debug,
 					)
@@ -647,10 +660,14 @@ func (m model) viewRunWizard() string {
 		)
 
 	case 3:
+		saveText := "yes"
+		if !m.saveRun {
+			saveText = "no"
+		}
 		card := m.theme.Card.Render(
 			m.theme.Title.Render("Step 3/4 — Confirm") + "\n\n" +
-				fmt.Sprintf("Collection:\n  %s\n\nEnvironment:\n  %s\n\n", m.selectedCollectionPath, m.selectedEnvName) +
-				m.theme.Help.Render("enter run • esc/b back • q home"),
+				fmt.Sprintf("Collection:\n  %s\n\nEnvironment:\n  %s\n\nSave artifact:\n  %s\n\n", m.selectedCollectionPath, m.selectedEnvName, saveText) +
+				m.theme.Help.Render("enter run • s toggle save • esc/b back • q home"),
 		)
 		return card
 

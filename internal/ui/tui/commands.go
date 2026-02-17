@@ -19,6 +19,7 @@ import (
 	"github.com/aalvaropc/lynix/internal/infra/workspacefinder"
 	"github.com/aalvaropc/lynix/internal/infra/yamlcollection"
 	"github.com/aalvaropc/lynix/internal/infra/yamlenv"
+	"github.com/aalvaropc/lynix/internal/ports"
 	"github.com/aalvaropc/lynix/internal/usecase"
 )
 
@@ -139,6 +140,7 @@ func listenRunner(ch <-chan runnerDoneMsg) tea.Cmd {
 
 func startRunAsync(
 	workspaceRoot, collectionPath, envName string,
+	save bool,
 	log *slog.Logger,
 	debug bool,
 ) (chan runnerDoneMsg, tea.Cmd) {
@@ -175,7 +177,11 @@ func startRunAsync(
 
 		client := httpclient.New(httpclient.DefaultConfig())
 		runner := httprunner.New(client)
-		store := runstore.NewJSONStore(workspaceRoot, cfg, runstore.WithIndex(true))
+
+		var store ports.ArtifactStore
+		if save {
+			store = runstore.NewJSONStore(workspaceRoot, cfg, runstore.WithIndex(true))
+		}
 
 		uc := usecase.NewRunCollection(colLoader, envLoader, runner, store)
 
