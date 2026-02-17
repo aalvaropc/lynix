@@ -13,11 +13,12 @@ import (
 type RunErrorKind string
 
 const (
-	RunErrorUnknown RunErrorKind = "unknown"
-	RunErrorTimeout RunErrorKind = "timeout"
-	RunErrorDNS     RunErrorKind = "dns"
-	RunErrorConn    RunErrorKind = "connection"
-	RunErrorHTTP    RunErrorKind = "http"
+	RunErrorUnknown  RunErrorKind = "unknown"
+	RunErrorCanceled RunErrorKind = "canceled"
+	RunErrorTimeout  RunErrorKind = "timeout"
+	RunErrorDNS      RunErrorKind = "dns"
+	RunErrorConn     RunErrorKind = "connection"
+	RunErrorHTTP     RunErrorKind = "http"
 )
 
 // ExtractResult is the output of a single extraction rule.
@@ -98,6 +99,11 @@ func NewRunError(err error) *RunError {
 func ClassifyRunError(err error) RunErrorKind {
 	if err == nil {
 		return RunErrorUnknown
+	}
+
+	// User cancellation (or explicit cancellation from callers).
+	if errors.Is(err, context.Canceled) {
+		return RunErrorCanceled
 	}
 
 	// Context deadline (timeouts) are common when the request has a timeout.
