@@ -19,6 +19,8 @@ type JSONStore struct {
 	rootDir        string
 	runsDirName    string
 	maskingEnabled bool
+	saveHeaders    bool
+	saveBody       bool
 	writeIndex     bool
 	now            func() time.Time
 }
@@ -45,6 +47,8 @@ func NewJSONStore(root string, cfg domain.Config, opts ...Option) *JSONStore {
 		rootDir:        root,
 		runsDirName:    runsDir,
 		maskingEnabled: cfg.Masking.Enabled,
+		saveHeaders:    cfg.Artifacts.SaveResponseHeaders,
+		saveBody:       cfg.Artifacts.SaveResponseBody,
 		writeIndex:     false,
 		now:            time.Now,
 	}
@@ -99,6 +103,9 @@ func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
 	id := strings.TrimSuffix(filename, ".json")
 	path := filepath.Join(dir, filename)
 
+	if !s.saveHeaders || !s.saveBody {
+		toSave = applyResponseSavePolicy(toSave, s.saveHeaders, s.saveBody)
+	}
 	if s.maskingEnabled {
 		toSave = maskArtifact(toSave)
 	}
@@ -138,6 +145,29 @@ func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
 	}
 
 	return id, nil
+}
+
+func applyResponseSavePolicy(run domain.RunArtifact, saveHeaders bool, saveBody bool) domain.RunArtifact {
+	out := run
+	out.Results = make([]domain.RequestResult, 0, len(run.Results))
+
+	for _, rr := range run.Results {
+		c := rr
+
+		snap := cloneResponseSnapshot(rr.Response)
+		if !saveHeaders {
+			snap.Headers = map[string][]string{}
+		}
+		if !saveBody {
+			snap.Body = nil
+			snap.Truncated = false
+		}
+
+		c.Response = snap
+		out.Results = append(out.Results, c)
+	}
+
+	return out
 }
 
 func uniqueRunFilename(dir, base string) (string, error) {

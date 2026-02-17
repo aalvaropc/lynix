@@ -7,3 +7,6 @@ lynix:
     collections_dir: collections
     environments_dir: env
     runs_dir: runs
+  artifacts:
+    save_response_headers: true
+    save_response_body: false

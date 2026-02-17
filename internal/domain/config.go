@@ -2,9 +2,10 @@ package domain
 
 // Config represents the minimal Lynix configuration loaded from lynix.yaml.
 type Config struct {
-	Masking  MaskingConfig
-	Defaults DefaultsConfig
-	Paths    PathsConfig
+	Masking   MaskingConfig
+	Defaults  DefaultsConfig
+	Paths     PathsConfig
+	Artifacts ArtifactsConfig
 }
 
 type MaskingConfig struct {
@@ -21,6 +22,11 @@ type PathsConfig struct {
 	RunsDir         string
 }
 
+type ArtifactsConfig struct {
+	SaveResponseHeaders bool
+	SaveResponseBody    bool
+}
+
 // DefaultConfig provides sane defaults if lynix.yaml is partially missing.
 func DefaultConfig() Config {
 	return Config{
@@ -32,6 +38,10 @@ func DefaultConfig() Config {
 			CollectionsDir:  "collections",
 			EnvironmentsDir: "env",
 			RunsDir:         "runs",
+		},
+		Artifacts: ArtifactsConfig{
+			SaveResponseHeaders: true,
+			SaveResponseBody:    true,
 		},
 	}
 }
