@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -94,11 +95,16 @@ func renderResultDetails(rr domain.RequestResult) string {
 
 	if len(rr.Extracted) > 0 {
 		b.WriteString("Extracted Vars:\n")
-		for k, v := range rr.Extracted {
+		keys := make([]string, 0, len(rr.Extracted))
+		for k := range rr.Extracted {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
 			b.WriteString("  - ")
 			b.WriteString(k)
 			b.WriteString(" = ")
-			b.WriteString(v)
+			b.WriteString(rr.Extracted[k])
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
@@ -114,7 +120,13 @@ func renderResultResponse(rr domain.RequestResult) string {
 	if len(rr.Response.Headers) == 0 {
 		b.WriteString("  (none)\n")
 	} else {
-		for k, vals := range rr.Response.Headers {
+		keys := make([]string, 0, len(rr.Response.Headers))
+		for k := range rr.Response.Headers {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			vals := rr.Response.Headers[k]
 			b.WriteString("  - ")
 			b.WriteString(k)
 			b.WriteString(": ")
