@@ -86,7 +86,16 @@ func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
 		slug = "run"
 	}
 
-	filename := fmt.Sprintf("%s_%s.json", ts.Format("20060102T150405Z"), slug)
+	base := fmt.Sprintf("%s_%s", ts.Format("20060102T150405Z"), slug)
+	filename, err := uniqueRunFilename(dir, base)
+	if err != nil {
+		return "", &domain.OpError{
+			Op:   "runstore.filename",
+			Kind: domain.KindExecution,
+			Path: dir,
+			Err:  err,
+		}
+	}
 	id := strings.TrimSuffix(filename, ".json")
 	path := filepath.Join(dir, filename)
 
@@ -129,6 +138,30 @@ func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
 	}
 
 	return id, nil
+}
+
+func uniqueRunFilename(dir, base string) (string, error) {
+	filename := base + ".json"
+	path := filepath.Join(dir, filename)
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return filename, nil
+		}
+		return "", err
+	}
+
+	for i := 2; i <= 999; i++ {
+		filename = fmt.Sprintf("%s_%d.json", base, i)
+		path = filepath.Join(dir, filename)
+		if _, err := os.Stat(path); err != nil {
+			if os.IsNotExist(err) {
+				return filename, nil
+			}
+			return "", err
+		}
+	}
+
+	return "", fmt.Errorf("too many run artifacts named %q", base)
 }
 
 func (s *JSONStore) appendIndex(dir, id, filename string, run domain.RunArtifact) error {
