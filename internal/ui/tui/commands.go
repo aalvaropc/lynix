@@ -41,13 +41,13 @@ func cmdRefreshWorkspace(deps Deps) tea.Cmd {
 	}
 }
 
-func cmdInitWorkspaceHere(deps Deps, root string) tea.Cmd {
+func cmdInitWorkspaceHere(deps Deps, root string, force bool) tea.Cmd {
 	return func() tea.Msg {
 		if deps.WorkspaceInitializer == nil {
 			return initWorkspaceDoneMsg{root: root, err: errors.New("WorkspaceInitializer is nil")}
 		}
 
-		err := deps.WorkspaceInitializer.Init(domain.WorkspaceSpec{Root: root}, true)
+		err := deps.WorkspaceInitializer.Init(domain.WorkspaceSpec{Root: root}, force)
 		return initWorkspaceDoneMsg{root: root, err: err}
 	}
 }
