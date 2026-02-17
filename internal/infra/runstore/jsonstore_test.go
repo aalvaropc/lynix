@@ -145,6 +145,7 @@ func TestSaveRun_MasksSensitiveExtractedWhenEnabled(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
 func TestSaveRun_MasksSensitiveResponseHeadersWhenEnabled(t *testing.T) {
 	tmp := t.TempDir()
 
@@ -207,5 +208,58 @@ func TestSaveRun_MasksSensitiveResponseHeadersWhenEnabled(t *testing.T) {
 	}
 	if h["X-Test"][0] != "1" {
 		t.Fatalf("expected X-Test preserved, got=%q", h["X-Test"][0])
+	}
+}
+
+func TestSaveRun_UsesUniqueFilenameOnCollision(t *testing.T) {
+	tmp := t.TempDir()
+
+	cfg := domain.DefaultConfig()
+	cfg.Paths.RunsDir = "runs"
+	cfg.Masking.Enabled = false
+
+	store := NewJSONStore(tmp, cfg)
+
+	start := time.Date(2026, 2, 3, 10, 11, 12, 0, time.UTC)
+	run := domain.RunArtifact{
+		CollectionName:  "Demo API",
+		CollectionPath:  "collections/demo.yaml",
+		EnvironmentName: "dev",
+		StartedAt:       start,
+		EndedAt:         start.Add(1 * time.Second),
+		Results: []domain.RequestResult{
+			{
+				Name:       "health",
+				Method:     domain.MethodGet,
+				URL:        "http://x/health",
+				StatusCode: 200,
+				Response:   domain.ResponseSnapshot{Headers: map[string][]string{}},
+			},
+		},
+	}
+
+	id1, err := store.SaveRun(run)
+	if err != nil {
+		t.Fatalf("SaveRun #1 error: %v", err)
+	}
+	id2, err := store.SaveRun(run)
+	if err != nil {
+		t.Fatalf("SaveRun #2 error: %v", err)
+	}
+	if id1 == id2 {
+		t.Fatalf("expected unique ids, got %q", id1)
+	}
+
+	p1 := filepath.Join(tmp, "runs", id1+".json")
+	if _, err := os.Stat(p1); err != nil {
+		t.Fatalf("expected first file at %s, stat err=%v", p1, err)
+	}
+
+	p2 := filepath.Join(tmp, "runs", id2+".json")
+	if _, err := os.Stat(p2); err != nil {
+		t.Fatalf("expected second file at %s, stat err=%v", p2, err)
+	}
+	if id2 != id1+"_2" {
+		t.Fatalf("expected second id %q, got %q", id1+"_2", id2)
 	}
 }
