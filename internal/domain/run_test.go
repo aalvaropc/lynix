@@ -14,6 +14,12 @@ func TestClassifyRunError_Timeout_ContextDeadline(t *testing.T) {
 	}
 }
 
+func TestClassifyRunError_Canceled_ContextCanceled(t *testing.T) {
+	if got := ClassifyRunError(context.Canceled); got != RunErrorCanceled {
+		t.Fatalf("expected canceled, got=%s", got)
+	}
+}
+
 func TestClassifyRunError_Timeout_NetError(t *testing.T) {
 	// net.OpError wrapping ETIMEDOUT
 	err := &net.OpError{Op: "read", Net: "tcp", Err: syscall.ETIMEDOUT}

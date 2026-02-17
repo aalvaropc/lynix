@@ -60,6 +60,11 @@ func (uc *RunCollection) Execute(
 	}
 
 	for _, req := range col.Requests {
+		if err := ctx.Err(); err != nil {
+			run.EndedAt = time.Now()
+			return run, "", err
+		}
+
 		rr, runErr := uc.runner.Run(ctx, req, vars)
 		if runErr != nil {
 			// Runner error (config-level): continue but mark the request as failed.
@@ -94,6 +99,10 @@ func (uc *RunCollection) Execute(
 	}
 
 	run.EndedAt = time.Now()
+
+	if err := ctx.Err(); err != nil {
+		return run, "", err
+	}
 
 	// Persist artifact (optional).
 	if uc.store == nil {
