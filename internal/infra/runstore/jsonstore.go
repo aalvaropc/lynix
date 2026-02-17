@@ -214,6 +214,16 @@ func maskArtifact(run domain.RunArtifact) domain.RunArtifact {
 			}
 		}
 
+		for k := range c.Response.Headers {
+			if isSensitiveHeaderKey(k) {
+				vals := c.Response.Headers[k]
+				for i := range vals {
+					vals[i] = maskValue
+				}
+				c.Response.Headers[k] = vals
+			}
+		}
+
 		out.Results = append(out.Results, c)
 	}
 
@@ -225,6 +235,20 @@ func isSensitiveKey(k string) bool {
 	return strings.Contains(kk, "token") ||
 		strings.Contains(kk, "secret") ||
 		strings.Contains(kk, "password")
+}
+
+func isSensitiveHeaderKey(k string) bool {
+	kk := strings.ToLower(strings.TrimSpace(k))
+	switch kk {
+	case "authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key", "x-auth-token":
+		return true
+	}
+
+	return strings.Contains(kk, "token") ||
+		strings.Contains(kk, "secret") ||
+		strings.Contains(kk, "password") ||
+		strings.Contains(kk, "api-key") ||
+		strings.Contains(kk, "apikey")
 }
 
 func cloneVars(in domain.Vars) domain.Vars {

@@ -145,6 +145,72 @@ func TestSaveRun_MasksSensitiveExtractedWhenEnabled(t *testing.T) {
 	}
 }
 
+<<<<<<< HEAD
+func TestSaveRun_MasksSensitiveResponseHeadersWhenEnabled(t *testing.T) {
+	tmp := t.TempDir()
+
+	cfg := domain.DefaultConfig()
+	cfg.Paths.RunsDir = "runs"
+	cfg.Masking.Enabled = true
+
+	store := NewJSONStore(tmp, cfg)
+
+	start := time.Date(2026, 2, 3, 10, 11, 12, 0, time.UTC)
+	run := domain.RunArtifact{
+		CollectionName:  "Mask Headers",
+		CollectionPath:  "collections/demo.yaml",
+		EnvironmentName: "dev",
+		StartedAt:       start,
+		EndedAt:         start.Add(1 * time.Second),
+		Results: []domain.RequestResult{
+			{
+				Name: "headers",
+				Response: domain.ResponseSnapshot{
+					Headers: map[string][]string{
+						"Authorization": {"Bearer abc"},
+						"Set-Cookie":    {"session=abc"},
+						"X-Test":        {"1"},
+					},
+					Body: []byte("ok"),
+				},
+			},
+		},
+	}
+
+	// Ensure we do NOT mutate original run.
+	origAuth := run.Results[0].Response.Headers["Authorization"][0]
+
+	_, err := store.SaveRun(run)
+	if err != nil {
+		t.Fatalf("SaveRun error: %v", err)
+	}
+	if run.Results[0].Response.Headers["Authorization"][0] != origAuth {
+		t.Fatalf("expected original run not mutated")
+	}
+
+	path := filepath.Join(tmp, "runs", "20260203T101112Z_mask-headers.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+
+	var decoded domain.RunResult
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	h := decoded.Results[0].Response.Headers
+	if h["Authorization"][0] != maskValue {
+		t.Fatalf("expected Authorization masked, got=%q", h["Authorization"][0])
+	}
+	if h["Set-Cookie"][0] != maskValue {
+		t.Fatalf("expected Set-Cookie masked, got=%q", h["Set-Cookie"][0])
+	}
+	if h["X-Test"][0] != "1" {
+		t.Fatalf("expected X-Test preserved, got=%q", h["X-Test"][0])
+	}
+}
+
 func TestSaveRun_UsesUniqueFilenameOnCollision(t *testing.T) {
 	tmp := t.TempDir()
 
