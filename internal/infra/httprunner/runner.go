@@ -1,17 +1,13 @@
 package httprunner
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
 	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/infra/httpclient"
 	"github.com/aalvaropc/lynix/internal/ports"
 )
 
@@ -71,7 +67,7 @@ func (r *Runner) Run(ctx context.Context, req domain.RequestSpec, vars domain.Va
 		},
 	}
 
-	httpReq, err := r.buildHTTPRequest(ctx, resolved)
+	httpReq, err := httpclient.BuildRequest(ctx, resolved)
 	if err != nil {
 		return domain.RequestResult{}, err
 	}
@@ -99,77 +95,6 @@ func (r *Runner) Run(ctx context.Context, req domain.RequestSpec, vars domain.Va
 	result.Response.Body = body
 	result.Response.Truncated = truncated
 	return result, nil
-}
-
-func (r *Runner) buildHTTPRequest(ctx context.Context, req domain.RequestSpec) (*http.Request, error) {
-	u := strings.TrimSpace(req.URL)
-	if u == "" {
-		return nil, &domain.OpError{
-			Op:   "httprunner.build",
-			Kind: domain.KindInvalidConfig,
-			Err:  errors.New("empty url"),
-		}
-	}
-
-	var body io.Reader
-	headers := http.Header{}
-	for k, v := range req.Headers {
-		headers.Set(k, v)
-	}
-
-	switch req.Body.Type {
-	case domain.BodyJSON:
-		if req.Body.JSON != nil {
-			b, err := json.Marshal(req.Body.JSON)
-			if err != nil {
-				return nil, &domain.OpError{
-					Op:   "httprunner.build.json",
-					Kind: domain.KindInvalidConfig,
-					Err:  err,
-				}
-			}
-			body = bytes.NewReader(b)
-			if req.Body.ContentType != "" {
-				headers.Set("Content-Type", req.Body.ContentType)
-			} else if headers.Get("Content-Type") == "" {
-				headers.Set("Content-Type", "application/json")
-			}
-		}
-
-	case domain.BodyForm:
-		if req.Body.Form != nil {
-			vals := url.Values{}
-			for k, v := range req.Body.Form {
-				vals.Set(k, v)
-			}
-			encoded := vals.Encode()
-			body = strings.NewReader(encoded)
-			if req.Body.ContentType != "" {
-				headers.Set("Content-Type", req.Body.ContentType)
-			} else if headers.Get("Content-Type") == "" {
-				headers.Set("Content-Type", "application/x-www-form-urlencoded")
-			}
-		}
-
-	case domain.BodyRaw:
-		if req.Body.Raw != "" {
-			body = strings.NewReader(req.Body.Raw)
-			if req.Body.ContentType != "" && headers.Get("Content-Type") == "" {
-				headers.Set("Content-Type", req.Body.ContentType)
-			}
-		}
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, string(req.Method), u, body)
-	if err != nil {
-		return nil, &domain.OpError{
-			Op:   "httprunner.build",
-			Kind: domain.KindInvalidConfig,
-			Err:  err,
-		}
-	}
-	httpReq.Header = headers
-	return httpReq, nil
 }
 
 func readBounded(r io.Reader, maxBytes int64) ([]byte, bool, error) {

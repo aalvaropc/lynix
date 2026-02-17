@@ -28,26 +28,38 @@ func BuildRequest(ctx context.Context, spec domain.RequestSpec) (*http.Request, 
 	case domain.BodyNone:
 		bodyReader = bytes.NewReader(nil)
 	case domain.BodyJSON:
-		payload, err := json.Marshal(spec.Body.JSON)
-		if err != nil {
-			return nil, &domain.OpError{
-				Op:   "httpclient.build",
-				Kind: domain.KindInvalidConfig,
-				Err:  err,
+		if spec.Body.JSON != nil {
+			payload, err := json.Marshal(spec.Body.JSON)
+			if err != nil {
+				return nil, &domain.OpError{
+					Op:   "httpclient.build",
+					Kind: domain.KindInvalidConfig,
+					Err:  err,
+				}
 			}
+			bodyReader = bytes.NewReader(payload)
+			contentType = "application/json"
+		} else {
+			bodyReader = bytes.NewReader(nil)
 		}
-		bodyReader = bytes.NewReader(payload)
-		contentType = "application/json"
 	case domain.BodyForm:
-		values := url.Values{}
-		for k, v := range spec.Body.Form {
-			values.Set(k, v)
+		if spec.Body.Form != nil {
+			values := url.Values{}
+			for k, v := range spec.Body.Form {
+				values.Set(k, v)
+			}
+			bodyReader = bytes.NewReader([]byte(values.Encode()))
+			contentType = "application/x-www-form-urlencoded"
+		} else {
+			bodyReader = bytes.NewReader(nil)
 		}
-		bodyReader = bytes.NewReader([]byte(values.Encode()))
-		contentType = "application/x-www-form-urlencoded"
 	case domain.BodyRaw:
-		bodyReader = bytes.NewReader([]byte(spec.Body.Raw))
-		contentType = spec.Body.ContentType
+		if strings.TrimSpace(spec.Body.Raw) != "" {
+			bodyReader = bytes.NewReader([]byte(spec.Body.Raw))
+			contentType = spec.Body.ContentType
+		} else {
+			bodyReader = bytes.NewReader(nil)
+		}
 	default:
 		return nil, &domain.OpError{
 			Op:   "httpclient.build",

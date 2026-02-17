@@ -64,6 +64,7 @@ func MapCollection(path string, yc YAMLCollection) (domain.Collection, error) {
 		} else if strings.TrimSpace(r.Raw) != "" {
 			req.Body = domain.BodySpec{Type: domain.BodyRaw, Raw: r.Raw}
 		}
+		req.Body.ContentType = strings.TrimSpace(r.ContentType)
 
 		col.Requests = append(col.Requests, req)
 	}

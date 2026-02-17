@@ -90,7 +90,16 @@ func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
 		slug = "run"
 	}
 
-	filename := fmt.Sprintf("%s_%s.json", ts.Format("20060102T150405Z"), slug)
+	base := fmt.Sprintf("%s_%s", ts.Format("20060102T150405Z"), slug)
+	filename, err := uniqueRunFilename(dir, base)
+	if err != nil {
+		return "", &domain.OpError{
+			Op:   "runstore.filename",
+			Kind: domain.KindExecution,
+			Path: dir,
+			Err:  err,
+		}
+	}
 	id := strings.TrimSuffix(filename, ".json")
 	path := filepath.Join(dir, filename)
 
@@ -161,6 +170,30 @@ func applyResponseSavePolicy(run domain.RunArtifact, saveHeaders bool, saveBody 
 	return out
 }
 
+func uniqueRunFilename(dir, base string) (string, error) {
+	filename := base + ".json"
+	path := filepath.Join(dir, filename)
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return filename, nil
+		}
+		return "", err
+	}
+
+	for i := 2; i <= 999; i++ {
+		filename = fmt.Sprintf("%s_%d.json", base, i)
+		path = filepath.Join(dir, filename)
+		if _, err := os.Stat(path); err != nil {
+			if os.IsNotExist(err) {
+				return filename, nil
+			}
+			return "", err
+		}
+	}
+
+	return "", fmt.Errorf("too many run artifacts named %q", base)
+}
+
 func (s *JSONStore) appendIndex(dir, id, filename string, run domain.RunArtifact) error {
 	type idx struct {
 		ID         string    `json:"id"`
@@ -211,6 +244,16 @@ func maskArtifact(run domain.RunArtifact) domain.RunArtifact {
 			}
 		}
 
+		for k := range c.Response.Headers {
+			if isSensitiveHeaderKey(k) {
+				vals := c.Response.Headers[k]
+				for i := range vals {
+					vals[i] = maskValue
+				}
+				c.Response.Headers[k] = vals
+			}
+		}
+
 		out.Results = append(out.Results, c)
 	}
 
@@ -222,6 +265,20 @@ func isSensitiveKey(k string) bool {
 	return strings.Contains(kk, "token") ||
 		strings.Contains(kk, "secret") ||
 		strings.Contains(kk, "password")
+}
+
+func isSensitiveHeaderKey(k string) bool {
+	kk := strings.ToLower(strings.TrimSpace(k))
+	switch kk {
+	case "authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key", "x-auth-token":
+		return true
+	}
+
+	return strings.Contains(kk, "token") ||
+		strings.Contains(kk, "secret") ||
+		strings.Contains(kk, "password") ||
+		strings.Contains(kk, "api-key") ||
+		strings.Contains(kk, "apikey")
 }
 
 func cloneVars(in domain.Vars) domain.Vars {

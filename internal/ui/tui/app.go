@@ -319,7 +319,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.toast = "Cannot init: unknown current directory"
 					return m, nil
 				}
-				return m, cmdInitWorkspaceHere(m.deps, root)
+				force := key == "I"
+				return m, cmdInitWorkspaceHere(m.deps, root, force)
 			}
 
 		case screenCollections:
@@ -570,7 +571,7 @@ func (m model) workspaceBanner() string {
 	if m.workspaceErr != nil {
 		msg += "  (" + userMessage(m.workspaceErr) + ")"
 	}
-	return m.theme.Card.Render("⚠ " + msg + "\n\nGo to Settings → press I to init workspace here (force).")
+	return m.theme.Card.Render("⚠ " + msg + "\n\nGo to Settings → press i to init (safe) or I to force overwrite.")
 }
 
 func (m model) viewSettings() string {
@@ -579,8 +580,11 @@ func (m model) viewSettings() string {
 	b.WriteString("\n\n")
 	b.WriteString("Workspace init:\n")
 	b.WriteString("  - Press ")
+	b.WriteString(m.theme.Title.Render("i"))
+	b.WriteString(" to init workspace here (won't overwrite files)\n")
+	b.WriteString("  - Press ")
 	b.WriteString(m.theme.Title.Render("I"))
-	b.WriteString(" to init workspace in current directory (force=true)\n\n")
+	b.WriteString(" to force overwrite\n\n")
 
 	if m.lastInitErr != nil {
 		b.WriteString("Last init error:\n  ")
@@ -588,7 +592,7 @@ func (m model) viewSettings() string {
 		b.WriteString("\n\n")
 	}
 
-	b.WriteString(m.theme.Help.Render("i init • esc/b back • q home"))
+	b.WriteString(m.theme.Help.Render("i init • I force init • esc/b back • q home"))
 	return m.theme.Card.Render(b.String())
 }
 

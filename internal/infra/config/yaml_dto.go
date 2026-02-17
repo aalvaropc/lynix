@@ -12,9 +12,10 @@ type YAMLRequest struct {
 	URL     string            `yaml:"url"`
 	Headers map[string]string `yaml:"headers"`
 
-	JSON map[string]any    `yaml:"json"`
-	Form map[string]string `yaml:"form"`
-	Raw  string            `yaml:"raw"`
+	JSON        map[string]any    `yaml:"json"`
+	Form        map[string]string `yaml:"form"`
+	Raw         string            `yaml:"raw"`
+	ContentType string            `yaml:"content_type"`
 
 	Assert  YAMLAssertions    `yaml:"assert"`
 	Extract map[string]string `yaml:"extract"`
