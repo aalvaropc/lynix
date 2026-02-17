@@ -49,6 +49,12 @@ func LoadConfig(root string) (domain.Config, error) {
 	if y.Lynix.Paths.RunsDir != "" {
 		cfg.Paths.RunsDir = y.Lynix.Paths.RunsDir
 	}
+	if y.Lynix.Artifacts.SaveResponseHeaders != nil {
+		cfg.Artifacts.SaveResponseHeaders = *y.Lynix.Artifacts.SaveResponseHeaders
+	}
+	if y.Lynix.Artifacts.SaveResponseBody != nil {
+		cfg.Artifacts.SaveResponseBody = *y.Lynix.Artifacts.SaveResponseBody
+	}
 
 	return cfg, nil
 }
@@ -68,5 +74,10 @@ type yamlConfig struct {
 			EnvironmentsDir string `yaml:"environments_dir"`
 			RunsDir         string `yaml:"runs_dir"`
 		} `yaml:"paths"`
+
+		Artifacts struct {
+			SaveResponseHeaders *bool `yaml:"save_response_headers"`
+			SaveResponseBody    *bool `yaml:"save_response_body"`
+		} `yaml:"artifacts"`
 	} `yaml:"lynix"`
 }
