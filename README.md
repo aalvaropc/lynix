@@ -45,6 +45,8 @@ This creates:
     └── secrets.local.yaml  # (gitignored)
 ```
 
+It also ensures your `.gitignore` includes common Lynix artifacts like `runs/`, `.lynix/`, and `env/secrets.local.yaml`.
+
 ## Project Structure
 
 ```
@@ -87,6 +89,16 @@ requests:
       Accept: "application/json"
     assert:
       status: 200
+```
+
+Optional: you can set `content_type` for requests with a body (useful for `raw` payloads):
+
+```yaml
+  - name: upload.text
+    method: POST
+    url: "{{base_url}}/upload"
+    raw: "hello"
+    content_type: "text/plain"
 ```
 
 ## Environment Format
