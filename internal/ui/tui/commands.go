@@ -141,14 +141,17 @@ func startRunAsync(
 	workspaceRoot, collectionPath, envName string,
 	log *slog.Logger,
 	debug bool,
-) (chan runnerDoneMsg, tea.Cmd) {
+) (chan runnerDoneMsg, context.CancelFunc, tea.Cmd) {
 	ch := make(chan runnerDoneMsg, 1)
 
 	if log == nil {
 		log = slog.Default()
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+
 	go func() {
+		defer cancel()
 		defer close(ch)
 
 		log.Info("run.start",
@@ -178,9 +181,6 @@ func startRunAsync(
 		store := runstore.NewJSONStore(workspaceRoot, cfg, runstore.WithIndex(true))
 
 		uc := usecase.NewRunCollection(colLoader, envLoader, runner, store)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
 
 		run, id, execErr := uc.Execute(ctx, collectionPath, envName)
 
@@ -217,5 +217,5 @@ func startRunAsync(
 		ch <- runnerDoneMsg{run: run, id: id, err: execErr}
 	}()
 
-	return ch, listenRunner(ch)
+	return ch, cancel, listenRunner(ch)
 }

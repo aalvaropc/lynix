@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -78,6 +79,7 @@ type model struct {
 	running                bool
 	spin                   spinner.Model
 	runCh                  chan runnerDoneMsg
+	runCancel              context.CancelFunc
 	runResult              domain.RunResult
 	runID                  string
 	runErr                 error
@@ -180,6 +182,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selectedEnvName = ""
 		m.runErr = nil
 		m.runID = ""
+		m.runCancel = nil
 		m.toast = ""
 
 		if m.workspaceFound {
@@ -246,6 +249,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.running = false
 		m.runErr = msg.err
 		m.runID = msg.id
+		m.runCancel = nil
 		m.runResult = msg.run
 
 		m.buildResultsTable()
@@ -265,6 +269,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if key == "q" {
+			if m.running {
+				m.toast = "Run in progress (press c to cancel)"
+				return m, nil
+			}
 			if m.scr == screenHome {
 				return m, tea.Quit
 			}
@@ -333,7 +341,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch key {
 			case "esc", "b":
 				if m.running {
-					m.toast = "Run in progress..."
+					m.toast = "Run in progress (press c to cancel)"
 					return m, nil
 				}
 				if m.wizardStep <= 1 {
@@ -343,6 +351,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.wizardStep--
 				return m, nil
+			case "c", "C":
+				if m.running && m.runCancel != nil {
+					m.runCancel()
+					m.toast = "Cancelling..."
+					return m, nil
+				}
 
 			case "enter":
 				if !m.workspaceFound {
@@ -379,7 +393,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.running = true
 					m.toast = ""
 
-					ch, listenCmd := startRunAsync(
+					ch, cancel, listenCmd := startRunAsync(
 						m.workspaceRoot,
 						m.selectedCollectionPath,
 						m.selectedEnvName,
@@ -387,6 +401,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.deps.Debug,
 					)
 					m.runCh = ch
+					m.runCancel = cancel
 
 					return m, tea.Batch(
 						m.spin.Tick,
@@ -658,7 +673,7 @@ func (m model) viewRunWizard() string {
 		card := m.theme.Card.Render(
 			m.theme.Title.Render("Step 4/4 — Running") + "\n\n" +
 				m.spin.View() + " Executing collection...\n\n" +
-				m.theme.Help.Render("please wait"),
+				m.theme.Help.Render("c cancel • please wait"),
 		)
 		return card
 

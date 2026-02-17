@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"regexp"
@@ -14,6 +15,13 @@ var reLine = regexp.MustCompile(`(?i)\bline\s+(\d+)\b`)
 func userMessage(err error) string {
 	if err == nil {
 		return ""
+	}
+
+	if errors.Is(err, context.Canceled) {
+		return "Run cancelled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "Run timed out"
 	}
 
 	var oe *domain.OpError
