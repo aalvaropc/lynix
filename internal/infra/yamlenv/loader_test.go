@@ -72,3 +72,29 @@ func TestLoadEnvironment_EnvMissing(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 }
+
+func TestLoadEnvironment_SupportsYML(t *testing.T) {
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "ws")
+	envDir := filepath.Join(root, "env")
+	if err := os.MkdirAll(envDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(envDir, "prod.yml"), []byte("vars:\n  base_url: https://api.example.com\n"), 0o644); err != nil {
+		t.Fatalf("write prod: %v", err)
+	}
+
+	l := NewLoader(root)
+	env, err := l.LoadEnvironment("prod")
+	if err != nil {
+		t.Fatalf("LoadEnvironment error: %v", err)
+	}
+
+	if env.Name != "prod" {
+		t.Fatalf("expected name=prod, got=%s", env.Name)
+	}
+	if env.Vars["base_url"] != "https://api.example.com" {
+		t.Fatalf("expected base_url, got=%s", env.Vars["base_url"])
+	}
+}

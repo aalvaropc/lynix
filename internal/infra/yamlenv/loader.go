@@ -53,7 +53,15 @@ func (l *Loader) LoadEnvironment(nameOrPath string) (domain.Environment, error) 
 		envName = strings.TrimSuffix(filepath.Base(envPath), filepath.Ext(envPath))
 	} else {
 		envName = nameOrPath
-		envPath = filepath.Join(l.rootDir, l.envDir, envName+".yaml")
+		p1 := filepath.Join(l.rootDir, l.envDir, envName+".yaml")
+		p2 := filepath.Join(l.rootDir, l.envDir, envName+".yml")
+
+		envPath = p1
+		if _, err := os.Stat(p1); err != nil && os.IsNotExist(err) {
+			if _, err2 := os.Stat(p2); err2 == nil {
+				envPath = p2
+			}
+		}
 	}
 
 	base, err := readVars(envPath)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/aalvaropc/lynix/internal/domain"
@@ -150,8 +151,13 @@ func printPrettyRun(w io.Writer, run domain.RunResult, runID string) {
 
 		if len(r.Extracted) > 0 {
 			fmt.Fprintf(w, "  extracted vars:\n")
-			for k, v := range r.Extracted {
-				fmt.Fprintf(w, "    - %s = %s\n", k, v)
+			keys := make([]string, 0, len(r.Extracted))
+			for k := range r.Extracted {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				fmt.Fprintf(w, "    - %s = %s\n", k, r.Extracted[k])
 			}
 		}
 

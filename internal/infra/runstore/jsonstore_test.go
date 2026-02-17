@@ -144,3 +144,245 @@ func TestSaveRun_MasksSensitiveExtractedWhenEnabled(t *testing.T) {
 		t.Fatalf("expected not_sensitive preserved, got=%q", got["not_sensitive"])
 	}
 }
+
+func TestSaveRun_OmitsResponseBodyWhenDisabled(t *testing.T) {
+	tmp := t.TempDir()
+
+	cfg := domain.DefaultConfig()
+	cfg.Paths.RunsDir = "runs"
+	cfg.Masking.Enabled = false
+	cfg.Artifacts.SaveResponseBody = false
+	cfg.Artifacts.SaveResponseHeaders = true
+
+	store := NewJSONStore(tmp, cfg)
+
+	start := time.Date(2026, 2, 3, 10, 11, 12, 0, time.UTC)
+	run := domain.RunArtifact{
+		CollectionName:  "Body Demo",
+		CollectionPath:  "collections/demo.yaml",
+		EnvironmentName: "dev",
+		StartedAt:       start,
+		EndedAt:         start.Add(1 * time.Second),
+		Results: []domain.RequestResult{
+			{
+				Name:       "health",
+				Method:     domain.MethodGet,
+				URL:        "http://x/health",
+				StatusCode: 200,
+				Response: domain.ResponseSnapshot{
+					Headers: map[string][]string{"X-Test": {"1"}},
+					Body:    []byte("secret"),
+				},
+			},
+		},
+	}
+
+	origBody := run.Results[0].Response.Body
+
+	_, err := store.SaveRun(run)
+	if err != nil {
+		t.Fatalf("SaveRun error: %v", err)
+	}
+	if string(run.Results[0].Response.Body) != string(origBody) {
+		t.Fatalf("expected original run not mutated")
+	}
+
+	path := filepath.Join(tmp, "runs", "20260203T101112Z_body-demo.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+
+	var decoded domain.RunResult
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if decoded.Results[0].Response.Body != nil {
+		t.Fatalf("expected body omitted, got %q", string(decoded.Results[0].Response.Body))
+	}
+	if decoded.Results[0].Response.Truncated {
+		t.Fatalf("expected truncated=false when body is omitted")
+	}
+	if decoded.Results[0].Response.Headers["X-Test"][0] != "1" {
+		t.Fatalf("expected headers preserved")
+	}
+}
+
+func TestSaveRun_OmitsResponseHeadersWhenDisabled(t *testing.T) {
+	tmp := t.TempDir()
+
+	cfg := domain.DefaultConfig()
+	cfg.Paths.RunsDir = "runs"
+	cfg.Masking.Enabled = false
+	cfg.Artifacts.SaveResponseBody = true
+	cfg.Artifacts.SaveResponseHeaders = false
+
+	store := NewJSONStore(tmp, cfg)
+
+	start := time.Date(2026, 2, 3, 10, 11, 12, 0, time.UTC)
+	run := domain.RunArtifact{
+		CollectionName:  "Headers Demo",
+		CollectionPath:  "collections/demo.yaml",
+		EnvironmentName: "dev",
+		StartedAt:       start,
+		EndedAt:         start.Add(1 * time.Second),
+		Results: []domain.RequestResult{
+			{
+				Name:       "health",
+				Method:     domain.MethodGet,
+				URL:        "http://x/health",
+				StatusCode: 200,
+				Response: domain.ResponseSnapshot{
+					Headers: map[string][]string{"X-Test": {"1"}},
+					Body:    []byte("ok"),
+				},
+			},
+		},
+	}
+
+	origHeaders := run.Results[0].Response.Headers["X-Test"][0]
+
+	_, err := store.SaveRun(run)
+	if err != nil {
+		t.Fatalf("SaveRun error: %v", err)
+	}
+	if run.Results[0].Response.Headers["X-Test"][0] != origHeaders {
+		t.Fatalf("expected original run not mutated")
+	}
+
+	path := filepath.Join(tmp, "runs", "20260203T101112Z_headers-demo.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+
+	var decoded domain.RunResult
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if len(decoded.Results[0].Response.Headers) != 0 {
+		t.Fatalf("expected headers omitted, got=%v", decoded.Results[0].Response.Headers)
+	}
+	if string(decoded.Results[0].Response.Body) != "ok" {
+		t.Fatalf("expected body preserved, got %q", string(decoded.Results[0].Response.Body))
+	}
+}
+
+func TestSaveRun_MasksSensitiveResponseHeadersWhenEnabled(t *testing.T) {
+	tmp := t.TempDir()
+
+	cfg := domain.DefaultConfig()
+	cfg.Paths.RunsDir = "runs"
+	cfg.Masking.Enabled = true
+
+	store := NewJSONStore(tmp, cfg)
+
+	start := time.Date(2026, 2, 3, 10, 11, 12, 0, time.UTC)
+	run := domain.RunArtifact{
+		CollectionName:  "Mask Headers",
+		CollectionPath:  "collections/demo.yaml",
+		EnvironmentName: "dev",
+		StartedAt:       start,
+		EndedAt:         start.Add(1 * time.Second),
+		Results: []domain.RequestResult{
+			{
+				Name: "headers",
+				Response: domain.ResponseSnapshot{
+					Headers: map[string][]string{
+						"Authorization": {"Bearer abc"},
+						"Set-Cookie":    {"session=abc"},
+						"X-Test":        {"1"},
+					},
+					Body: []byte("ok"),
+				},
+			},
+		},
+	}
+
+	origAuth := run.Results[0].Response.Headers["Authorization"][0]
+
+	_, err := store.SaveRun(run)
+	if err != nil {
+		t.Fatalf("SaveRun error: %v", err)
+	}
+	if run.Results[0].Response.Headers["Authorization"][0] != origAuth {
+		t.Fatalf("expected original run not mutated")
+	}
+
+	path := filepath.Join(tmp, "runs", "20260203T101112Z_mask-headers.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+
+	var decoded domain.RunResult
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	h := decoded.Results[0].Response.Headers
+	if h["Authorization"][0] != maskValue {
+		t.Fatalf("expected Authorization masked, got=%q", h["Authorization"][0])
+	}
+	if h["Set-Cookie"][0] != maskValue {
+		t.Fatalf("expected Set-Cookie masked, got=%q", h["Set-Cookie"][0])
+	}
+	if h["X-Test"][0] != "1" {
+		t.Fatalf("expected X-Test preserved, got=%q", h["X-Test"][0])
+	}
+}
+
+func TestSaveRun_UsesUniqueFilenameOnCollision(t *testing.T) {
+	tmp := t.TempDir()
+
+	cfg := domain.DefaultConfig()
+	cfg.Paths.RunsDir = "runs"
+	cfg.Masking.Enabled = false
+
+	store := NewJSONStore(tmp, cfg)
+
+	start := time.Date(2026, 2, 3, 10, 11, 12, 0, time.UTC)
+	run := domain.RunArtifact{
+		CollectionName:  "Demo API",
+		CollectionPath:  "collections/demo.yaml",
+		EnvironmentName: "dev",
+		StartedAt:       start,
+		EndedAt:         start.Add(1 * time.Second),
+		Results: []domain.RequestResult{
+			{
+				Name:       "health",
+				Method:     domain.MethodGet,
+				URL:        "http://x/health",
+				StatusCode: 200,
+				Response:   domain.ResponseSnapshot{Headers: map[string][]string{}},
+			},
+		},
+	}
+
+	id1, err := store.SaveRun(run)
+	if err != nil {
+		t.Fatalf("SaveRun #1 error: %v", err)
+	}
+	id2, err := store.SaveRun(run)
+	if err != nil {
+		t.Fatalf("SaveRun #2 error: %v", err)
+	}
+	if id1 == id2 {
+		t.Fatalf("expected unique ids, got %q", id1)
+	}
+
+	p1 := filepath.Join(tmp, "runs", id1+".json")
+	if _, err := os.Stat(p1); err != nil {
+		t.Fatalf("expected first file at %s, stat err=%v", p1, err)
+	}
+
+	p2 := filepath.Join(tmp, "runs", id2+".json")
+	if _, err := os.Stat(p2); err != nil {
+		t.Fatalf("expected second file at %s, stat err=%v", p2, err)
+	}
+	if id2 != id1+"_2" {
+		t.Fatalf("expected second id %q, got %q", id1+"_2", id2)
+	}
+}
