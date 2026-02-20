@@ -90,6 +90,68 @@ func TestMapCollectionBodyAndAssertions(t *testing.T) {
 	}
 }
 
+func TestMapCollectionJSONPathExtendedAssertions(t *testing.T) {
+	eq := "alice"
+	contains := "ali"
+	matches := "^[a-z]+$"
+	gt := 0.0
+	lt := 100.0
+
+	col := YAMLCollection{
+		Name: "extended",
+		Requests: []YAMLRequest{
+			{
+				Name:   "check",
+				Method: "GET",
+				URL:    "https://example.com",
+				Assert: YAMLAssertions{
+					JSONPath: map[string]YAMLJSONPathAssertion{
+						"$.name": {
+							Exists:   true,
+							Eq:       &eq,
+							Contains: &contains,
+							Matches:  &matches,
+						},
+						"$.count": {
+							Gt: &gt,
+							Lt: &lt,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	mapped, err := MapCollection("collection.yaml", col)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	req := mapped.Requests[0]
+
+	name := req.Assert.JSONPath["$.name"]
+	if !name.Exists {
+		t.Error("expected Exists=true for $.name")
+	}
+	if name.Eq == nil || *name.Eq != eq {
+		t.Errorf("expected Eq=%q, got %v", eq, name.Eq)
+	}
+	if name.Contains == nil || *name.Contains != contains {
+		t.Errorf("expected Contains=%q, got %v", contains, name.Contains)
+	}
+	if name.Matches == nil || *name.Matches != matches {
+		t.Errorf("expected Matches=%q, got %v", matches, name.Matches)
+	}
+
+	count := req.Assert.JSONPath["$.count"]
+	if count.Gt == nil || *count.Gt != gt {
+		t.Errorf("expected Gt=%v, got %v", gt, count.Gt)
+	}
+	if count.Lt == nil || *count.Lt != lt {
+		t.Errorf("expected Lt=%v, got %v", lt, count.Lt)
+	}
+}
+
 func TestMapEnvironmentDefaultsVars(t *testing.T) {
 	env, err := MapEnvironment("env/dev.yaml", YAMLEnvironment{})
 	if err != nil {

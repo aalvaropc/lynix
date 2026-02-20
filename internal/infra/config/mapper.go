@@ -88,7 +88,14 @@ func mapJSONPath(in map[string]YAMLJSONPathAssertion) map[string]domain.JSONPath
 	}
 	out := make(map[string]domain.JSONPathAssertion, len(in))
 	for k, v := range in {
-		out[k] = domain.JSONPathAssertion{Exists: v.Exists}
+		out[k] = domain.JSONPathAssertion{
+			Exists:   v.Exists,
+			Eq:       v.Eq,
+			Contains: v.Contains,
+			Matches:  v.Matches,
+			Gt:       v.Gt,
+			Lt:       v.Lt,
+		}
 	}
 	return out
 }

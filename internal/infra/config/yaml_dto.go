@@ -29,7 +29,12 @@ type YAMLAssertions struct {
 }
 
 type YAMLJSONPathAssertion struct {
-	Exists bool `yaml:"exists"`
+	Exists   bool     `yaml:"exists"`
+	Eq       *string  `yaml:"eq"`
+	Contains *string  `yaml:"contains"`
+	Matches  *string  `yaml:"matches"`
+	Gt       *float64 `yaml:"gt"`
+	Lt       *float64 `yaml:"lt"`
 }
 
 type YAMLEnvironment struct {
