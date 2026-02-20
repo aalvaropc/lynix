@@ -227,3 +227,233 @@ func TestEvaluate_JSONPathExistsFalseSkipped(t *testing.T) {
 		t.Fatalf("expected 0 results for Exists=false, got %d", len(results))
 	}
 }
+
+// --- JSONPath eq ---
+
+func strPtr(s string) *string { return &s }
+
+func TestEvaluate_JSONPathEq_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.name": {Eq: strPtr("alice")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if !out[0].Passed {
+		t.Fatalf("expected pass, got: %s", out[0].Message)
+	}
+}
+
+func TestEvaluate_JSONPathEq_Fail(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.name": {Eq: strPtr("alice")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"bob"}`))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if out[0].Passed {
+		t.Fatalf("expected fail")
+	}
+}
+
+func TestEvaluate_JSONPathEq_Number(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.count": {Eq: strPtr("42")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"count":42}`))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if !out[0].Passed {
+		t.Fatalf("expected pass, got: %s", out[0].Message)
+	}
+}
+
+// --- JSONPath contains ---
+
+func TestEvaluate_JSONPathContains_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.name": {Contains: strPtr("ali")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if !out[0].Passed {
+		t.Fatalf("expected pass, got: %s", out[0].Message)
+	}
+}
+
+func TestEvaluate_JSONPathContains_Fail(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.name": {Contains: strPtr("ali")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"bob"}`))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if out[0].Passed {
+		t.Fatalf("expected fail")
+	}
+}
+
+// --- JSONPath matches ---
+
+func TestEvaluate_JSONPathMatches_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.email": {Matches: strPtr("^.+@.+")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"email":"a@b.com"}`))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if !out[0].Passed {
+		t.Fatalf("expected pass, got: %s", out[0].Message)
+	}
+}
+
+func TestEvaluate_JSONPathMatches_Fail(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.email": {Matches: strPtr("^.+@.+")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"email":"notanemail"}`))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if out[0].Passed {
+		t.Fatalf("expected fail")
+	}
+}
+
+func TestEvaluate_JSONPathMatches_InvalidRegex(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.x": {Matches: strPtr("[invalid")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"x":"y"}`))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if out[0].Passed {
+		t.Fatalf("expected fail for invalid regex")
+	}
+}
+
+// --- JSONPath gt ---
+
+func float64Ptr(f float64) *float64 { return &f }
+
+func TestEvaluate_JSONPathGt_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.count": {Gt: float64Ptr(0)},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"count":5}`))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if !out[0].Passed {
+		t.Fatalf("expected pass, got: %s", out[0].Message)
+	}
+}
+
+func TestEvaluate_JSONPathGt_Fail(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.count": {Gt: float64Ptr(5)},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"count":0}`))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if out[0].Passed {
+		t.Fatalf("expected fail")
+	}
+}
+
+// --- JSONPath lt ---
+
+func TestEvaluate_JSONPathLt_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.count": {Lt: float64Ptr(10)},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"count":5}`))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if !out[0].Passed {
+		t.Fatalf("expected pass, got: %s", out[0].Message)
+	}
+}
+
+func TestEvaluate_JSONPathLt_Fail(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.count": {Lt: float64Ptr(5)},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"count":10}`))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if out[0].Passed {
+		t.Fatalf("expected fail")
+	}
+}
+
+// --- Multiple checks on same path ---
+
+func TestEvaluate_JSONPathMultipleChecksOnSamePath(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.name": {Eq: strPtr("alice"), Contains: strPtr("ali")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`))
+	if len(out) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(out))
+	}
+	for _, r := range out {
+		if !r.Passed {
+			t.Errorf("expected pass for %q, got: %s", r.Name, r.Message)
+		}
+	}
+}
+
+// --- Missing path ---
+
+func TestEvaluate_JSONPathEq_MissingPath(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.name": {Eq: strPtr("alice")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"x":1}`))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if out[0].Passed {
+		t.Fatalf("expected fail for missing path")
+	}
+}
