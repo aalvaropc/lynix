@@ -76,9 +76,4 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
-        run: |
-          go build \
-            -ldflags "-X github.com/aalvaropc/lynix/internal/buildinfo.Version=ci \
-                      -X github.com/aalvaropc/lynix/internal/buildinfo.Commit=${{ github.sha }} \
-                      -X github.com/aalvaropc/lynix/internal/buildinfo.Date=ci" \
-            -o /dev/null ./cmd/lynix
+        run: go build -ldflags "-X github.com/aalvaropc/lynix/internal/buildinfo.Version=ci -X github.com/aalvaropc/lynix/internal/buildinfo.Commit=${{ github.sha }} -X github.com/aalvaropc/lynix/internal/buildinfo.Date=ci" -o /dev/null ./cmd/lynix
