@@ -1,7 +1,7 @@
 # Binaries / dist
 bin/
 dist/
-lynix
+/lynix
 
 # OS / IDE
 .DS_Store
