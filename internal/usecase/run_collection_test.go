@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +13,8 @@ import (
 	"github.com/aalvaropc/lynix/internal/infra/httprunner"
 	"github.com/aalvaropc/lynix/internal/ports"
 )
+
+// --- fakes used by both integration and unit tests ---
 
 type fakeCollectionLoader struct {
 	col domain.Collection
@@ -42,6 +45,342 @@ func (s *fakeStore) SaveRun(run domain.RunArtifact) (string, error) {
 	s.last = run
 	return "run-123", nil
 }
+
+// --- stubs for unit tests ---
+
+type errCollectionLoader struct{ err error }
+
+func (e errCollectionLoader) LoadCollection(_ string) (domain.Collection, error) {
+	return domain.Collection{}, e.err
+}
+func (e errCollectionLoader) ListCollections(_ string) ([]domain.CollectionRef, error) {
+	return nil, nil
+}
+
+type errEnvLoader struct{ err error }
+
+func (e errEnvLoader) LoadEnvironment(_ string) (domain.Environment, error) {
+	return domain.Environment{}, e.err
+}
+
+// stubRunner returns a fixed result/error pair.
+type stubRunner struct {
+	result domain.RequestResult
+	err    error
+}
+
+func (s *stubRunner) Run(_ context.Context, _ domain.RequestSpec, _ domain.Vars) (domain.RequestResult, error) {
+	return s.result, s.err
+}
+
+// multiCallRunner returns a different result/error per call and captures vars passed.
+type multiCallRunner struct {
+	results      []domain.RequestResult
+	errs         []error
+	capturedVars []domain.Vars
+	idx          int
+}
+
+func (m *multiCallRunner) Run(_ context.Context, _ domain.RequestSpec, vars domain.Vars) (domain.RequestResult, error) {
+	snap := make(domain.Vars, len(vars))
+	for k, v := range vars {
+		snap[k] = v
+	}
+	m.capturedVars = append(m.capturedVars, snap)
+
+	i := m.idx
+	m.idx++
+	var res domain.RequestResult
+	var err error
+	if i < len(m.results) {
+		res = m.results[i]
+	}
+	if i < len(m.errs) {
+		err = m.errs[i]
+	}
+	return res, err
+}
+
+// ctxCancelRunner cancels the given context on first Run call then returns a fixed result.
+type ctxCancelRunner struct {
+	cancel context.CancelFunc
+	result domain.RequestResult
+	called int
+}
+
+func (r *ctxCancelRunner) Run(_ context.Context, _ domain.RequestSpec, _ domain.Vars) (domain.RequestResult, error) {
+	r.called++
+	if r.called == 1 {
+		r.cancel()
+	}
+	return r.result, nil
+}
+
+// errStore always fails SaveRun.
+type errStore struct{ err error }
+
+func (s *errStore) SaveRun(_ domain.RunArtifact) (string, error) { return "", s.err }
+
+// --- mergeVars unit tests ---
+
+func TestMergeVars_CollectionAsBase(t *testing.T) {
+	got := mergeVars(domain.Vars{"a": "col_a", "b": "col_b"}, domain.Vars{})
+	if got["a"] != "col_a" {
+		t.Fatalf("expected a=col_a, got %q", got["a"])
+	}
+	if got["b"] != "col_b" {
+		t.Fatalf("expected b=col_b, got %q", got["b"])
+	}
+}
+
+func TestMergeVars_EnvOverrides(t *testing.T) {
+	got := mergeVars(
+		domain.Vars{"a": "col_a", "b": "col_b"},
+		domain.Vars{"b": "env_b", "c": "env_c"},
+	)
+	if got["a"] != "col_a" {
+		t.Fatalf("expected a=col_a (col-only), got %q", got["a"])
+	}
+	if got["b"] != "env_b" {
+		t.Fatalf("expected b=env_b (env overrides col), got %q", got["b"])
+	}
+	if got["c"] != "env_c" {
+		t.Fatalf("expected c=env_c (env-only), got %q", got["c"])
+	}
+}
+
+func TestMergeVars_BothEmpty(t *testing.T) {
+	got := mergeVars(nil, nil)
+	if len(got) != 0 {
+		t.Fatalf("expected empty map, got %v", got)
+	}
+}
+
+// --- RunCollection.Execute unit tests ---
+
+func TestRunCollection_Execute_StoreNil(t *testing.T) {
+	col := domain.Collection{
+		Name: "test",
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://example.com"},
+		},
+	}
+	runner := &stubRunner{result: domain.RequestResult{
+		StatusCode: 200,
+		Response:   domain.ResponseSnapshot{Body: []byte(`{}`)},
+	}}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil)
+
+	run, id, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "" {
+		t.Fatalf("expected empty id when store is nil, got %q", id)
+	}
+	if run.CollectionName != "test" {
+		t.Fatalf("expected CollectionName=test, got %q", run.CollectionName)
+	}
+}
+
+func TestRunCollection_Execute_StoreCalled(t *testing.T) {
+	col := domain.Collection{
+		Name: "test",
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://example.com"},
+		},
+	}
+	runner := &stubRunner{result: domain.RequestResult{
+		StatusCode: 200,
+		Response:   domain.ResponseSnapshot{Body: []byte(`{}`)},
+	}}
+	store := &fakeStore{}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, store)
+
+	_, id, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "run-123" {
+		t.Fatalf("expected id=run-123, got %q", id)
+	}
+	if !store.saved {
+		t.Fatal("expected SaveRun to be called")
+	}
+}
+
+func TestRunCollection_Execute_ErrorLoadingCollection(t *testing.T) {
+	loadErr := errors.New("collection not found")
+	uc := NewRunCollection(errCollectionLoader{err: loadErr}, fakeEnvLoader{}, &stubRunner{}, nil)
+
+	_, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err == nil {
+		t.Fatal("expected error loading collection")
+	}
+	if !errors.Is(err, loadErr) {
+		t.Fatalf("expected wrapped loadErr, got %v", err)
+	}
+}
+
+func TestRunCollection_Execute_ErrorLoadingEnv(t *testing.T) {
+	envErr := errors.New("env not found")
+	uc := NewRunCollection(fakeCollectionLoader{}, errEnvLoader{err: envErr}, &stubRunner{}, nil)
+
+	_, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err == nil {
+		t.Fatal("expected error loading environment")
+	}
+	if !errors.Is(err, envErr) {
+		t.Fatalf("expected wrapped envErr, got %v", err)
+	}
+}
+
+func TestRunCollection_Execute_RunnerError_ContinuesNext(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com"},
+			{Name: "req2", Method: domain.MethodGet, URL: "http://b.com"},
+		},
+	}
+	runner := &multiCallRunner{
+		results: []domain.RequestResult{
+			{},
+			{StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+		},
+		errs: []error{errors.New("runner failed"), nil},
+	}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil)
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(run.Results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(run.Results))
+	}
+	if run.Results[0].Error == nil {
+		t.Fatal("expected first request to be marked as failed")
+	}
+	if run.Results[1].Error != nil {
+		t.Fatalf("expected second request to succeed, got error: %v", run.Results[1].Error)
+	}
+}
+
+func TestRunCollection_Execute_ContextCancelledBeforeFirstRequest(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://example.com"},
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before Execute
+
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, &stubRunner{}, nil)
+	_, _, err := uc.Execute(ctx, "col.yaml", "env.yaml")
+	if err == nil {
+		t.Fatal("expected context error")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestRunCollection_Execute_ContextCancelledDuringIteration(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com"},
+			{Name: "req2", Method: domain.MethodGet, URL: "http://b.com"},
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	runner := &ctxCancelRunner{
+		cancel: cancel,
+		result: domain.RequestResult{StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+	}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil)
+
+	run, _, err := uc.Execute(ctx, "col.yaml", "env.yaml")
+	if err == nil {
+		t.Fatal("expected context cancellation error")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	// First request completed before cancellation was detected.
+	if len(run.Results) != 1 {
+		t.Fatalf("expected 1 result (second request skipped), got %d", len(run.Results))
+	}
+}
+
+func TestRunCollection_Execute_StoreSaveError(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://example.com"},
+		},
+	}
+	runner := &stubRunner{result: domain.RequestResult{
+		StatusCode: 200,
+		Response:   domain.ResponseSnapshot{Body: []byte(`{}`)},
+	}}
+	saveErr := errors.New("store unavailable")
+	store := &errStore{err: saveErr}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, store)
+
+	run, id, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err == nil {
+		t.Fatal("expected error from store.SaveRun")
+	}
+	if !errors.Is(err, saveErr) {
+		t.Fatalf("expected wrapped saveErr, got %v", err)
+	}
+	if id != "" {
+		t.Fatalf("expected empty id on store error, got %q", id)
+	}
+	// run should still be returned so caller can inspect results.
+	if len(run.Results) != 1 {
+		t.Fatalf("expected 1 result even on store error, got %d", len(run.Results))
+	}
+}
+
+func TestRunCollection_Execute_VarChainingViaExtract(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{
+				Name:    "req1",
+				Method:  domain.MethodGet,
+				URL:     "http://example.com/auth",
+				Extract: domain.ExtractSpec{"token": "$.token"},
+			},
+			{
+				Name:   "req2",
+				Method: domain.MethodGet,
+				URL:    "http://example.com/users",
+			},
+		},
+	}
+	runner := &multiCallRunner{
+		results: []domain.RequestResult{
+			{StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{"token":"abc123"}`)}},
+			{StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+		},
+		errs: []error{nil, nil},
+	}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil)
+
+	_, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(runner.capturedVars) != 2 {
+		t.Fatalf("expected 2 runner calls, got %d", len(runner.capturedVars))
+	}
+	// Second call should have the extracted token available.
+	if runner.capturedVars[1]["token"] != "abc123" {
+		t.Fatalf("expected token=abc123 in second request vars, got %q", runner.capturedVars[1]["token"])
+	}
+}
+
+// --- integration tests (real HTTP) ---
 
 func TestRunCollection_ExtractsAndChainsVars(t *testing.T) {
 	token := "abc123"
