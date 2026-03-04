@@ -23,7 +23,7 @@ No accounts. No dashboards. No proprietary formats. Just a single binary and a f
 ## Features
 
 - **TUI-first** — interactive interface with arrow-key navigation; no commands to memorize for daily use
-- **Headless CLI** — `lynix run` works in CI pipelines with JSON output and proper exit codes
+- **Headless CLI** — `lynix run` works in CI pipelines with JSON or JUnit XML output and proper exit codes
 - **Git-friendly** — collections and environments are plain YAML you can diff, review, and version
 - **Assertions** — validate status codes, latency thresholds, and JSONPath expressions with 6 operators
 - **Variable extraction** — pull values from responses via JSONPath and inject them into subsequent requests
@@ -629,6 +629,9 @@ lynix run -c smoke-tests -e stg
 # JSON output for parsing or downstream steps
 lynix run -c integration-tests -e prod --format json | jq '.results[].assertions'
 
+# JUnit XML for CI test reporters
+lynix run -c smoke-tests -e stg --format junit > results.xml
+
 # Skip saving artifacts in ephemeral environments
 lynix run -c smoke-tests -e stg --no-save
 
@@ -636,10 +639,24 @@ lynix run -c smoke-tests -e stg --no-save
 lynix validate -c smoke-tests -e stg
 ```
 
-**GitHub Actions example:**
+**GitHub Actions example with JUnit report:**
 ```yaml
 - name: Run API tests
-  run: lynix run -c smoke-tests -e prod --no-save --format json
+  run: lynix run -c smoke-tests -e prod --no-save --format junit > results.xml
+
+- name: Publish test report
+  uses: dorny/test-reporter@v1
+  if: always()
+  with:
+    name: API Tests
+    path: results.xml
+    reporter: java-junit
+```
+
+**Simple example (exit code only):**
+```yaml
+- name: Run API tests
+  run: lynix run -c smoke-tests -e prod --no-save
 ```
 
 **Exit codes:**

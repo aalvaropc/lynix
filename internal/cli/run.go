@@ -70,7 +70,7 @@ func runCmd() *cobra.Command {
 	c.Flags().StringVarP(&collection, "collection", "c", "", "Collection name or path (required)")
 	c.Flags().StringVarP(&env, "env", "e", "", "Environment name or path (optional; defaults to workspace default env)")
 	c.Flags().BoolVar(&noSave, "no-save", false, "Do not save run artifact under runs/")
-	c.Flags().StringVar(&format, "format", "pretty", "Output format: pretty|json")
+	c.Flags().StringVar(&format, "format", "pretty", "Output format: pretty|json|junit")
 
 	if err := c.MarkFlagRequired("collection"); err != nil {
 		panic(fmt.Sprintf("MarkFlagRequired: %v", err))
@@ -92,8 +92,10 @@ func printRun(w io.Writer, run domain.RunResult, runID string, format string) er
 	case "pretty", "":
 		printPrettyRun(w, run, runID)
 		return nil
+	case "junit":
+		return formatJUnit(w, run, runID)
 	default:
-		return fmt.Errorf("unsupported format %q (expected pretty|json)", format)
+		return fmt.Errorf("unsupported format %q (expected pretty|json|junit)", format)
 	}
 }
 
