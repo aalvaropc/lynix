@@ -42,7 +42,7 @@ func (s safeModel) Update(msg tea.Msg) (tm tea.Model, cmd tea.Cmd) {
 			if s.m.runCh != nil {
 				// Drain the channel so the goroutine can exit.
 				go func(ch chan runnerDoneMsg) {
-					for range ch {
+					for range ch { //nolint:revive // drain so goroutine exits
 					}
 				}(s.m.runCh)
 				s.m.runCh = nil
