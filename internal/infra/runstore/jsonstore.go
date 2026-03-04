@@ -17,6 +17,11 @@ import (
 const defaultRunsDir = "runs"
 const maskValue = "********"
 
+// Redacter is the interface for artifact redaction (avoids import cycle).
+type Redacter interface {
+	Redact(run domain.RunArtifact) domain.RunArtifact
+}
+
 type JSONStore struct {
 	rootDir        string
 	runsDirName    string
@@ -24,6 +29,7 @@ type JSONStore struct {
 	saveHeaders    bool
 	saveBody       bool
 	writeIndex     bool
+	redacter       Redacter
 	now            func() time.Time
 	log            *slog.Logger
 }
@@ -43,6 +49,11 @@ func WithNow(now func() time.Time) Option {
 // WithLogger sets a structured logger for the store.
 func WithLogger(log *slog.Logger) Option {
 	return func(s *JSONStore) { s.log = log }
+}
+
+// WithRedacter injects an external redacter that replaces the built-in maskArtifact.
+func WithRedacter(r Redacter) Option {
+	return func(s *JSONStore) { s.redacter = r }
 }
 
 func NewJSONStore(root string, cfg domain.Config, opts ...Option) *JSONStore {
@@ -116,7 +127,11 @@ func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
 		toSave = applyResponseSavePolicy(toSave, s.saveHeaders, s.saveBody)
 	}
 	if s.maskingEnabled {
-		toSave = maskArtifact(toSave)
+		if s.redacter != nil {
+			toSave = s.redacter.Redact(toSave)
+		} else {
+			toSave = maskArtifact(toSave)
+		}
 	}
 
 	b, err := json.MarshalIndent(toSave, "", "  ")

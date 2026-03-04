@@ -69,12 +69,13 @@ func (uc *RunCollection) Execute(
 		if runErr != nil {
 			// Runner error (config-level): continue but mark the request as failed.
 			run.Results = append(run.Results, domain.RequestResult{
-				Name:       req.Name,
-				Method:     req.Method,
-				URL:        req.URL,
-				Assertions: []domain.AssertionResult{},
-				Extracts:   []domain.ExtractResult{},
-				Extracted:  domain.Vars{},
+				Name:           req.Name,
+				Method:         req.Method,
+				URL:            req.URL,
+				RequestHeaders: map[string]string{},
+				Assertions:     []domain.AssertionResult{},
+				Extracts:       []domain.ExtractResult{},
+				Extracted:      domain.Vars{},
 				Response: domain.ResponseSnapshot{
 					Headers: map[string][]string{},
 				},

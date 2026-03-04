@@ -4,6 +4,7 @@ import (
 	"github.com/aalvaropc/lynix/internal/domain"
 	"github.com/aalvaropc/lynix/internal/infra/httpclient"
 	"github.com/aalvaropc/lynix/internal/infra/httprunner"
+	"github.com/aalvaropc/lynix/internal/infra/redaction"
 	"github.com/aalvaropc/lynix/internal/infra/runstore"
 	"github.com/aalvaropc/lynix/internal/infra/yamlcollection"
 	"github.com/aalvaropc/lynix/internal/infra/yamlenv"
@@ -16,6 +17,8 @@ type Adapters struct {
 	Envs        ports.EnvironmentLoader
 	Runner      ports.RequestRunner
 	Store       ports.ArtifactStore
+	Redactor    *redaction.Redactor
+	Config      domain.Config
 }
 
 // NewAdapters creates all adapters for a workspace root and config.
@@ -33,9 +36,14 @@ func NewAdapters(root string, cfg domain.Config, enableStore bool) Adapters {
 	client := httpclient.New(httpclient.DefaultConfig())
 	runner := httprunner.New(client)
 
+	redactor := redaction.New(cfg.Masking)
+
 	var store ports.ArtifactStore
 	if enableStore {
-		store = runstore.NewJSONStore(root, cfg, runstore.WithIndex(true))
+		store = runstore.NewJSONStore(root, cfg,
+			runstore.WithIndex(true),
+			runstore.WithRedacter(redactor),
+		)
 	}
 
 	return Adapters{
@@ -43,5 +51,7 @@ func NewAdapters(root string, cfg domain.Config, enableStore bool) Adapters {
 		Envs:        envLoader,
 		Runner:      runner,
 		Store:       store,
+		Redactor:    redactor,
+		Config:      cfg,
 	}
 }

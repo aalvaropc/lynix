@@ -48,10 +48,12 @@ func runCmd() *cobra.Command {
 
 			run, runID, err := uc.Execute(cmd.Context(), collectionPath, envArg)
 			if err != nil {
-				// If save fails, we still may want to print something when format=json/pretty.
-				// Here we print what we can and return error.
 				_ = printRun(os.Stdout, run, runID, format)
 				return err
+			}
+
+			if ws.cfg.Masking.ApplyToOutput && ws.redactor != nil {
+				run = ws.redactor.Redact(run)
 			}
 
 			if err := printRun(os.Stdout, run, runID, format); err != nil {
