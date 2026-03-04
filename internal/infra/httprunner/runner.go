@@ -3,6 +3,7 @@ package httprunner
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -17,6 +18,7 @@ type Runner struct {
 	client       *http.Client
 	maxBodyBytes int64
 	resolver     *domain.VarResolver
+	log          *slog.Logger
 }
 
 type Option func(*Runner)
@@ -29,11 +31,17 @@ func WithResolver(vr *domain.VarResolver) Option {
 	return func(r *Runner) { r.resolver = vr }
 }
 
+// WithLogger sets a structured logger for the runner.
+func WithLogger(log *slog.Logger) Option {
+	return func(r *Runner) { r.log = log }
+}
+
 func New(client *http.Client, opts ...Option) *Runner {
 	r := &Runner{
 		client:       client,
 		maxBodyBytes: defaultMaxBodyBytes,
 		resolver:     domain.NewVarResolver(),
+		log:          slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -72,12 +80,23 @@ func (r *Runner) Run(ctx context.Context, req domain.RequestSpec, vars domain.Va
 		return domain.RequestResult{}, err
 	}
 
+	r.log.Debug("httprunner.request",
+		"name", resolved.Name,
+		"method", string(resolved.Method),
+		"url", resolved.URL,
+	)
+
 	start := time.Now()
 	resp, err := r.client.Do(httpReq)
 	lat := time.Since(start)
 	result.LatencyMS = lat.Milliseconds()
 
 	if err != nil {
+		r.log.Debug("httprunner.request.error",
+			"name", resolved.Name,
+			"err", err,
+			"latency_ms", result.LatencyMS,
+		)
 		result.Error = domain.NewRunError(err)
 		return result, nil
 	}
@@ -94,6 +113,15 @@ func (r *Runner) Run(ctx context.Context, req domain.RequestSpec, vars domain.Va
 
 	result.Response.Body = body
 	result.Response.Truncated = truncated
+
+	r.log.Debug("httprunner.request.done",
+		"name", resolved.Name,
+		"status", result.StatusCode,
+		"latency_ms", result.LatencyMS,
+		"body_bytes", len(body),
+		"truncated", truncated,
+	)
+
 	return result, nil
 }
 
