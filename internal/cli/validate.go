@@ -45,6 +45,8 @@ func validateCmd() *cobra.Command {
 	c.Flags().StringVarP(&collection, "collection", "c", "", "Collection name or path (required)")
 	c.Flags().StringVarP(&env, "env", "e", "", "Environment name or path (optional; defaults to workspace default env)")
 
-	_ = c.MarkFlagRequired("collection")
+	if err := c.MarkFlagRequired("collection"); err != nil {
+		panic(fmt.Sprintf("MarkFlagRequired: %v", err))
+	}
 	return c
 }

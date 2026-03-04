@@ -3,6 +3,8 @@ package runstore
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +25,7 @@ type JSONStore struct {
 	saveBody       bool
 	writeIndex     bool
 	now            func() time.Time
+	log            *slog.Logger
 }
 
 type Option func(*JSONStore)
@@ -35,6 +38,11 @@ func WithIndex(enabled bool) Option {
 // WithNow is useful for tests.
 func WithNow(now func() time.Time) Option {
 	return func(s *JSONStore) { s.now = now }
+}
+
+// WithLogger sets a structured logger for the store.
+func WithLogger(log *slog.Logger) Option {
+	return func(s *JSONStore) { s.log = log }
 }
 
 func NewJSONStore(root string, cfg domain.Config, opts ...Option) *JSONStore {
@@ -51,6 +59,7 @@ func NewJSONStore(root string, cfg domain.Config, opts ...Option) *JSONStore {
 		saveBody:       cfg.Artifacts.SaveResponseBody,
 		writeIndex:     false,
 		now:            time.Now,
+		log:            slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -141,7 +150,9 @@ func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
 	}
 
 	if s.writeIndex {
-		_ = s.appendIndex(dir, id, filename, run)
+		if err := s.appendIndex(dir, id, filename, run); err != nil {
+			s.log.Error("runstore.appendIndex.failed", "err", err, "path", dir)
+		}
 	}
 
 	return id, nil
@@ -220,7 +231,9 @@ func (s *JSONStore) appendIndex(dir, id, filename string, run domain.RunArtifact
 	}
 	defer f.Close()
 
-	_, _ = f.Write(append(line, '\n'))
+	if _, err := f.Write(append(line, '\n')); err != nil {
+		return err
+	}
 	return nil
 }
 

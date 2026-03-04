@@ -34,6 +34,20 @@ func (s safeModel) Update(msg tea.Msg) (tm tea.Model, cmd tea.Cmd) {
 				"stack", string(debug.Stack()),
 			)
 
+			// Clean up async resources to prevent goroutine leaks.
+			if s.m.runCancel != nil {
+				s.m.runCancel()
+				s.m.runCancel = nil
+			}
+			if s.m.runCh != nil {
+				// Drain the channel so the goroutine can exit.
+				go func(ch chan runnerDoneMsg) {
+					for range ch {
+					}
+				}(s.m.runCh)
+				s.m.runCh = nil
+			}
+
 			s.m.scr = screenHome
 			s.m.wizardStep = 0
 			s.m.running = false

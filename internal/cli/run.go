@@ -72,7 +72,9 @@ func runCmd() *cobra.Command {
 	c.Flags().BoolVar(&noSave, "no-save", false, "Do not save run artifact under runs/")
 	c.Flags().StringVar(&format, "format", "pretty", "Output format: pretty|json")
 
-	_ = c.MarkFlagRequired("collection")
+	if err := c.MarkFlagRequired("collection"); err != nil {
+		panic(fmt.Sprintf("MarkFlagRequired: %v", err))
+	}
 	return c
 }
 
