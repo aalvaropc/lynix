@@ -23,13 +23,13 @@ func envsListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List environments",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			ws, err := loadWorkspace(workspace)
 			if err != nil {
 				return err
 			}
 
-			refs, err := ws.envCatalog.ListEnvironments(ws.root)
+			refs, err := ws.envCatalog.ListEnvironments(cmd.Context(), ws.root)
 			if err != nil {
 				return err
 			}

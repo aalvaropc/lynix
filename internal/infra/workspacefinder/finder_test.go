@@ -1,6 +1,7 @@
 package workspacefinder
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,7 +23,7 @@ func TestFindRoot_FindsWorkspaceFromNestedDir(t *testing.T) {
 	}
 
 	f := NewFinder()
-	got, err := f.FindRoot(nested)
+	got, err := f.FindRoot(context.Background(), nested)
 	if err != nil {
 		t.Fatalf("FindRoot returned error: %v", err)
 	}
@@ -36,7 +37,7 @@ func TestFindRoot_NotFound(t *testing.T) {
 	_ = os.MkdirAll(filepath.Join(tmp, "a", "b"), 0o755)
 
 	f := NewFinder()
-	_, err := f.FindRoot(filepath.Join(tmp, "a", "b"))
+	_, err := f.FindRoot(context.Background(), filepath.Join(tmp, "a", "b"))
 	if err == nil {
 		t.Fatalf("expected error")
 	}

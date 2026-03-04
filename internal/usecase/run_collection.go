@@ -49,7 +49,7 @@ func (uc *RunCollection) Execute(
 	}
 
 	// collection vars < env vars < extracted runtime vars (updated per request)
-	vars := mergeVars(col.Vars, env.Vars)
+	vars := domain.Merge(col.Vars, env.Vars)
 
 	run := domain.RunResult{
 		CollectionName:  col.Name,
@@ -118,16 +118,3 @@ func (uc *RunCollection) Execute(
 	return run, id, nil
 }
 
-func mergeVars(collectionVars domain.Vars, envVars domain.Vars) domain.Vars {
-	out := domain.Vars{}
-
-	// collection first
-	for k, v := range collectionVars {
-		out[k] = v
-	}
-	// env overrides collection
-	for k, v := range envVars {
-		out[k] = v
-	}
-	return out
-}

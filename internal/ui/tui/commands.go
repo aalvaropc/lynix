@@ -13,13 +13,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/aalvaropc/lynix/internal/domain"
-	"github.com/aalvaropc/lynix/internal/infra/httpclient"
-	"github.com/aalvaropc/lynix/internal/infra/httprunner"
-	"github.com/aalvaropc/lynix/internal/infra/runstore"
+	"github.com/aalvaropc/lynix/internal/infra/wiring"
 	"github.com/aalvaropc/lynix/internal/infra/workspacefinder"
 	"github.com/aalvaropc/lynix/internal/infra/yamlcollection"
 	"github.com/aalvaropc/lynix/internal/infra/yamlenv"
-	"github.com/aalvaropc/lynix/internal/ports"
 	"github.com/aalvaropc/lynix/internal/usecase"
 )
 
@@ -33,7 +30,7 @@ func cmdRefreshWorkspace(deps Deps) tea.Cmd {
 			return workspaceRefreshedMsg{cwd: wd, found: false, err: errors.New("WorkspaceLocator is nil")}
 		}
 
-		root, findErr := deps.WorkspaceLocator.FindRoot(wd)
+		root, findErr := deps.WorkspaceLocator.FindRoot(context.Background(), wd)
 		if findErr != nil {
 			return workspaceRefreshedMsg{cwd: wd, found: false, err: findErr}
 		}
@@ -81,7 +78,7 @@ func cmdLoadEnvironments(root string) tea.Cmd {
 			yamlenv.WithEnvDir(cfg.Paths.EnvironmentsDir),
 		)
 
-		refs, err := loader.ListEnvironments(root)
+		refs, err := loader.ListEnvironments(context.Background(), root)
 		return envsLoadedMsg{root: root, refs: refs, err: err}
 	}
 }
@@ -150,10 +147,10 @@ func startRunAsync(
 		log = slog.Default()
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	baseCtx, baseCancel := context.WithCancel(context.Background())
 
 	go func() {
-		defer cancel()
+		defer baseCancel()
 		defer close(ch)
 
 		log.Info("run.start",
@@ -170,23 +167,15 @@ func startRunAsync(
 			return
 		}
 
-		colLoader := yamlcollection.NewLoader(
-			yamlcollection.WithCollectionsDir(cfg.Paths.CollectionsDir),
-		)
-		envLoader := yamlenv.NewLoader(
-			workspaceRoot,
-			yamlenv.WithEnvDir(cfg.Paths.EnvironmentsDir),
-		)
-
-		client := httpclient.New(httpclient.DefaultConfig())
-		runner := httprunner.New(client)
-
-		var store ports.ArtifactStore
-		if save {
-			store = runstore.NewJSONStore(workspaceRoot, cfg, runstore.WithIndex(true))
+		timeout := cfg.Run.Timeout
+		if timeout <= 0 {
+			timeout = 5 * time.Minute
 		}
+		ctx, cancel := context.WithTimeout(baseCtx, timeout)
+		defer cancel()
 
-		uc := usecase.NewRunCollection(colLoader, envLoader, runner, store)
+		adapters := wiring.NewAdapters(workspaceRoot, cfg, save)
+		uc := usecase.NewRunCollection(adapters.Collections, adapters.Envs, adapters.Runner, adapters.Store)
 
 		run, id, execErr := uc.Execute(ctx, collectionPath, envName)
 
@@ -223,5 +212,5 @@ func startRunAsync(
 		ch <- runnerDoneMsg{run: run, id: id, err: execErr}
 	}()
 
-	return ch, cancel, listenRunner(ch)
+	return ch, baseCancel, listenRunner(ch)
 }
