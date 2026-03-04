@@ -29,7 +29,7 @@ func newRootCmd() *cobra.Command {
 		Use:          "lynix",
 		Short:        "Lynix — TUI-first API tool",
 		SilenceUsage: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(c *cobra.Command, _ []string) error {
 			wd, err := os.Getwd()
 			if err != nil {
 				wd = "."
@@ -39,7 +39,7 @@ func newRootCmd() *cobra.Command {
 			finder := workspacefinder.NewFinder()
 
 			logRoot := wd
-			if root, ferr := finder.FindRoot(wd); ferr == nil && root != "" {
+			if root, ferr := finder.FindRoot(c.Context(), wd); ferr == nil && root != "" {
 				logRoot = root
 			}
 

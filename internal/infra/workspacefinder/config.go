@@ -1,8 +1,10 @@
 package workspacefinder
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/aalvaropc/lynix/internal/domain"
 	"gopkg.in/yaml.v3"
@@ -19,7 +21,7 @@ func LoadConfig(root string) (domain.Config, error) {
 			Op:   "workspacefinder.loadconfig",
 			Kind: domain.KindNotFound,
 			Path: path,
-			Err:  err,
+			Err:  fmt.Errorf("%w: %w", domain.ErrNotFound, err),
 		}
 	}
 
@@ -29,7 +31,7 @@ func LoadConfig(root string) (domain.Config, error) {
 			Op:   "workspacefinder.loadconfig",
 			Kind: domain.KindInvalidConfig,
 			Path: path,
-			Err:  err,
+			Err:  fmt.Errorf("%w: %w", domain.ErrInvalidConfig, err),
 		}
 	}
 
@@ -55,6 +57,9 @@ func LoadConfig(root string) (domain.Config, error) {
 	if y.Lynix.Artifacts.SaveResponseBody != nil {
 		cfg.Artifacts.SaveResponseBody = *y.Lynix.Artifacts.SaveResponseBody
 	}
+	if y.Lynix.Run.TimeoutSeconds > 0 {
+		cfg.Run.Timeout = time.Duration(y.Lynix.Run.TimeoutSeconds) * time.Second
+	}
 
 	return cfg, nil
 }
@@ -79,5 +84,9 @@ type yamlConfig struct {
 			SaveResponseHeaders *bool `yaml:"save_response_headers"`
 			SaveResponseBody    *bool `yaml:"save_response_body"`
 		} `yaml:"artifacts"`
+
+		Run struct {
+			TimeoutSeconds int `yaml:"timeout_seconds"`
+		} `yaml:"run"`
 	} `yaml:"lynix"`
 }

@@ -121,41 +121,6 @@ type errStore struct{ err error }
 
 func (s *errStore) SaveRun(_ domain.RunArtifact) (string, error) { return "", s.err }
 
-// --- mergeVars unit tests ---
-
-func TestMergeVars_CollectionAsBase(t *testing.T) {
-	got := mergeVars(domain.Vars{"a": "col_a", "b": "col_b"}, domain.Vars{})
-	if got["a"] != "col_a" {
-		t.Fatalf("expected a=col_a, got %q", got["a"])
-	}
-	if got["b"] != "col_b" {
-		t.Fatalf("expected b=col_b, got %q", got["b"])
-	}
-}
-
-func TestMergeVars_EnvOverrides(t *testing.T) {
-	got := mergeVars(
-		domain.Vars{"a": "col_a", "b": "col_b"},
-		domain.Vars{"b": "env_b", "c": "env_c"},
-	)
-	if got["a"] != "col_a" {
-		t.Fatalf("expected a=col_a (col-only), got %q", got["a"])
-	}
-	if got["b"] != "env_b" {
-		t.Fatalf("expected b=env_b (env overrides col), got %q", got["b"])
-	}
-	if got["c"] != "env_c" {
-		t.Fatalf("expected c=env_c (env-only), got %q", got["c"])
-	}
-}
-
-func TestMergeVars_BothEmpty(t *testing.T) {
-	got := mergeVars(nil, nil)
-	if len(got) != 0 {
-		t.Fatalf("expected empty map, got %v", got)
-	}
-}
-
 // --- RunCollection.Execute unit tests ---
 
 func TestRunCollection_Execute_StoreNil(t *testing.T) {

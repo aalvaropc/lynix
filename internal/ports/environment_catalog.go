@@ -1,7 +1,11 @@
 package ports
 
-import "github.com/aalvaropc/lynix/internal/domain"
+import (
+	"context"
+
+	"github.com/aalvaropc/lynix/internal/domain"
+)
 
 type EnvironmentCatalog interface {
-	ListEnvironments(root string) ([]domain.EnvironmentRef, error)
+	ListEnvironments(ctx context.Context, root string) ([]domain.EnvironmentRef, error)
 }

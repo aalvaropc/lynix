@@ -51,7 +51,7 @@ func (uc *ValidateCollection) Execute(ctx context.Context, collectionPath string
 	}
 
 	// collection vars < env vars < extracted vars
-	vars := mergeVars(col.Vars, env.Vars)
+	vars := domain.Merge(col.Vars, env.Vars)
 
 	for _, req := range col.Requests {
 		if err := ctx.Err(); err != nil {

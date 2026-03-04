@@ -1,11 +1,19 @@
 package domain
 
+import "time"
+
 // Config represents the minimal Lynix configuration loaded from lynix.yaml.
 type Config struct {
 	Masking   MaskingConfig
 	Defaults  DefaultsConfig
 	Paths     PathsConfig
 	Artifacts ArtifactsConfig
+	Run       RunConfig
+}
+
+// RunConfig holds runtime execution settings.
+type RunConfig struct {
+	Timeout time.Duration
 }
 
 type MaskingConfig struct {
@@ -42,6 +50,9 @@ func DefaultConfig() Config {
 		Artifacts: ArtifactsConfig{
 			SaveResponseHeaders: true,
 			SaveResponseBody:    true,
+		},
+		Run: RunConfig{
+			Timeout: 5 * time.Minute,
 		},
 	}
 }

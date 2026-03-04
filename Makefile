@@ -9,7 +9,7 @@ LDFLAGS = -X github.com/aalvaropc/lynix/internal/buildinfo.Version=$(VERSION) -X
 GOLANGCI_LINT_VERSION ?= v1.64.2
 GOLANGCI_LINT = go run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
-.PHONY: dev tidy test test-coverage lint build fmt check
+.PHONY: dev tidy test test-coverage lint build fmt check clean vulncheck
 
 dev:
 	go run -ldflags "$(LDFLAGS)" ./cmd/lynix
@@ -34,3 +34,9 @@ check: lint test
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/$(APP) ./cmd/lynix
+
+clean:
+	rm -rf bin/ coverage.out
+
+vulncheck:
+	go run golang.org/x/vuln/cmd/govulncheck@latest ./...

@@ -39,7 +39,7 @@ func (l *Loader) LoadCollection(path string) (domain.Collection, error) {
 			Op:   "yamlcollection.load",
 			Kind: domain.KindNotFound,
 			Path: path,
-			Err:  err,
+			Err:  fmt.Errorf("%w: %w", domain.ErrNotFound, err),
 		}
 	}
 
@@ -49,7 +49,7 @@ func (l *Loader) LoadCollection(path string) (domain.Collection, error) {
 			Op:   "yamlcollection.load",
 			Kind: domain.KindInvalidConfig,
 			Path: path,
-			Err:  err,
+			Err:  fmt.Errorf("%w: %w", domain.ErrInvalidConfig, err),
 		}
 	}
 
@@ -69,7 +69,7 @@ func (l *Loader) ListCollections(root string) ([]domain.CollectionRef, error) {
 			Op:   "yamlcollection.list",
 			Kind: domain.KindNotFound,
 			Path: dir,
-			Err:  err,
+			Err:  fmt.Errorf("%w: %w", domain.ErrNotFound, err),
 		}
 	}
 
@@ -139,7 +139,12 @@ type yamlAssertions struct {
 }
 
 type yamlJSONPathAssertion struct {
-	Exists bool `yaml:"exists"`
+	Exists   bool     `yaml:"exists"`
+	Eq       *string  `yaml:"eq"`
+	Contains *string  `yaml:"contains"`
+	Matches  *string  `yaml:"matches"`
+	Gt       *float64 `yaml:"gt"`
+	Lt       *float64 `yaml:"lt"`
 }
 
 func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
@@ -191,7 +196,22 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 			req.Extract = domain.ExtractSpec{}
 		}
 
-		// Body selection
+		// Body selection — reject multiple body types.
+		bodyCount := 0
+		if r.JSON != nil {
+			bodyCount++
+		}
+		if r.Form != nil {
+			bodyCount++
+		}
+		if strings.TrimSpace(r.Raw) != "" {
+			bodyCount++
+		}
+		if bodyCount > 1 {
+			return domain.Collection{}, invalidField(path, fieldPrefix+".body",
+				"only one body type allowed (json, form, or raw)")
+		}
+
 		req.Body = domain.BodySpec{Type: domain.BodyNone}
 		if r.JSON != nil {
 			req.Body = domain.BodySpec{Type: domain.BodyJSON, JSON: r.JSON}
@@ -201,6 +221,10 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 			req.Body = domain.BodySpec{Type: domain.BodyRaw, Raw: r.Raw}
 		}
 		req.Body.ContentType = strings.TrimSpace(r.ContentType)
+
+		if err := req.Body.Validate(); err != nil {
+			return domain.Collection{}, invalidField(path, fieldPrefix+".body", err.Error())
+		}
 
 		col.Requests = append(col.Requests, req)
 	}
@@ -214,7 +238,14 @@ func mapJSONPath(in map[string]yamlJSONPathAssertion) map[string]domain.JSONPath
 	}
 	out := make(map[string]domain.JSONPathAssertion, len(in))
 	for k, v := range in {
-		out[k] = domain.JSONPathAssertion{Exists: v.Exists}
+		out[k] = domain.JSONPathAssertion{
+			Exists:   v.Exists,
+			Eq:       v.Eq,
+			Contains: v.Contains,
+			Matches:  v.Matches,
+			Gt:       v.Gt,
+			Lt:       v.Lt,
+		}
 	}
 	return out
 }
@@ -240,6 +271,6 @@ func invalidField(path, field, msg string) error {
 		Op:   "yamlcollection.validate",
 		Kind: domain.KindInvalidConfig,
 		Path: path,
-		Err:  fmt.Errorf("field %s: %s", field, msg),
+		Err:  fmt.Errorf("%w: field %s: %s", domain.ErrInvalidConfig, field, msg),
 	}
 }

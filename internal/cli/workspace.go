@@ -1,18 +1,15 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/aalvaropc/lynix/internal/domain"
-	"github.com/aalvaropc/lynix/internal/infra/httpclient"
-	"github.com/aalvaropc/lynix/internal/infra/httprunner"
-	"github.com/aalvaropc/lynix/internal/infra/runstore"
+	"github.com/aalvaropc/lynix/internal/infra/wiring"
 	"github.com/aalvaropc/lynix/internal/infra/workspacefinder"
-	"github.com/aalvaropc/lynix/internal/infra/yamlcollection"
-	"github.com/aalvaropc/lynix/internal/infra/yamlenv"
 	"github.com/aalvaropc/lynix/internal/ports"
 )
 
@@ -40,28 +37,16 @@ func loadWorkspace(workspaceFlag string) (*workspaceCtx, error) {
 		return nil, err
 	}
 
-	colLoader := yamlcollection.NewLoader(
-		yamlcollection.WithCollectionsDir(cfg.Paths.CollectionsDir),
-	)
-
-	envLoader := yamlenv.NewLoader(
-		root,
-		yamlenv.WithEnvDir(cfg.Paths.EnvironmentsDir),
-	)
-
-	client := httpclient.New(httpclient.DefaultConfig())
-	runner := httprunner.New(client)
-
-	store := runstore.NewJSONStore(root, cfg, runstore.WithIndex(true))
+	adapters := wiring.NewAdapters(root, cfg, true)
 
 	return &workspaceCtx{
 		root:        root,
 		cfg:         cfg,
-		collections: colLoader,
-		envs:        envLoader,
-		envCatalog:  envLoader,
-		runner:      runner,
-		store:       store,
+		collections: adapters.Collections,
+		envs:        adapters.Envs,
+		envCatalog:  adapters.Envs.(ports.EnvironmentCatalog),
+		runner:      adapters.Runner,
+		store:       adapters.Store,
 	}, nil
 }
 
@@ -81,7 +66,7 @@ func resolveWorkspaceRoot(workspaceFlag string) (string, error) {
 	}
 
 	locator := workspacefinder.NewFinder()
-	root, err := locator.FindRoot(wd)
+	root, err := locator.FindRoot(context.Background(), wd)
 	if err != nil {
 		return "", fmt.Errorf("workspace not found from %q (tip: run `lynix init`): %w", wd, err)
 	}

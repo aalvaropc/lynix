@@ -1,6 +1,7 @@
 package yamlenv
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -92,7 +93,7 @@ func (l *Loader) LoadEnvironment(nameOrPath string) (domain.Environment, error) 
 
 // ListEnvironments lists env YAML files under the configured env directory.
 // It excludes the secrets file.
-func (l *Loader) ListEnvironments(root string) ([]domain.EnvironmentRef, error) {
+func (l *Loader) ListEnvironments(_ context.Context, root string) ([]domain.EnvironmentRef, error) {
 	base := strings.TrimSpace(root)
 	if base == "" {
 		base = l.rootDir
@@ -105,7 +106,7 @@ func (l *Loader) ListEnvironments(root string) ([]domain.EnvironmentRef, error) 
 			Op:   "yamlenv.list",
 			Kind: domain.KindNotFound,
 			Path: dir,
-			Err:  err,
+			Err:  fmt.Errorf("%w: %w", domain.ErrNotFound, err),
 		}
 	}
 
@@ -143,7 +144,7 @@ func readVars(path string) (domain.Vars, error) {
 			Op:   "yamlenv.load",
 			Kind: domain.KindNotFound,
 			Path: path,
-			Err:  err,
+			Err:  fmt.Errorf("%w: %w", domain.ErrNotFound, err),
 		}
 	}
 
@@ -153,7 +154,7 @@ func readVars(path string) (domain.Vars, error) {
 			Op:   "yamlenv.load",
 			Kind: domain.KindInvalidConfig,
 			Path: path,
-			Err:  err,
+			Err:  fmt.Errorf("%w: %w", domain.ErrInvalidConfig, err),
 		}
 	}
 

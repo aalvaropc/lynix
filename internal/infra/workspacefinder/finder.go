@@ -1,6 +1,7 @@
 package workspacefinder
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -17,7 +18,7 @@ func NewFinder() *Finder {
 	return &Finder{ConfigFile: "lynix.yaml"}
 }
 
-func (f *Finder) FindRoot(startDir string) (string, error) {
+func (f *Finder) FindRoot(_ context.Context, startDir string) (string, error) {
 	if startDir == "" {
 		return "", &domain.OpError{
 			Op:   "workspacefinder.findroot",

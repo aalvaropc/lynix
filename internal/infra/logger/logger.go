@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -16,12 +17,17 @@ type Config struct {
 }
 
 var (
-	mu       sync.RWMutex
-	global   = slog.New(slog.NewJSONHandler(io.Discard, nil))
+	mu       sync.Mutex // protects logFile, logPath, initedAt (write-time state)
+	globalP  atomic.Pointer[slog.Logger]
 	logFile  *os.File
 	logPath  string
 	initedAt time.Time
 )
+
+func init() {
+	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	globalP.Store(discard)
+}
 
 func Setup(cfg Config) (func() error, error) {
 	root := filepath.Clean(cfg.Root)
@@ -65,13 +71,13 @@ func Setup(cfg Config) (func() error, error) {
 	l := slog.New(h)
 
 	mu.Lock()
-	global = l
 	logFile = f
 	logPath = path
 	initedAt = time.Now().UTC()
 	mu.Unlock()
 
-	global.Info("logger.initialized", "path", path, "debug", cfg.Debug)
+	globalP.Store(l)
+	l.Info("logger.initialized", "path", path, "debug", cfg.Debug)
 
 	cleanup := func() error {
 		mu.Lock()
@@ -84,43 +90,44 @@ func Setup(cfg Config) (func() error, error) {
 		logFile = nil
 		logPath = ""
 		initedAt = time.Time{}
-		global = slog.New(slog.NewJSONHandler(io.Discard, nil))
+		discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
+		globalP.Store(discard)
 		return cerr
 	}
 
 	return cleanup, nil
 }
 
+// L returns the global logger. Safe for concurrent use without locks.
 func L() *slog.Logger {
-	mu.RLock()
-	defer mu.RUnlock()
-	return global
+	return globalP.Load()
 }
 
 func Path() string {
-	mu.RLock()
-	defer mu.RUnlock()
+	mu.Lock()
+	defer mu.Unlock()
 	return logPath
 }
 
 func InitTime() time.Time {
-	mu.RLock()
-	defer mu.RUnlock()
+	mu.Lock()
+	defer mu.Unlock()
 	return initedAt
 }
 
 func setDiscard() {
 	mu.Lock()
 	defer mu.Unlock()
-	global = slog.New(slog.NewJSONHandler(io.Discard, nil))
+	discard := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	globalP.Store(discard)
 	logFile = nil
 	logPath = ""
 	initedAt = time.Time{}
 }
 
 func IsReady() error {
-	mu.RLock()
-	defer mu.RUnlock()
+	mu.Lock()
+	defer mu.Unlock()
 	if logFile == nil || logPath == "" {
 		return errors.New("logger not initialized")
 	}

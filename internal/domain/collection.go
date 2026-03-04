@@ -43,6 +43,33 @@ type BodySpec struct {
 	ContentType string // Optional override (useful for raw payloads).
 }
 
+// Validate checks that a BodySpec has at most one body type populated.
+func (b BodySpec) Validate() error {
+	count := 0
+	if b.JSON != nil {
+		count++
+	}
+	if b.Form != nil {
+		count++
+	}
+	if b.Raw != "" {
+		count++
+	}
+	if count > 1 {
+		return &Error{
+			Kind: KindInvalidConfig,
+			Msg:  "only one body type allowed (json, form, or raw)",
+		}
+	}
+	if b.Type == BodyNone && count > 0 {
+		return &Error{
+			Kind: KindInvalidConfig,
+			Msg:  "body type is none but body data is present",
+		}
+	}
+	return nil
+}
+
 // JSONPathAssertion defines a JSONPath-based check.
 type JSONPathAssertion struct {
 	Exists   bool     // value exists and is non-empty

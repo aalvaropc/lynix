@@ -29,14 +29,17 @@ func userMessage(err error) string {
 		switch oe.Kind {
 
 		case domain.KindNotFound:
-			if strings.Contains(oe.Op, "yamlcollection") {
-				return "Collection not found"
-			}
-			if strings.Contains(oe.Op, "yamlenv") {
-				return "Environment not found"
-			}
-			if strings.Contains(oe.Op, "workspacefinder.findroot") {
-				return "Workspace not found"
+			// Use sentinel errors when available for precise classification.
+			if errors.Is(err, domain.ErrNotFound) {
+				// Classify by Op prefix for user-friendly messages.
+				switch {
+				case strings.HasPrefix(oe.Op, "yamlcollection"):
+					return "Collection not found"
+				case strings.HasPrefix(oe.Op, "yamlenv"):
+					return "Environment not found"
+				case strings.HasPrefix(oe.Op, "workspacefinder.findroot"):
+					return "Workspace not found"
+				}
 			}
 			return "Not found"
 
@@ -106,18 +109,22 @@ func extractMissingVarName(s string) string {
 	if i >= 0 {
 		part := strings.TrimSpace(s[i+len("missing variable:"):])
 		part = strings.Trim(part, " .,:;\"'")
-		part = strings.Fields(part)[0]
-		part = strings.Trim(part, " .,:;\"'")
-		return part
+		fields := strings.Fields(part)
+		if len(fields) == 0 {
+			return ""
+		}
+		return strings.Trim(fields[0], " .,:;\"'")
 	}
 
 	i = strings.LastIndex(ls, "missing variable ")
 	if i >= 0 {
 		part := strings.TrimSpace(s[i+len("missing variable "):])
 		part = strings.Trim(part, " .,:;\"'")
-		part = strings.Fields(part)[0]
-		part = strings.Trim(part, " .,:;\"'")
-		return part
+		fields := strings.Fields(part)
+		if len(fields) == 0 {
+			return ""
+		}
+		return strings.Trim(fields[0], " .,:;\"'")
 	}
 
 	return ""

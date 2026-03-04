@@ -88,6 +88,103 @@ requests:
 	}
 }
 
+func TestLoadCollection_JSONPathAssertions(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "demo.yaml")
+
+	content := []byte(`
+name: JSONPath API
+requests:
+  - name: check
+    method: GET
+    url: "http://x/api"
+    assert:
+      status: 200
+      jsonpath:
+        "$.name":
+          exists: true
+          eq: "alice"
+          contains: "ali"
+          matches: "^[a-z]+$"
+        "$.age":
+          gt: 18
+          lt: 100
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	c, err := l.LoadCollection(p)
+	if err != nil {
+		t.Fatalf("LoadCollection error: %v", err)
+	}
+
+	if len(c.Requests) != 1 {
+		t.Fatalf("expected 1 request, got=%d", len(c.Requests))
+	}
+
+	jp := c.Requests[0].Assert.JSONPath
+
+	nameA, ok := jp["$.name"]
+	if !ok {
+		t.Fatal("expected $.name assertion")
+	}
+	if !nameA.Exists {
+		t.Error("expected $.name exists=true")
+	}
+	if nameA.Eq == nil || *nameA.Eq != "alice" {
+		t.Errorf("expected $.name eq=alice, got=%v", nameA.Eq)
+	}
+	if nameA.Contains == nil || *nameA.Contains != "ali" {
+		t.Errorf("expected $.name contains=ali, got=%v", nameA.Contains)
+	}
+	if nameA.Matches == nil || *nameA.Matches != "^[a-z]+$" {
+		t.Errorf("expected $.name matches=^[a-z]+$, got=%v", nameA.Matches)
+	}
+
+	ageA, ok := jp["$.age"]
+	if !ok {
+		t.Fatal("expected $.age assertion")
+	}
+	if ageA.Gt == nil || *ageA.Gt != 18 {
+		t.Errorf("expected $.age gt=18, got=%v", ageA.Gt)
+	}
+	if ageA.Lt == nil || *ageA.Lt != 100 {
+		t.Errorf("expected $.age lt=100, got=%v", ageA.Lt)
+	}
+}
+
+func TestLoadCollection_DuplicateBodyTypes(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "bad.yaml")
+
+	content := []byte(`
+name: Demo API
+requests:
+  - name: dup
+    method: POST
+    url: "http://x"
+    json:
+      key: value
+    form:
+      field: val
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	_, err := l.LoadCollection(p)
+	if err == nil {
+		t.Fatal("expected error for duplicate body types")
+	}
+
+	if !domain.IsKind(err, domain.KindInvalidConfig) {
+		t.Fatalf("expected KindInvalidConfig, got: %v", err)
+	}
+}
+
 func TestLoadCollection_ContentType(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "demo.yaml")
