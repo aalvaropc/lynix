@@ -1,157 +1,300 @@
 # Lynix
 
-**Lynix** is a TUI-first CLI for API testing and functional validation — run requests, assert responses, and chain variables, all from the terminal in a Git-friendly way.
+**Lynix** is a TUI-first CLI tool for API testing and functional validation. Define HTTP requests, assert responses, extract variables, and chain them — all from the terminal using plain YAML that lives in your Git repository.
 
-## Features
-
-- **TUI-first** — navigate collections and environments with arrow keys; no commands to memorize
-- **Git-friendly** — all config is plain YAML: version control, diff, and review in PRs
-- **Assertions** — validate HTTP status codes, latency thresholds, and JSONPath expressions
-- **Variable extraction** — extract values from responses via JSONPath and chain them into subsequent requests
-- **Environment layering** — base environment + gitignored local secrets override
-- **Run artifacts** — timestamped JSON files saved under `runs/` for traceability and CI diffing
-- **Sensitive data masking** — redacts `Authorization`, `Cookie`, token, secret, and password fields before saving artifacts
-- **CI-friendly** — headless `lynix run` with JSON output; cancellable with context timeout
-- **Single binary** — one Go executable, no runtime dependencies; version/commit/date injected at build time
-- **Built-in template variables** — `{{$uuid}}`, `{{$timestamp}}` out of the box
+No accounts. No dashboards. No proprietary formats. Just a single binary and a folder of YAML files.
 
 ---
 
-## Requirements
+## Why Lynix?
 
-- Go 1.22+
+| | Lynix | Postman / Insomnia | curl scripts |
+|---|---|---|---|
+| TUI interface | ✓ | GUI only | ✗ |
+| Git-friendly config | ✓ | JSON exports | Manual |
+| CI/CD headless mode | ✓ | Paid plans / Newman | ✓ |
+| Variable chaining | ✓ | ✓ | Manual |
+| JSONPath assertions | ✓ | ✓ | Manual |
+| Single binary | ✓ | ✗ | ✓ |
+| Sensitive data masking | ✓ | Partial | ✗ |
+
+---
+
+## Features
+
+- **TUI-first** — interactive interface with arrow-key navigation; no commands to memorize for daily use
+- **Headless CLI** — `lynix run` works in CI pipelines with JSON output and proper exit codes
+- **Git-friendly** — collections and environments are plain YAML you can diff, review, and version
+- **Assertions** — validate status codes, latency thresholds, and JSONPath expressions with 6 operators
+- **Variable extraction** — pull values from responses via JSONPath and inject them into subsequent requests
+- **Environment layering** — base environment files + a gitignored `secrets.local.yaml` for local overrides
+- **Run artifacts** — timestamped JSON files saved under `runs/` for traceability and audit
+- **Sensitive data masking** — redacts `Authorization`, `Cookie`, token, secret, and password fields before saving
+- **Built-in variables** — `{{$uuid}}` and `{{$timestamp}}` available out of the box
+- **Single binary** — one Go executable, no runtime dependencies
 
 ---
 
 ## Quick Start
 
+### Install
+
 ```bash
-# Clone and build
 git clone https://github.com/aalvaropc/lynix
 cd lynix
 make build
-./bin/lynix
-
-# Or run in dev mode directly
-make dev
+# binary is at ./bin/lynix — add to your $PATH
 ```
+
+**Requirements:** Go 1.22+
 
 ### Initialize a workspace
 
 ```bash
+cd your-project/
 lynix init --path .
 ```
 
-This scaffolds the following structure and patches your `.gitignore`:
+This scaffolds:
 
 ```
-.
+your-project/
 ├── lynix.yaml                  # Workspace config (anchors the workspace root)
 ├── collections/
-│   └── demo.yaml               # Example collection
-└── env/
-    ├── dev.yaml                # Dev environment variables
-    ├── stg.yaml                # Staging environment variables
-    └── secrets.local.yaml      # Local secrets override (gitignored)
+│   └── demo.yaml               # Example collection to get started
+├── env/
+│   ├── dev.yaml                # Dev environment variables
+│   ├── stg.yaml                # Staging environment variables
+│   └── secrets.local.yaml      # Local secrets override (gitignored)
+├── runs/                       # Saved run artifacts (gitignored)
+└── .lynix/logs/                # Debug logs (gitignored)
+```
+
+`.gitignore` is automatically patched to exclude `runs/`, `.lynix/`, and `secrets.local.yaml`.
+
+### Run your first collection
+
+**Interactively (TUI):**
+```bash
+lynix
+```
+
+**Headlessly (CLI):**
+```bash
+lynix run -c demo -e dev
 ```
 
 ---
 
-## TUI Navigation
+## TUI Guide
 
-Launch the TUI by running `lynix` (no subcommand):
+Launch the TUI by running `lynix` with no subcommand.
+
+### Navigation
 
 | Key | Action |
 |-----|--------|
-| `↑` / `↓` | Move selection |
+| `↑` / `↓` | Move selection up/down |
+| `←` / `→` | Switch tabs in results view |
 | `Enter` | Confirm selection / advance step |
-| `Esc` | Go back |
-| `c` | Cancel running execution |
-| `s` | Toggle artifact save on/off |
+| `Esc` | Go back to previous screen |
+| `c` | Cancel in-flight execution |
+| `s` | Toggle artifact save (on/off) |
 | `q` | Quit |
 | `?` | Show help |
 
-The run wizard walks through three steps:
-1. **Select collection** — pick from discovered `.yaml` files in `collections/`
-2. **Select environment** — pick from discovered `.yaml` files in `env/`
-3. **Confirm** — toggle whether to save the run artifact, then execute
+### Run Wizard
+
+The TUI guides you through three steps:
+
+**Step 1 — Select collection**
+Lists all `.yaml` files discovered in `collections/`. Navigate with `↑`/`↓` and press `Enter`.
+
+**Step 2 — Select environment**
+Lists all environment files in `env/` (excluding `secrets.local.yaml`). The workspace default is pre-selected.
+
+**Step 3 — Confirm & run**
+Shows a summary of what will run. Press `s` to toggle whether the run artifact is saved, then `Enter` to execute.
+
+During execution a spinner is shown. Press `c` to cancel.
+
+### Results View
+
+After a run completes:
+
+- **Per-request status** — `✓` pass / `✗` fail with HTTP status code and latency
+- **Assertion breakdown** — each assertion result with descriptive message
+- **Extracted variables** — key=value pairs available in subsequent requests
+- **Tabs** — switch between request details and the raw response body
 
 ---
 
-## CLI Usage
+## CLI Reference
 
-All commands support the `-debug` flag to enable structured logging to `.lynix/logs/lynix.log`.
+All commands auto-detect the workspace root by walking up from the current directory until `lynix.yaml` is found. Override with `--workspace`.
+
+All commands accept `--debug` to enable structured JSON logging to `.lynix/logs/lynix.log`.
+
+### `lynix` (TUI)
 
 ```bash
-# Launch TUI (default)
-lynix
-
-# Print version info
-lynix version
-
-# Initialize a workspace
-lynix init --path .
-
-# Run a collection headlessly
-lynix run -c demo -e dev
-lynix run -c demo -e dev --no-save          # Skip saving the run artifact
-lynix run -c demo -e dev --format json      # JSON output (for CI pipelines)
-
-# Static validation (no HTTP requests)
-lynix validate -c demo -e dev
-
-# List collections in the workspace
-lynix collections list
-
-# List environments in the workspace
-lynix envs list
+lynix               # Launch interactive TUI
+lynix --debug       # TUI with debug logging
 ```
 
-The workspace root is auto-detected by walking up from the current directory until `lynix.yaml` is found.
+---
+
+### `lynix version`
+
+```bash
+lynix version
+# lynix v1.2.0 (commit=abc1234, date=2024-06-01T12:00:00Z)
+```
+
+---
+
+### `lynix init`
+
+Initialize a new workspace.
+
+```bash
+lynix init --path .                  # Initialize in current directory
+lynix init --path /path/to/project   # Initialize at specific path
+lynix init --path . --force          # Overwrite existing files
+```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--path` | `-p` | Target directory (default: `.`) |
+| `--force` | | Overwrite existing files |
+
+---
+
+### `lynix run`
+
+Execute a collection and assert all responses.
+
+```bash
+lynix run -c demo -e dev                     # Run with explicit environment
+lynix run -c demo                            # Use default env from lynix.yaml
+lynix run -c demo -e dev --no-save           # Skip saving the run artifact
+lynix run -c demo -e dev --format json       # Machine-readable JSON output
+lynix run -c demo -e dev --format pretty     # Human-readable output (default)
+lynix run -w /custom/root -c demo -e dev     # Override workspace root
+```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--collection` | `-c` | Collection name or path **(required)** |
+| `--env` | `-e` | Environment name or path (optional) |
+| `--workspace` | `-w` | Workspace root (optional, auto-detected) |
+| `--no-save` | | Skip saving the run artifact |
+| `--format` | | Output format: `pretty` or `json` (default: `pretty`) |
+
+**Collection resolution order:**
+1. If the value contains `/` or `\` → treated as a file path
+2. Tries `collections/{name}.yaml`, then `collections/{name}.yml`
+3. Falls back to matching by collection `name` field (case-insensitive)
+
+**Exit codes:**
+- `0` — all requests completed and all assertions passed
+- `1` — any request failed or any assertion was violated
+
+---
+
+### `lynix validate`
+
+Parse and validate a collection without making any HTTP requests. Useful in pre-commit hooks or PR checks.
+
+```bash
+lynix validate -c demo -e dev
+lynix validate -c demo
+```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--collection` | `-c` | Collection name or path **(required)** |
+| `--env` | `-e` | Environment name or path (optional) |
+| `--workspace` | `-w` | Workspace root (optional) |
+
+Outputs `OK` on success, or a descriptive error message on failure.
+
+---
+
+### `lynix collections list`
+
+List all collections discovered in the workspace.
+
+```bash
+lynix collections list
+lynix collections list -w /path/to/workspace
+
+# Output:
+# Workspace: /home/user/project
+#
+# - Auth Flow  (collections/auth.yaml)
+# - Demo API   (collections/demo.yaml)
+```
+
+---
+
+### `lynix envs list`
+
+List all environments discovered in the workspace.
+
+```bash
+lynix envs list
+
+# Output:
+# Workspace: /home/user/project
+# Default:   dev
+#
+# - dev  (env/dev.yaml)
+# - stg  (env/stg.yaml)
+```
 
 ---
 
 ## Collection Format
 
-Collections are YAML files that describe a sequence of API requests:
+Collections are YAML files stored in `collections/`. They describe a sequence of HTTP requests with optional assertions and variable extraction.
 
 ```yaml
 name: Auth Flow
 
+# Default variables (lowest priority — overridden by env vars)
 vars:
   base_url: "https://api.example.com"
   timeout_ms: 2000
 
 requests:
-  # Simple GET with status assertion
-  - name: health
+  - name: health-check
     method: GET
     url: "{{base_url}}/health"
     assert:
       status: 200
       max_ms: 500
 
-  # POST with JSON body, assertion, and variable extraction
   - name: login
     method: POST
     url: "{{base_url}}/auth/login"
     headers:
       Content-Type: "application/json"
-    body:
-      json:
-        username: "{{username}}"
-        password: "{{password}}"
+    json:
+      username: "{{username}}"
+      password: "{{password}}"
     assert:
       status: 200
       max_ms: "{{timeout_ms}}"
       jsonpath:
-        - expr: "$.token"
+        token_present:
           exists: true
+        token_format:
+          matches: "^[A-Za-z0-9._-]+$"
     extract:
-      auth_token: "$.token"          # extracted into runtime vars
+      auth_token: "$.token"          # available in all subsequent requests
 
-  # Subsequent request uses the extracted variable
-  - name: users.list
+  - name: list-users
     method: GET
     url: "{{base_url}}/v1/users"
     headers:
@@ -159,50 +302,157 @@ requests:
     assert:
       status: 200
       jsonpath:
-        - expr: "$.users[0].id"
+        has_users:
           exists: true
-
-  # Raw body with custom content type
-  - name: upload.csv
-    method: POST
-    url: "{{base_url}}/upload"
-    body:
-      raw: "id,name\n1,alice"
-    content_type: "text/csv"
-    assert:
-      status: 201
+        first_user_active:
+          eq: "true"
+        user_count_gt_0:
+          gt: 0
 ```
 
-### Supported methods
-`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`
+### Request fields
 
-### Body types
-| Field | Description |
-|-------|-------------|
-| `body.json` | Object — serialized as `application/json` |
-| `body.form` | Key-value map — serialized as `application/x-www-form-urlencoded` |
-| `body.raw` | String — content type set via `content_type` |
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | ✓ | Unique identifier for the request |
+| `method` | ✓ | HTTP method: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS` |
+| `url` | ✓ | URL — supports `{{variable}}` templating |
+| `headers` | | Key-value map of HTTP headers (templating supported) |
+| `json` | | JSON request body (object or array) |
+| `form` | | Form URL-encoded body (string key-value map) |
+| `raw` | | Raw text body |
+| `content_type` | | Overrides `Content-Type` header (mainly for `raw` bodies) |
+| `assert` | | Assertions on the response |
+| `extract` | | Variables to extract from the response body |
 
-### Assertions
-| Field | Description |
-|-------|-------------|
-| `assert.status` | Expected HTTP status code |
-| `assert.max_ms` | Maximum acceptable latency in milliseconds |
-| `assert.jsonpath[].expr` | JSONPath expression to evaluate |
-| `assert.jsonpath[].exists` | Assert the path exists (and is non-null) |
+> Only one of `json`, `form`, or `raw` may be specified per request.
 
-### Variable extraction
-```yaml
-extract:
-  my_var: "$.path.to.value"   # extracted from response body JSON
-```
-Extracted variables are available in all subsequent requests within the same run.
+### Templating
 
-### Built-in template variables
+Variables are injected using `{{variable_name}}` syntax. Works in URLs, headers, body values, and assertion values.
+
+**Built-in variables** (generated fresh per request):
+
 | Variable | Value |
 |----------|-------|
 | `{{$uuid}}` | Random UUID v4 |
 | `{{$timestamp}}` | Current Unix timestamp (seconds) |
+
+---
+
+## Assertions
+
+Assertions are evaluated on every response regardless of previous failures. Each produces a named result with a pass/fail status.
+
+### Status code
+
+```yaml
+assert:
+  status: 200
+```
+
+Checks the HTTP status code exactly.
+
+### Latency
+
+```yaml
+assert:
+  max_ms: 500          # fixed value
+  max_ms: "{{timeout_ms}}"  # or from a variable
+```
+
+Checks that the response latency is at or below the threshold.
+
+### JSONPath assertions
+
+Keyed by a unique label of your choice. Each label can combine multiple operators against the same path.
+
+```yaml
+assert:
+  jsonpath:
+    my_label:
+      exists: true          # path exists and value is non-empty
+      eq: "expected"        # string equality
+      contains: "partial"   # substring match
+      matches: "^regex$"    # Go stdlib regexp
+      gt: 10                # numeric greater-than
+      lt: 1000              # numeric less-than
+```
+
+| Operator | Type | Description |
+|----------|------|-------------|
+| `exists` | bool | Path resolves to a non-null, non-empty value |
+| `eq` | string | Value equals the given string (after type coercion) |
+| `contains` | string | Value contains the given substring |
+| `matches` | string | Value matches the given regular expression |
+| `gt` | number | Numeric value is greater than threshold |
+| `lt` | number | Numeric value is less than threshold |
+
+**JSONPath syntax** follows [PaesslerAG/jsonpath](https://github.com/PaesslerAG/jsonpath):
+- `$.field` — top-level field
+- `$.nested.field` — nested field
+- `$.array[0].id` — array element
+- `$.array[*].status` — all elements (returns array)
+
+**Example:**
+```yaml
+assert:
+  jsonpath:
+    token_exists:
+      exists: true
+    user_id_format:
+      matches: "^user-[0-9]+$"
+    item_count:
+      gt: 0
+      lt: 100
+```
+
+---
+
+## Variable Extraction
+
+Extract values from a JSON response body and inject them into all subsequent requests in the collection.
+
+```yaml
+extract:
+  auth_token: "$.token"
+  user_id: "$.data.users[0].id"
+  roles: "$.data.users[0].roles"   # array → stored as JSON string
+```
+
+Extraction rules are applied in sorted order. If a rule fails (path not found, empty value), the error is reported but remaining extractions continue.
+
+**Value conversion rules:**
+
+| Response value | Stored as |
+|---------------|-----------|
+| String | String |
+| Number / bool | String representation |
+| Single-element array | The element's value |
+| Multi-element array | JSON string |
+| Object/map | JSON string |
+| Null or empty | Extraction fails |
+
+Extracted variables are available in all subsequent requests within the same run.
+
+---
+
+## Variable Resolution Order
+
+When the same variable name appears in multiple places, the highest priority wins:
+
+```
+secrets.local.yaml  >  environment YAML  >  collection vars  >  built-ins
+```
+
+| Source | Priority | Description |
+|--------|----------|-------------|
+| `secrets.local.yaml` | Highest | Local overrides — gitignored |
+| Environment YAML | High | Selected environment file (`-e dev`) |
+| Collection `vars` | Medium | Defined in the collection itself |
+| Built-ins (`$uuid`, `$timestamp`) | Lowest | Generated at request time |
+
+Variables extracted from responses are merged into the running set and available to the next request.
 
 ---
 
@@ -213,158 +463,286 @@ Extracted variables are available in all subsequent requests within the same run
 vars:
   base_url: "http://localhost:8080"
   username: "dev-user"
+  timeout_ms: 2000
 ```
 
 ```yaml
-# env/secrets.local.yaml  (gitignored — overrides base env vars)
+# env/stg.yaml
+vars:
+  base_url: "https://staging-api.example.com"
+  username: "stg-user"
+```
+
+```yaml
+# env/secrets.local.yaml  — gitignored, local overrides only
 vars:
   password: "s3cr3t"
-  api_key: "sk-..."
+  api_key: "sk-1234567890abcdef"
 ```
 
-### Variable resolution order (highest priority wins)
-
-```
-secrets.local.yaml  >  environment YAML  >  collection vars  >  built-ins
-```
+`secrets.local.yaml` is automatically merged at runtime if it exists. Never commit it — the `.gitignore` added by `lynix init` excludes it.
 
 ---
 
 ## Workspace Configuration
 
-`lynix.yaml` anchors the workspace root and controls global behavior:
+`lynix.yaml` anchors the workspace root and controls global behaviour. All fields are optional — the defaults are shown below.
 
 ```yaml
 lynix:
+  # Redact sensitive headers and variables before saving run artifacts
   masking:
-    enabled: true               # Redact sensitive headers/vars in saved artifacts
+    enabled: true
 
+  # Default environment when -e / --env is not specified
   defaults:
-    env: dev                    # Default environment when none is specified
+    env: dev
 
+  # Directory paths relative to workspace root
   paths:
     collections_dir: collections
     environments_dir: env
     runs_dir: runs
 
+  # What to include in saved run artifacts
   artifacts:
-    save_response_headers: true
-    save_response_body: false   # Set to true to persist response bodies
+    save_response_headers: true    # Include response headers
+    save_response_body: false      # Include response body (opt-in, capped at 256 KB)
+
+  # Global timeout for an entire collection run
+  run:
+    timeout_seconds: 300           # Default: 300 (5 minutes)
 ```
 
 ---
 
 ## Run Artifacts
 
-Each run is saved as a timestamped JSON file under `runs/`:
+Each successful run (unless `--no-save` is used) is saved as a timestamped JSON file:
 
 ```
 runs/
-├── 20240601T120000Z_demo.json
-└── index.jsonl                  # Append-only index of all runs
+├── 20240601T120000Z_auth-flow.json
+├── 20240601T130500Z_demo.json
+└── index.jsonl                    # Append-only index of all runs
 ```
 
-Sensitive fields (e.g., `Authorization`, `Cookie`, variables named `*token*`, `*secret*`, `*password*`) are masked as `********` before saving when `masking.enabled: true`.
+**Artifact structure:**
+```json
+{
+  "collection_name": "Auth Flow",
+  "environment_name": "dev",
+  "started_at": "2024-06-01T12:00:00Z",
+  "ended_at": "2024-06-01T12:00:05Z",
+  "results": [
+    {
+      "name": "login",
+      "method": "POST",
+      "url": "https://api.example.com/auth/login",
+      "status_code": 200,
+      "latency_ms": 123,
+      "assertions": [
+        { "name": "status", "passed": true, "message": "status 200" },
+        { "name": "jsonpath.exists", "passed": true, "message": "jsonpath \"$.token\" exists" }
+      ],
+      "extracts": [
+        { "name": "auth_token", "success": true, "message": "extracted auth_token" }
+      ],
+      "extracted": {
+        "auth_token": "********"
+      }
+    }
+  ]
+}
+```
 
-Response body saving is opt-in (`artifacts.save_response_body: true`) and is capped at **256KB** per response.
+**`index.jsonl`** — one JSON object per line, append-only:
+```json
+{"id":"20240601T120000Z_auth-flow","file":"20240601T120000Z_auth-flow.json","collection":"Auth Flow","env":"dev","started_at":"2024-06-01T12:00:00Z"}
+```
+
+### Sensitive data masking
+
+When `masking.enabled: true` (default), the following are replaced with `"********"` before saving:
+
+**Headers:** `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-API-Key`, `X-Auth-Token`, and any header whose name contains `token`, `secret`, `password`, `api-key`, or `apikey`.
+
+**Extracted variables:** Any variable whose name contains `token`, `secret`, or `password`.
+
+### Response body
+
+Response bodies are **not saved by default**. Enable with:
+```yaml
+artifacts:
+  save_response_body: true
+```
+
+Bodies are capped at **256 KB** per response. If truncated, `"truncated": true` is set in the artifact.
 
 ---
 
 ## CI Integration
 
-```bash
-# Run and exit with code 1 on any assertion failure
-lynix run -c smoke-tests -e stg --format json | jq .
+Lynix is designed to work in CI pipelines without any configuration changes.
 
-# Skip artifact saving in ephemeral CI environments
+```bash
+# Run smoke tests and exit with non-zero code on failure
+lynix run -c smoke-tests -e stg
+
+# JSON output for parsing or downstream steps
+lynix run -c integration-tests -e prod --format json | jq '.results[].assertions'
+
+# Skip saving artifacts in ephemeral environments
 lynix run -c smoke-tests -e stg --no-save
+
+# Validate config before running (e.g., in a pre-commit hook)
+lynix validate -c smoke-tests -e stg
 ```
 
-The process exits with a non-zero code if any request fails or any assertion is violated, making it drop-in compatible with GitHub Actions, GitLab CI, and similar systems.
+**GitHub Actions example:**
+```yaml
+- name: Run API tests
+  run: lynix run -c smoke-tests -e prod --no-save --format json
+```
+
+**Exit codes:**
+- `0` — all assertions passed
+- `1` — any request failed or any assertion was violated
 
 ---
 
-## Project Structure
+## Error Handling
 
-```
-cmd/lynix/            # Binary entrypoint → delegates to cli.Execute()
-internal/
-├── domain/           # Pure domain model — zero external deps
-│   ├── collection.go       # Collection, RequestSpec, AssertionsSpec, BodySpec
-│   ├── environment.go      # Environment, Vars, merge/get/set helpers
-│   ├── run.go              # RunResult, RequestResult, ResponseSnapshot
-│   ├── config.go           # WorkspaceConfig, defaults, masking settings
-│   ├── vars_resolver.go    # Template engine: resolves {{var}}, {{$uuid}}, etc.
-│   └── errors.go           # Sentinel errors, OpError, IsKind()
-│
-├── ports/            # Interface definitions (ports/adapters pattern)
-│   ├── collection_loader.go
-│   ├── environment_loader.go
-│   ├── environment_catalog.go
-│   ├── request_runner.go
-│   ├── artifact_store.go
-│   ├── workspace.go
-│   └── workspace_locator.go
-│
-├── infra/            # Adapter implementations
-│   ├── httpclient/         # net/http client with tunable timeouts + HTTP/2
-│   ├── httprunner/         # RequestRunner: resolves vars → executes → captures
-│   ├── yamlcollection/     # YAML → domain.Collection
-│   ├── yamlenv/            # YAML → domain.Environment (merges base + secrets)
-│   ├── runstore/           # Saves JSON run artifacts + JSONL index
-│   ├── fsworkspace/        # Workspace initializer (embed.FS templates)
-│   ├── workspacefinder/    # Walks up dir tree to find lynix.yaml
-│   └── logger/             # slog-based structured logger
-│
-├── usecase/          # Application use cases (orchestration layer)
-│   ├── run_collection.go
-│   ├── validate_collection.go
-│   ├── init_workspace.go
-│   ├── assert/             # Evaluates status / latency / JSONPath assertions
-│   └── extract/            # Applies JSONPath extraction to response bodies
-│
-├── ui/tui/           # Bubble Tea TUI (Elm architecture)
-│   ├── app.go              # Model, Init, Update, View state machine
-│   ├── commands.go         # Async tea.Cmd wrappers
-│   ├── messages.go         # Message types for the update loop
-│   ├── theme.go            # Lipgloss styles
-│   └── safe_model.go       # Panic-recovery wrapper
-│
-└── cli/              # Cobra CLI commands
-    ├── run.go
-    ├── validate.go
-    ├── collections.go
-    ├── envs.go
-    └── workspace.go
-```
+### Request errors
 
-### Architecture overview
+If a request cannot be completed (network failure, timeout, DNS error), the result includes a structured error:
 
-Lynix follows **Hexagonal Architecture (Ports & Adapters)**:
+| Kind | Description |
+|------|-------------|
+| `dns` | DNS resolution failed |
+| `connection` | Could not connect to host |
+| `timeout` | Request exceeded HTTP client timeout |
+| `canceled` | Run was canceled by the user |
+| `http` | HTTP protocol error |
+| `unknown` | Unexpected error |
 
-- `domain/` is pure Go — no YAML, no `net/http`, no filesystem I/O
-- `ports/` defines interfaces at the boundary of the application core
-- `infra/` provides concrete implementations injected at startup
-- `usecase/` orchestrates domain logic through port interfaces
-- Both the TUI and CLI wire up the same use cases with the same adapters
+### Missing variables
+
+If a template placeholder like `{{my_var}}` cannot be resolved, the request fails with a `missing_variable` error pointing to the exact variable name. The TUI shows a human-readable message.
 
 ---
 
 ## Development
 
 ```bash
-make tidy      # go mod tidy
-make dev       # Run TUI in dev mode (go run with ldflags)
-make test      # go test ./...
-make lint      # golangci-lint
-make fmt       # gofmt -w .
-make build     # Build binary → bin/lynix
+make dev            # Run TUI in dev mode (go run with ldflags)
+make build          # Build binary → bin/lynix
+make test           # go test -race ./...
+make test-coverage  # Tests + HTML coverage report
+make lint           # golangci-lint run (v1.64.2)
+make fmt            # gofmt -w .
+make tidy           # go mod tidy
+make check          # lint + test (run before PRs)
+make clean          # Remove build artifacts
+make vulncheck      # Check for known vulnerabilities
 ```
 
-Build flags inject version metadata:
-- **Version** — `git describe --tags --dirty --always`
-- **Commit** — `git rev-parse --short HEAD`
-- **Date** — UTC build timestamp
+**Run a single test:**
+```bash
+go test ./internal/usecase/assert/... -run TestEvaluate_JSONPathEq_Pass
+```
+
+### Build metadata
+
+Three values are injected at build time via ldflags:
+
+| Variable | Source |
+|----------|--------|
+| `Version` | `git describe --tags --dirty --always` |
+| `Commit` | `git rev-parse --short HEAD` |
+| `Date` | UTC build timestamp |
+
+---
+
+## Architecture
+
+Lynix follows **Hexagonal Architecture (Ports & Adapters)**. The core rule: domain never imports infra; use cases depend only on ports.
+
+```
+┌─────────────────────────────────────────┐
+│  UI Layer                               │
+│  ├── TUI (Bubble Tea)  internal/ui/tui/ │
+│  └── CLI (Cobra)       internal/cli/    │
+└────────────────┬────────────────────────┘
+                 │
+      ┌──────────▼──────────┐
+      │  Use Cases          │   internal/usecase/
+      │  RunCollection      │
+      │  ValidateCollection │
+      │  InitWorkspace      │
+      └──────────┬──────────┘
+                 │
+    ┌────────────▼────────────┐
+    │  Ports (Interfaces)     │   internal/ports/
+    │  CollectionLoader       │
+    │  EnvironmentLoader      │
+    │  RequestRunner          │
+    │  ArtifactStore          │
+    │  WorkspaceLocator       │
+    └────────────┬────────────┘
+                 │
+      ┌──────────▼──────────┐
+      │  Infra (Adapters)   │   internal/infra/
+      │  yamlcollection/    │
+      │  yamlenv/           │
+      │  httpclient/        │
+      │  httprunner/        │
+      │  runstore/          │
+      │  workspacefinder/   │
+      │  fsworkspace/       │
+      └──────────┬──────────┘
+                 │
+      ┌──────────▼──────────┐
+      │  Domain (Pure Go)   │   internal/domain/
+      │  Collection         │
+      │  Environment        │
+      │  RunResult          │
+      │  VarResolver        │
+      │  Config             │
+      └─────────────────────┘
+```
+
+Both the TUI and CLI wire the same use cases with the same adapters via `internal/infra/wiring`.
+
+### Project layout
+
+```
+cmd/lynix/              # Binary entrypoint → cli.Execute()
+internal/
+├── domain/             # Pure domain model (zero external deps)
+│   ├── collection.go   # Collection, RequestSpec, AssertionsSpec, BodySpec
+│   ├── environment.go  # Environment, Vars, merge helpers
+│   ├── run.go          # RunResult, RequestResult, ResponseSnapshot
+│   ├── config.go       # WorkspaceConfig, defaults
+│   ├── vars_resolver.go# Template engine: resolves {{var}}, {{$uuid}}, etc.
+│   └── errors.go       # Sentinel errors, OpError, IsKind()
+├── ports/              # Interface definitions
+├── infra/              # Adapter implementations
+│   ├── httpclient/     # net/http client with timeouts + HTTP/2
+│   ├── httprunner/     # Resolves vars → executes → captures response
+│   ├── yamlcollection/ # YAML → domain.Collection
+│   ├── yamlenv/        # YAML → domain.Environment
+│   ├── runstore/       # JSON run artifacts + JSONL index
+│   ├── fsworkspace/    # Workspace initializer (embed.FS templates)
+│   ├── workspacefinder/# Walks up dir tree to find lynix.yaml
+│   ├── logger/         # slog-based structured logger
+│   └── wiring/         # Shared adapter factory
+├── usecase/            # Application orchestration
+│   ├── assert/         # Evaluates assertions
+│   └── extract/        # JSONPath extraction
+├── ui/tui/             # Bubble Tea TUI
+└── cli/                # Cobra commands
+```
 
 ---
 
