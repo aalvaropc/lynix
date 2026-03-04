@@ -15,6 +15,7 @@ No accounts. No dashboards. No proprietary formats. Just a single binary and a f
 | CI/CD headless mode | ✓ | Paid plans / Newman | ✓ |
 | Variable chaining | ✓ | ✓ | Manual |
 | JSONPath assertions | ✓ | ✓ | Manual |
+| JSON Schema validation | ✓ | ✗ | Manual |
 | Single binary | ✓ | ✗ | ✓ |
 | Sensitive data masking | ✓ | Partial | ✗ |
 
@@ -25,7 +26,7 @@ No accounts. No dashboards. No proprietary formats. Just a single binary and a f
 - **TUI-first** — interactive interface with arrow-key navigation; no commands to memorize for daily use
 - **Headless CLI** — `lynix run` works in CI pipelines with JSON or JUnit XML output and proper exit codes
 - **Git-friendly** — collections and environments are plain YAML you can diff, review, and version
-- **Assertions** — validate status codes, latency thresholds, and JSONPath expressions with 6 operators
+- **Assertions** — validate status codes, latency thresholds, JSONPath expressions (6 operators), and JSON Schema
 - **Variable extraction** — pull values from responses via JSONPath and inject them into subsequent requests
 - **Environment layering** — base environment files + a gitignored `secrets.local.yaml` for local overrides
 - **Run artifacts** — timestamped JSON files saved under `runs/` for traceability and audit
@@ -443,6 +444,57 @@ assert:
       gt: 0
       lt: 100
 ```
+
+### JSON Schema validation
+
+Validate the entire response body against a JSON Schema document. Supports Draft 7 and 2020-12.
+
+**File reference** (path relative to the collection file):
+
+```yaml
+assert:
+  schema: "schemas/user.json"
+```
+
+**Inline schema** (embedded in the collection YAML):
+
+```yaml
+assert:
+  schema_inline:
+    type: object
+    required: ["id", "name"]
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+      email:
+        type: string
+        format: email
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `schema` | string | Path to a `.json` schema file, relative to the collection directory |
+| `schema_inline` | object | Inline JSON Schema definition |
+
+> `schema` and `schema_inline` are mutually exclusive — using both on the same request is a validation error.
+
+On failure, the assertion message includes the instance location path and a description of the violation (e.g., `/user: missing property 'id'`).
+
+**Combining with other assertions:**
+
+```yaml
+assert:
+  status: 200
+  max_ms: 1000
+  schema: "schemas/user.json"
+  jsonpath:
+    has_email:
+      exists: true
+```
+
+Schema validation runs alongside status, latency, and JSONPath assertions — all results are reported independently.
 
 ---
 
