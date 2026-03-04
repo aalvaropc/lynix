@@ -35,18 +35,55 @@ No accounts. No dashboards. No proprietary formats. Just a single binary and a f
 
 ---
 
-## Quick Start
+## Installation
 
-### Install
+### Quick install (Linux / macOS)
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/aalvaropc/lynix/main/install.sh | sh
+```
+
+This detects your OS and architecture, downloads the latest release, verifies the SHA-256 checksum, and installs to `/usr/local/bin`.
+
+Pin a version or change the install directory:
+
+```bash
+LYNIX_VERSION=0.3.0 LYNIX_INSTALL_DIR=~/.local/bin \
+  curl -sSfL https://raw.githubusercontent.com/aalvaropc/lynix/main/install.sh | sh
+```
+
+### Homebrew (macOS / Linux)
+
+```bash
+brew install aalvaropc/tap/lynix
+```
+
+### Go install
+
+```bash
+go install github.com/aalvaropc/lynix/cmd/lynix@latest
+```
+
+Requires Go 1.22+.
+
+### Manual download
+
+Download the binary for your platform from the [Releases](https://github.com/aalvaropc/lynix/releases) page, verify the checksum against `checksums.txt`, and place it in your `$PATH`.
+
+### Build from source
 
 ```bash
 git clone https://github.com/aalvaropc/lynix
 cd lynix
 make build
-# binary is at ./bin/lynix — add to your $PATH
+# binary is at ./bin/lynix
 ```
 
-**Requirements:** Go 1.22+
+Requires Go 1.22+.
+
+---
+
+## Quick Start
 
 ### Initialize a workspace
 

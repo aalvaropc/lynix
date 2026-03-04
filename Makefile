@@ -9,7 +9,7 @@ LDFLAGS = -X github.com/aalvaropc/lynix/internal/buildinfo.Version=$(VERSION) -X
 GOLANGCI_LINT_VERSION ?= v1.64.2
 GOLANGCI_LINT = go run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
-.PHONY: dev tidy test test-coverage lint build fmt check clean vulncheck
+.PHONY: dev tidy test test-coverage lint build fmt check clean vulncheck release-dry-run
 
 dev:
 	go run -ldflags "$(LDFLAGS)" ./cmd/lynix
@@ -40,3 +40,6 @@ clean:
 
 vulncheck:
 	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+release-dry-run:
+	goreleaser release --snapshot --clean
