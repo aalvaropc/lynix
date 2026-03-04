@@ -2,9 +2,11 @@ package httprunner
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aalvaropc/lynix/internal/domain"
@@ -64,12 +66,15 @@ func (r *Runner) Run(ctx context.Context, req domain.RequestSpec, vars domain.Va
 	}
 
 	result := domain.RequestResult{
-		Name:       resolved.Name,
-		Method:     resolved.Method,
-		URL:        resolved.URL,
-		Extracted:  domain.Vars{},
-		Extracts:   []domain.ExtractResult{},
-		Assertions: []domain.AssertionResult{},
+		Name:           resolved.Name,
+		Method:         resolved.Method,
+		URL:            resolved.URL,
+		ResolvedURL:    resolved.URL,
+		RequestHeaders: copyHeaders(resolved.Headers),
+		RequestBody:    serializeBody(resolved.Body),
+		Extracted:      domain.Vars{},
+		Extracts:       []domain.ExtractResult{},
+		Assertions:     []domain.AssertionResult{},
 		Response: domain.ResponseSnapshot{
 			Headers: map[string][]string{},
 		},
@@ -135,6 +140,43 @@ func readBounded(r io.Reader, maxBytes int64) ([]byte, bool, error) {
 		return b[:maxBytes], true, nil
 	}
 	return b, false, nil
+}
+
+func serializeBody(body domain.BodySpec) []byte {
+	switch body.Type {
+	case domain.BodyJSON:
+		if body.JSON != nil {
+			b, err := json.Marshal(body.JSON)
+			if err != nil {
+				return nil
+			}
+			return b
+		}
+	case domain.BodyForm:
+		if body.Form != nil {
+			vals := make([]string, 0, len(body.Form))
+			for k, v := range body.Form {
+				vals = append(vals, k+"="+v)
+			}
+			return []byte(strings.Join(vals, "&"))
+		}
+	case domain.BodyRaw:
+		if body.Raw != "" {
+			return []byte(body.Raw)
+		}
+	}
+	return nil
+}
+
+func copyHeaders(h domain.Headers) map[string]string {
+	if h == nil {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(h))
+	for k, v := range h {
+		out[k] = v
+	}
+	return out
 }
 
 func cloneHeaders(h http.Header) map[string][]string {

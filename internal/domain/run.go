@@ -55,6 +55,15 @@ type RequestResult struct {
 	Method HTTPMethod
 	URL    string
 
+	// ResolvedURL is the final URL after variable substitution (may contain query params).
+	ResolvedURL string `json:"resolved_url,omitempty"`
+
+	// RequestHeaders are the headers sent in the request (after variable substitution).
+	RequestHeaders map[string]string `json:"request_headers,omitempty"`
+
+	// RequestBody is the resolved request body (captured for artifact storage).
+	RequestBody []byte `json:"request_body,omitempty"`
+
 	StatusCode int
 	LatencyMS  int64
 
