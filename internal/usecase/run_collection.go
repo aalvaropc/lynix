@@ -2,6 +2,9 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/aalvaropc/lynix/internal/domain"
@@ -48,6 +51,18 @@ func (uc *RunCollection) Execute(
 		return domain.RunResult{}, "", err
 	}
 
+	// Pre-load schema files for requests that reference them.
+	schemaCache := make(map[int][]byte) // request index → schema bytes
+	for i, req := range col.Requests {
+		sb, err := loadSchemaBytes(req.Assert)
+		if err != nil {
+			return domain.RunResult{}, "", fmt.Errorf("request %q: %w", req.Name, err)
+		}
+		if sb != nil {
+			schemaCache[i] = sb
+		}
+	}
+
 	// collection vars < env vars < extracted runtime vars (updated per request)
 	vars := domain.Merge(col.Vars, env.Vars)
 
@@ -59,7 +74,7 @@ func (uc *RunCollection) Execute(
 		Results:         make([]domain.RequestResult, 0, len(col.Requests)),
 	}
 
-	for _, req := range col.Requests {
+	for i, req := range col.Requests {
 		if err := ctx.Err(); err != nil {
 			run.EndedAt = time.Now()
 			return run, "", err
@@ -85,7 +100,7 @@ func (uc *RunCollection) Execute(
 		}
 
 		// Assertions (always evaluated, even if rr.Error != nil)
-		rr.Assertions = ucassert.Evaluate(req.Assert, rr.StatusCode, rr.LatencyMS, rr.Response.Body)
+		rr.Assertions = ucassert.Evaluate(req.Assert, rr.StatusCode, rr.LatencyMS, rr.Response.Body, schemaCache[i])
 
 		extracted, extractResults := ucextract.Apply(rr.Response.Body, req.Extract)
 		rr.Extracts = extractResults
@@ -117,4 +132,23 @@ func (uc *RunCollection) Execute(
 	}
 
 	return run, id, nil
+}
+
+// loadSchemaBytes resolves the JSON Schema bytes from a file path or inline definition.
+func loadSchemaBytes(spec domain.AssertionsSpec) ([]byte, error) {
+	if spec.Schema != nil {
+		b, err := os.ReadFile(*spec.Schema)
+		if err != nil {
+			return nil, fmt.Errorf("schema file %q: %w", *spec.Schema, err)
+		}
+		return b, nil
+	}
+	if spec.SchemaInline != nil {
+		b, err := json.Marshal(spec.SchemaInline)
+		if err != nil {
+			return nil, fmt.Errorf("schema_inline: %w", err)
+		}
+		return b, nil
+	}
+	return nil, nil
 }
