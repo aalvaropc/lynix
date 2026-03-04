@@ -218,3 +218,101 @@ requests:
 		t.Fatalf("expected content type text/plain, got=%q", c.Requests[0].Body.ContentType)
 	}
 }
+
+func TestLoadCollection_SchemaFile(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "demo.yaml")
+
+	content := []byte(`
+name: Schema API
+requests:
+  - name: check
+    method: GET
+    url: "http://x/api"
+    assert:
+      schema: "schemas/user.json"
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	c, err := l.LoadCollection(p)
+	if err != nil {
+		t.Fatalf("LoadCollection error: %v", err)
+	}
+
+	if c.Requests[0].Assert.Schema == nil {
+		t.Fatal("expected schema to be set")
+	}
+	// Schema path should be resolved relative to the collection file directory.
+	expected := filepath.Join(tmp, "schemas/user.json")
+	if *c.Requests[0].Assert.Schema != expected {
+		t.Errorf("expected schema=%q, got=%q", expected, *c.Requests[0].Assert.Schema)
+	}
+}
+
+func TestLoadCollection_SchemaInline(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "demo.yaml")
+
+	content := []byte(`
+name: Schema API
+requests:
+  - name: check
+    method: GET
+    url: "http://x/api"
+    assert:
+      schema_inline:
+        type: object
+        required: ["id"]
+        properties:
+          id:
+            type: integer
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	c, err := l.LoadCollection(p)
+	if err != nil {
+		t.Fatalf("LoadCollection error: %v", err)
+	}
+
+	if c.Requests[0].Assert.SchemaInline == nil {
+		t.Fatal("expected schema_inline to be set")
+	}
+	if c.Requests[0].Assert.SchemaInline["type"] != "object" {
+		t.Errorf("expected type=object, got=%v", c.Requests[0].Assert.SchemaInline["type"])
+	}
+}
+
+func TestLoadCollection_SchemaBothError(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "bad.yaml")
+
+	content := []byte(`
+name: Schema API
+requests:
+  - name: check
+    method: GET
+    url: "http://x/api"
+    assert:
+      schema: "schemas/user.json"
+      schema_inline:
+        type: object
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	_, err := l.LoadCollection(p)
+	if err == nil {
+		t.Fatal("expected error when both schema and schema_inline are set")
+	}
+	if !domain.IsKind(err, domain.KindInvalidConfig) {
+		t.Fatalf("expected KindInvalidConfig, got: %v", err)
+	}
+}

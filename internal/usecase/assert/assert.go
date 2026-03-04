@@ -45,7 +45,8 @@ func MaxLatency(maxMs int, latencyMs int64) domain.AssertionResult {
 
 // Evaluate applies the assertions spec against the observed response data.
 // It parses JSON only if JSONPath assertions are present.
-func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []byte) []domain.AssertionResult {
+// schemaBytes is the pre-loaded JSON Schema content (nil if no schema assertion).
+func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []byte, schemaBytes []byte) []domain.AssertionResult {
 	var out []domain.AssertionResult
 
 	if spec.Status != nil {
@@ -53,6 +54,10 @@ func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []by
 	}
 	if spec.MaxLatencyMS != nil {
 		out = append(out, MaxLatency(*spec.MaxLatencyMS, latencyMs))
+	}
+
+	if len(schemaBytes) > 0 {
+		out = append(out, SchemaValidate(schemaBytes, body))
 	}
 
 	if len(spec.JSONPath) == 0 {

@@ -25,16 +25,16 @@ func TestRedact_Disabled(t *testing.T) {
 
 	run := domain.RunArtifact{
 		Results: []domain.RequestResult{{
-			RequestHeaders: map[string]string{"Authorization": "Bearer secret123"},
-			Extracted:      domain.Vars{"token": "abc"},
+			RequestHeaders: map[string]string{"Authorization": "Bearer FAKE_TEST_VALUE"},
+			Extracted:      domain.Vars{"token": "FAKE_TOK"},
 		}},
 	}
 
 	out := r.Redact(run)
-	if out.Results[0].RequestHeaders["Authorization"] != "Bearer secret123" {
+	if out.Results[0].RequestHeaders["Authorization"] != "Bearer FAKE_TEST_VALUE" {
 		t.Error("should not mask when disabled")
 	}
-	if out.Results[0].Extracted["token"] != "abc" {
+	if out.Results[0].Extracted["token"] != "FAKE_TOK" {
 		t.Error("should not mask extracted vars when disabled")
 	}
 }
@@ -45,8 +45,8 @@ func TestRedact_RequestHeaders(t *testing.T) {
 	run := domain.RunArtifact{
 		Results: []domain.RequestResult{{
 			RequestHeaders: map[string]string{
-				"Authorization": "Bearer tok",
-				"X-API-Key":     "key123",
+				"Authorization": "Bearer FAKE_TEST_VALUE",
+				"X-API-Key":     "FAKE_KEY",
 				"Content-Type":  "application/json",
 				"X-Custom":      "safe",
 			},
@@ -77,12 +77,12 @@ func TestRedact_RequestHeaders_Disabled(t *testing.T) {
 
 	run := domain.RunArtifact{
 		Results: []domain.RequestResult{{
-			RequestHeaders: map[string]string{"Authorization": "Bearer tok"},
+			RequestHeaders: map[string]string{"Authorization": "Bearer FAKE_TEST_VALUE"},
 		}},
 	}
 
 	out := r.Redact(run)
-	if out.Results[0].RequestHeaders["Authorization"] != "Bearer tok" {
+	if out.Results[0].RequestHeaders["Authorization"] != "Bearer FAKE_TEST_VALUE" {
 		t.Error("should not mask request headers when MaskRequestHeaders is false")
 	}
 }
@@ -94,7 +94,7 @@ func TestRedact_ResponseHeaders(t *testing.T) {
 		Results: []domain.RequestResult{{
 			Response: domain.ResponseSnapshot{
 				Headers: map[string][]string{
-					"Set-Cookie":   {"session=abc123"},
+					"Set-Cookie":   {"session=FAKE_SESSION_ID"},
 					"Content-Type": {"application/json"},
 				},
 			},
@@ -118,9 +118,9 @@ func TestRedact_ExtractedVars(t *testing.T) {
 	run := domain.RunArtifact{
 		Results: []domain.RequestResult{{
 			Extracted: domain.Vars{
-				"auth_token": "secret123",
+				"auth_token": "FAKE_TOK",
 				"user_id":    "42",
-				"password":   "p@ss",
+				"password":   "FAKE_PASS",
 			},
 		}},
 	}
@@ -144,17 +144,17 @@ func TestRedact_QueryParams(t *testing.T) {
 
 	run := domain.RunArtifact{
 		Results: []domain.RequestResult{{
-			ResolvedURL: "https://api.example.com/v1?api_key=secret&page=1&token=abc",
+			ResolvedURL: "https://api.example.com/v1?api_key=FAKE_KEY&page=1&token=FAKE_TOK",
 		}},
 	}
 
 	out := r.Redact(run)
 	u := out.Results[0].ResolvedURL
 
-	if strings.Contains(u, "secret") {
+	if strings.Contains(u, "FAKE_KEY") {
 		t.Errorf("api_key value should be masked in URL: %s", u)
 	}
-	if strings.Contains(u, "abc") {
+	if strings.Contains(u, "FAKE_TOK") {
 		t.Errorf("token value should be masked in URL: %s", u)
 	}
 	if !strings.Contains(u, "page=1") {
@@ -169,12 +169,12 @@ func TestRedact_QueryParams_Disabled(t *testing.T) {
 
 	run := domain.RunArtifact{
 		Results: []domain.RequestResult{{
-			ResolvedURL: "https://api.example.com?api_key=secret",
+			ResolvedURL: "https://api.example.com?api_key=FAKE_KEY",
 		}},
 	}
 
 	out := r.Redact(run)
-	if !strings.Contains(out.Results[0].ResolvedURL, "secret") {
+	if !strings.Contains(out.Results[0].ResolvedURL, "FAKE_KEY") {
 		t.Error("should not mask query params when MaskQueryParams is false")
 	}
 }
@@ -182,7 +182,7 @@ func TestRedact_QueryParams_Disabled(t *testing.T) {
 func TestRedact_RequestBodyJSON(t *testing.T) {
 	r := New(defaultMasking())
 
-	body := `{"username":"alice","password":"s3cret","data":{"api_key":"k123","value":42}}`
+	body := `{"username":"alice","password":"FAKE_PASS","data":{"api_key":"FAKE_KEY","value":42}}`
 
 	run := domain.RunArtifact{
 		Results: []domain.RequestResult{{
@@ -215,7 +215,7 @@ func TestRedact_RequestBodyJSON(t *testing.T) {
 func TestRedact_ResponseBodyJSON(t *testing.T) {
 	r := New(defaultMasking())
 
-	body := `{"access_token":"tok123","name":"test"}`
+	body := `{"access_token":"FAKE_TOK","name":"test"}`
 
 	run := domain.RunArtifact{
 		Results: []domain.RequestResult{{
@@ -243,7 +243,7 @@ func TestRedact_ResponseBodyJSON(t *testing.T) {
 func TestRedact_NonJSONBody(t *testing.T) {
 	r := New(defaultMasking())
 
-	body := "this is not json, password=secret"
+	body := "this is plain text, not json"
 
 	run := domain.RunArtifact{
 		Results: []domain.RequestResult{{
@@ -269,12 +269,12 @@ func TestRedact_CustomRules(t *testing.T) {
 	run := domain.RunArtifact{
 		Results: []domain.RequestResult{{
 			RequestHeaders: map[string]string{
-				"X-SSN":         "123-45-6789",
+				"X-SSN":         "000-00-0000",
 				"X-Internal-Id": "id-42",
 				"X-Safe":        "ok",
 			},
 			Extracted: domain.Vars{
-				"user_ssn": "999-99-9999",
+				"user_ssn": "000-00-0000",
 				"name":     "alice",
 			},
 		}},
@@ -304,11 +304,11 @@ func TestRedact_DoesNotMutateInput(t *testing.T) {
 
 	run := domain.RunArtifact{
 		Results: []domain.RequestResult{{
-			RequestHeaders: map[string]string{"Authorization": "Bearer tok"},
-			Extracted:      domain.Vars{"token": "abc"},
+			RequestHeaders: map[string]string{"Authorization": "Bearer FAKE_TEST_VALUE"},
+			Extracted:      domain.Vars{"token": "FAKE_TOK"},
 			Response: domain.ResponseSnapshot{
 				Headers: map[string][]string{"Set-Cookie": {"val"}},
-				Body:    []byte(`{"password":"secret"}`),
+				Body:    []byte(`{"password":"FAKE_PASS"}`),
 			},
 		}},
 	}
@@ -316,16 +316,16 @@ func TestRedact_DoesNotMutateInput(t *testing.T) {
 	_ = r.Redact(run)
 
 	// Original should be unchanged.
-	if run.Results[0].RequestHeaders["Authorization"] != "Bearer tok" {
+	if run.Results[0].RequestHeaders["Authorization"] != "Bearer FAKE_TEST_VALUE" {
 		t.Error("input RequestHeaders was mutated")
 	}
-	if run.Results[0].Extracted["token"] != "abc" {
+	if run.Results[0].Extracted["token"] != "FAKE_TOK" {
 		t.Error("input Extracted was mutated")
 	}
 	if run.Results[0].Response.Headers["Set-Cookie"][0] != "val" {
 		t.Error("input Response.Headers was mutated")
 	}
-	if string(run.Results[0].Response.Body) != `{"password":"secret"}` {
+	if string(run.Results[0].Response.Body) != `{"password":"FAKE_PASS"}` {
 		t.Error("input Response.Body was mutated")
 	}
 }

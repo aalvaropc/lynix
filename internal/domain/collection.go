@@ -91,6 +91,14 @@ type AssertionsSpec struct {
 	// JSONPath contains JSONPath assertions keyed by an identifier (optional).
 	// Example key could be "$.data" or a friendly label.
 	JSONPath map[string]JSONPathAssertion
+
+	// Schema is a file path to a JSON Schema file (relative to collection dir).
+	// The response body is validated against this schema.
+	Schema *string
+
+	// SchemaInline is an inline JSON Schema definition.
+	// Cannot be used together with Schema.
+	SchemaInline map[string]any
 }
 
 // ExtractSpec defines variable extraction from responses.

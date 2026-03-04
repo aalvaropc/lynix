@@ -135,7 +135,9 @@ type yamlAssertions struct {
 	Status *int `yaml:"status"`
 	MaxMS  *int `yaml:"max_ms"`
 
-	JSONPath map[string]yamlJSONPathAssertion `yaml:"jsonpath"`
+	JSONPath     map[string]yamlJSONPathAssertion `yaml:"jsonpath"`
+	Schema       *string                          `yaml:"schema"`
+	SchemaInline map[string]any                   `yaml:"schema_inline"`
 }
 
 type yamlJSONPathAssertion struct {
@@ -173,6 +175,21 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 			return domain.Collection{}, invalidField(path, fieldPrefix+".method", err.Error())
 		}
 
+		if r.Assert.Schema != nil && r.Assert.SchemaInline != nil {
+			return domain.Collection{}, invalidField(path, fieldPrefix+".assert",
+				"schema and schema_inline cannot be used together")
+		}
+
+		// Resolve schema path relative to collection file directory.
+		var schemaPtr *string
+		if r.Assert.Schema != nil {
+			s := *r.Assert.Schema
+			if !filepath.IsAbs(s) {
+				s = filepath.Join(filepath.Dir(path), s)
+			}
+			schemaPtr = &s
+		}
+
 		req := domain.RequestSpec{
 			Name:    r.Name,
 			Method:  method,
@@ -182,6 +199,8 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 				Status:       r.Assert.Status,
 				MaxLatencyMS: r.Assert.MaxMS,
 				JSONPath:     mapJSONPath(r.Assert.JSONPath),
+				Schema:       schemaPtr,
+				SchemaInline: r.Assert.SchemaInline,
 			},
 			Extract: domain.ExtractSpec(r.Extract),
 		}
