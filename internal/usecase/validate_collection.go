@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/aalvaropc/lynix/internal/domain"
 	"github.com/aalvaropc/lynix/internal/ports"
@@ -65,6 +66,16 @@ func (uc *ValidateCollection) Execute(ctx context.Context, collectionPath string
 
 		if _, err := rt.ResolveRequest(req); err != nil {
 			return fmt.Errorf("request %q: %w", req.Name, err)
+		}
+
+		// Validate schema file exists if referenced.
+		if req.Assert.Schema != nil {
+			if _, err := os.Stat(*req.Assert.Schema); err != nil {
+				return fmt.Errorf("request %q: schema file %q: %w", req.Name, *req.Assert.Schema, err)
+			}
+		}
+		if req.Assert.Schema != nil && req.Assert.SchemaInline != nil {
+			return fmt.Errorf("request %q: schema and schema_inline cannot be used together", req.Name)
 		}
 
 		// Assume extract keys become available for subsequent requests.

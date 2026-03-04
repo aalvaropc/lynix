@@ -48,10 +48,12 @@ func runCmd() *cobra.Command {
 
 			run, runID, err := uc.Execute(cmd.Context(), collectionPath, envArg)
 			if err != nil {
-				// If save fails, we still may want to print something when format=json/pretty.
-				// Here we print what we can and return error.
 				_ = printRun(os.Stdout, run, runID, format)
 				return err
+			}
+
+			if ws.cfg.Masking.ApplyToOutput && ws.redactor != nil {
+				run = ws.redactor.Redact(run)
 			}
 
 			if err := printRun(os.Stdout, run, runID, format); err != nil {
@@ -70,7 +72,7 @@ func runCmd() *cobra.Command {
 	c.Flags().StringVarP(&collection, "collection", "c", "", "Collection name or path (required)")
 	c.Flags().StringVarP(&env, "env", "e", "", "Environment name or path (optional; defaults to workspace default env)")
 	c.Flags().BoolVar(&noSave, "no-save", false, "Do not save run artifact under runs/")
-	c.Flags().StringVar(&format, "format", "pretty", "Output format: pretty|json")
+	c.Flags().StringVar(&format, "format", "pretty", "Output format: pretty|json|junit")
 
 	if err := c.MarkFlagRequired("collection"); err != nil {
 		panic(fmt.Sprintf("MarkFlagRequired: %v", err))
@@ -92,8 +94,10 @@ func printRun(w io.Writer, run domain.RunResult, runID string, format string) er
 	case "pretty", "":
 		printPrettyRun(w, run, runID)
 		return nil
+	case "junit":
+		return formatJUnit(w, run, runID)
 	default:
-		return fmt.Errorf("unsupported format %q (expected pretty|json)", format)
+		return fmt.Errorf("unsupported format %q (expected pretty|json|junit)", format)
 	}
 }
 

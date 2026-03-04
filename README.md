@@ -15,6 +15,7 @@ No accounts. No dashboards. No proprietary formats. Just a single binary and a f
 | CI/CD headless mode | ✓ | Paid plans / Newman | ✓ |
 | Variable chaining | ✓ | ✓ | Manual |
 | JSONPath assertions | ✓ | ✓ | Manual |
+| JSON Schema validation | ✓ | ✗ | Manual |
 | Single binary | ✓ | ✗ | ✓ |
 | Sensitive data masking | ✓ | Partial | ✗ |
 
@@ -23,9 +24,9 @@ No accounts. No dashboards. No proprietary formats. Just a single binary and a f
 ## Features
 
 - **TUI-first** — interactive interface with arrow-key navigation; no commands to memorize for daily use
-- **Headless CLI** — `lynix run` works in CI pipelines with JSON output and proper exit codes
+- **Headless CLI** — `lynix run` works in CI pipelines with JSON or JUnit XML output and proper exit codes
 - **Git-friendly** — collections and environments are plain YAML you can diff, review, and version
-- **Assertions** — validate status codes, latency thresholds, and JSONPath expressions with 6 operators
+- **Assertions** — validate status codes, latency thresholds, JSONPath expressions (6 operators), and JSON Schema
 - **Variable extraction** — pull values from responses via JSONPath and inject them into subsequent requests
 - **Environment layering** — base environment files + a gitignored `secrets.local.yaml` for local overrides
 - **Run artifacts** — timestamped JSON files saved under `runs/` for traceability and audit
@@ -35,18 +36,55 @@ No accounts. No dashboards. No proprietary formats. Just a single binary and a f
 
 ---
 
-## Quick Start
+## Installation
 
-### Install
+### Quick install (Linux / macOS)
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/aalvaropc/lynix/main/install.sh | sh
+```
+
+This detects your OS and architecture, downloads the latest release, verifies the SHA-256 checksum, and installs to `/usr/local/bin`.
+
+Pin a version or change the install directory:
+
+```bash
+LYNIX_VERSION=0.3.0 LYNIX_INSTALL_DIR=~/.local/bin \
+  curl -sSfL https://raw.githubusercontent.com/aalvaropc/lynix/main/install.sh | sh
+```
+
+### Homebrew (macOS / Linux)
+
+```bash
+brew install aalvaropc/tap/lynix
+```
+
+### Go install
+
+```bash
+go install github.com/aalvaropc/lynix/cmd/lynix@latest
+```
+
+Requires Go 1.22+.
+
+### Manual download
+
+Download the binary for your platform from the [Releases](https://github.com/aalvaropc/lynix/releases) page, verify the checksum against `checksums.txt`, and place it in your `$PATH`.
+
+### Build from source
 
 ```bash
 git clone https://github.com/aalvaropc/lynix
 cd lynix
 make build
-# binary is at ./bin/lynix — add to your $PATH
+# binary is at ./bin/lynix
 ```
 
-**Requirements:** Go 1.22+
+Requires Go 1.22+.
+
+---
+
+## Quick Start
 
 ### Initialize a workspace
 
@@ -407,6 +445,57 @@ assert:
       lt: 100
 ```
 
+### JSON Schema validation
+
+Validate the entire response body against a JSON Schema document. Supports Draft 7 and 2020-12.
+
+**File reference** (path relative to the collection file):
+
+```yaml
+assert:
+  schema: "schemas/user.json"
+```
+
+**Inline schema** (embedded in the collection YAML):
+
+```yaml
+assert:
+  schema_inline:
+    type: object
+    required: ["id", "name"]
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+      email:
+        type: string
+        format: email
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `schema` | string | Path to a `.json` schema file, relative to the collection directory |
+| `schema_inline` | object | Inline JSON Schema definition |
+
+> `schema` and `schema_inline` are mutually exclusive — using both on the same request is a validation error.
+
+On failure, the assertion message includes the instance location path and a description of the violation (e.g., `/user: missing property 'id'`).
+
+**Combining with other assertions:**
+
+```yaml
+assert:
+  status: 200
+  max_ms: 1000
+  schema: "schemas/user.json"
+  jsonpath:
+    has_email:
+      exists: true
+```
+
+Schema validation runs alongside status, latency, and JSONPath assertions — all results are reported independently.
+
 ---
 
 ## Variable Extraction
@@ -592,6 +681,9 @@ lynix run -c smoke-tests -e stg
 # JSON output for parsing or downstream steps
 lynix run -c integration-tests -e prod --format json | jq '.results[].assertions'
 
+# JUnit XML for CI test reporters
+lynix run -c smoke-tests -e stg --format junit > results.xml
+
 # Skip saving artifacts in ephemeral environments
 lynix run -c smoke-tests -e stg --no-save
 
@@ -599,10 +691,24 @@ lynix run -c smoke-tests -e stg --no-save
 lynix validate -c smoke-tests -e stg
 ```
 
-**GitHub Actions example:**
+**GitHub Actions example with JUnit report:**
 ```yaml
 - name: Run API tests
-  run: lynix run -c smoke-tests -e prod --no-save --format json
+  run: lynix run -c smoke-tests -e prod --no-save --format junit > results.xml
+
+- name: Publish test report
+  uses: dorny/test-reporter@v1
+  if: always()
+  with:
+    name: API Tests
+    path: results.xml
+    reporter: java-junit
+```
+
+**Simple example (exit code only):**
+```yaml
+- name: Run API tests
+  run: lynix run -c smoke-tests -e prod --no-save
 ```
 
 **Exit codes:**

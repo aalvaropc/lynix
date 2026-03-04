@@ -39,6 +39,31 @@ func LoadConfig(root string) (domain.Config, error) {
 	if y.Lynix.Masking.Enabled != nil {
 		cfg.Masking.Enabled = *y.Lynix.Masking.Enabled
 	}
+	if y.Lynix.Masking.MaskRequestHeaders != nil {
+		cfg.Masking.MaskRequestHeaders = *y.Lynix.Masking.MaskRequestHeaders
+	}
+	if y.Lynix.Masking.MaskRequestBody != nil {
+		cfg.Masking.MaskRequestBody = *y.Lynix.Masking.MaskRequestBody
+	}
+	if y.Lynix.Masking.MaskResponseBody != nil {
+		cfg.Masking.MaskResponseBody = *y.Lynix.Masking.MaskResponseBody
+	}
+	if y.Lynix.Masking.MaskQueryParams != nil {
+		cfg.Masking.MaskQueryParams = *y.Lynix.Masking.MaskQueryParams
+	}
+	if y.Lynix.Masking.ApplyToOutput != nil {
+		cfg.Masking.ApplyToOutput = *y.Lynix.Masking.ApplyToOutput
+	}
+	for _, r := range y.Lynix.Masking.Rules {
+		scope := domain.RedactionScope(r.Scope)
+		if scope == "" {
+			scope = domain.RedactionScopeAll
+		}
+		cfg.Masking.Rules = append(cfg.Masking.Rules, domain.RedactionRule{
+			Pattern: r.Pattern,
+			Scope:   scope,
+		})
+	}
 	if y.Lynix.Defaults.Env != "" {
 		cfg.Defaults.Environment = y.Lynix.Defaults.Env
 	}
@@ -67,7 +92,16 @@ func LoadConfig(root string) (domain.Config, error) {
 type yamlConfig struct {
 	Lynix struct {
 		Masking struct {
-			Enabled *bool `yaml:"enabled"`
+			Enabled            *bool `yaml:"enabled"`
+			MaskRequestHeaders *bool `yaml:"mask_request_headers"`
+			MaskRequestBody    *bool `yaml:"mask_request_body"`
+			MaskResponseBody   *bool `yaml:"mask_response_body"`
+			MaskQueryParams    *bool `yaml:"mask_query_params"`
+			ApplyToOutput      *bool `yaml:"apply_to_output"`
+			Rules              []struct {
+				Pattern string `yaml:"pattern"`
+				Scope   string `yaml:"scope"`
+			} `yaml:"rules"`
 		} `yaml:"masking"`
 
 		Defaults struct {

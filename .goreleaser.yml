@@ -1,0 +1,74 @@
+version: 2
+
+project_name: lynix
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/lynix
+    binary: lynix
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/aalvaropc/lynix/internal/buildinfo.Version={{.Version}}
+      - -X github.com/aalvaropc/lynix/internal/buildinfo.Commit={{.ShortCommit}}
+      - -X github.com/aalvaropc/lynix/internal/buildinfo.Date={{.Date}}
+
+archives:
+  - formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+brews:
+  - repository:
+      owner: aalvaropc
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/aalvaropc/lynix"
+    description: "TUI-first CLI tool for API testing and functional validation"
+    license: "MIT"
+    install: |
+      bin.install "lynix"
+    test: |
+      system "#{bin}/lynix", "version"
+
+release:
+  github:
+    owner: aalvaropc
+    name: lynix
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"

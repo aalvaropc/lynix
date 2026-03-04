@@ -67,7 +67,7 @@ func TestMaxLatency_FailMessage(t *testing.T) {
 // --- Evaluate ---
 
 func TestEvaluate_NoAssertions(t *testing.T) {
-	results := Evaluate(domain.AssertionsSpec{}, 200, 50, []byte(`{}`))
+	results := Evaluate(domain.AssertionsSpec{}, 200, 50, []byte(`{}`), nil)
 	if len(results) != 0 {
 		t.Fatalf("expected 0 results, got %d", len(results))
 	}
@@ -76,7 +76,7 @@ func TestEvaluate_NoAssertions(t *testing.T) {
 func TestEvaluate_OnlyStatus(t *testing.T) {
 	s := 200
 	spec := domain.AssertionsSpec{Status: &s}
-	results := Evaluate(spec, 200, 50, nil)
+	results := Evaluate(spec, 200, 50, nil, nil)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -88,7 +88,7 @@ func TestEvaluate_OnlyStatus(t *testing.T) {
 func TestEvaluate_OnlyMaxLatency(t *testing.T) {
 	ms := 1000
 	spec := domain.AssertionsSpec{MaxLatencyMS: &ms}
-	results := Evaluate(spec, 200, 500, nil)
+	results := Evaluate(spec, 200, 500, nil, nil)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -105,7 +105,7 @@ func TestEvaluate_JSONPathExists_True(t *testing.T) {
 	}
 
 	body := []byte(`{"data":{"id":123}}`)
-	out := Evaluate(spec, 200, 10, body)
+	out := Evaluate(spec, 200, 10, body, nil)
 
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got=%d", len(out))
@@ -123,7 +123,7 @@ func TestEvaluate_JSONPathExists_False(t *testing.T) {
 	}
 
 	body := []byte(`{"data":{"id":123}}`)
-	out := Evaluate(spec, 200, 10, body)
+	out := Evaluate(spec, 200, 10, body, nil)
 
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got=%d", len(out))
@@ -140,7 +140,7 @@ func TestEvaluate_JSONPath_NonJSONBody(t *testing.T) {
 		},
 	}
 
-	out := Evaluate(spec, 200, 10, []byte("hello"))
+	out := Evaluate(spec, 200, 10, []byte("hello"), nil)
 
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got=%d", len(out))
@@ -158,7 +158,7 @@ func TestEvaluate_JSONPath_InvalidExpr(t *testing.T) {
 	}
 
 	body := []byte(`{"data":{"id":123}}`)
-	out := Evaluate(spec, 200, 10, body)
+	out := Evaluate(spec, 200, 10, body, nil)
 
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got=%d", len(out))
@@ -175,7 +175,7 @@ func TestEvaluate_InvalidBodyMarksAllJSONPathFailed(t *testing.T) {
 			"$.age":  {Exists: true},
 		},
 	}
-	out := Evaluate(spec, 200, 50, []byte("not json"))
+	out := Evaluate(spec, 200, 50, []byte("not json"), nil)
 	if len(out) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(out))
 	}
@@ -199,7 +199,7 @@ func TestEvaluate_MultipleAssertionsCombined(t *testing.T) {
 			"$.id": {Exists: true},
 		},
 	}
-	results := Evaluate(spec, 200, 100, []byte(`{"id":42}`))
+	results := Evaluate(spec, 200, 100, []byte(`{"id":42}`), nil)
 	if len(results) != 3 {
 		t.Fatalf("expected 3 results, got %d", len(results))
 	}
@@ -222,7 +222,7 @@ func TestEvaluate_JSONPathExistsFalseSkipped(t *testing.T) {
 			"$.name": {Exists: false},
 		},
 	}
-	results := Evaluate(spec, 200, 50, []byte(`{"name":"alice"}`))
+	results := Evaluate(spec, 200, 50, []byte(`{"name":"alice"}`), nil)
 	if len(results) != 0 {
 		t.Fatalf("expected 0 results for Exists=false, got %d", len(results))
 	}
@@ -238,7 +238,7 @@ func TestEvaluate_JSONPathEq_Pass(t *testing.T) {
 			"$.name": {Eq: strPtr("alice")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`))
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -253,7 +253,7 @@ func TestEvaluate_JSONPathEq_Fail(t *testing.T) {
 			"$.name": {Eq: strPtr("alice")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"name":"bob"}`))
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"bob"}`), nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -268,7 +268,7 @@ func TestEvaluate_JSONPathEq_Number(t *testing.T) {
 			"$.count": {Eq: strPtr("42")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"count":42}`))
+	out := Evaluate(spec, 200, 10, []byte(`{"count":42}`), nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -285,7 +285,7 @@ func TestEvaluate_JSONPathContains_Pass(t *testing.T) {
 			"$.name": {Contains: strPtr("ali")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`))
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -300,7 +300,7 @@ func TestEvaluate_JSONPathContains_Fail(t *testing.T) {
 			"$.name": {Contains: strPtr("ali")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"name":"bob"}`))
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"bob"}`), nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -317,7 +317,7 @@ func TestEvaluate_JSONPathMatches_Pass(t *testing.T) {
 			"$.email": {Matches: strPtr("^.+@.+")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"email":"a@b.com"}`))
+	out := Evaluate(spec, 200, 10, []byte(`{"email":"a@b.com"}`), nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -332,7 +332,7 @@ func TestEvaluate_JSONPathMatches_Fail(t *testing.T) {
 			"$.email": {Matches: strPtr("^.+@.+")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"email":"notanemail"}`))
+	out := Evaluate(spec, 200, 10, []byte(`{"email":"notanemail"}`), nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -347,7 +347,7 @@ func TestEvaluate_JSONPathMatches_InvalidRegex(t *testing.T) {
 			"$.x": {Matches: strPtr("[invalid")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"x":"y"}`))
+	out := Evaluate(spec, 200, 10, []byte(`{"x":"y"}`), nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -366,7 +366,7 @@ func TestEvaluate_JSONPathGt_Pass(t *testing.T) {
 			"$.count": {Gt: float64Ptr(0)},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"count":5}`))
+	out := Evaluate(spec, 200, 10, []byte(`{"count":5}`), nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -381,7 +381,7 @@ func TestEvaluate_JSONPathGt_Fail(t *testing.T) {
 			"$.count": {Gt: float64Ptr(5)},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"count":0}`))
+	out := Evaluate(spec, 200, 10, []byte(`{"count":0}`), nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -398,7 +398,7 @@ func TestEvaluate_JSONPathLt_Pass(t *testing.T) {
 			"$.count": {Lt: float64Ptr(10)},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"count":5}`))
+	out := Evaluate(spec, 200, 10, []byte(`{"count":5}`), nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -413,7 +413,7 @@ func TestEvaluate_JSONPathLt_Fail(t *testing.T) {
 			"$.count": {Lt: float64Ptr(5)},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"count":10}`))
+	out := Evaluate(spec, 200, 10, []byte(`{"count":10}`), nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -430,7 +430,7 @@ func TestEvaluate_JSONPathMultipleChecksOnSamePath(t *testing.T) {
 			"$.name": {Eq: strPtr("alice"), Contains: strPtr("ali")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`))
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil)
 	if len(out) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(out))
 	}
@@ -449,7 +449,7 @@ func TestEvaluate_JSONPathEq_MissingPath(t *testing.T) {
 			"$.name": {Eq: strPtr("alice")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"x":1}`))
+	out := Evaluate(spec, 200, 10, []byte(`{"x":1}`), nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}

@@ -53,6 +53,14 @@ func TestRunner_TruncatesBody(t *testing.T) {
 	if res.Response.Headers["X-Test"][0] != "1" {
 		t.Fatalf("expected header X-Test=1")
 	}
+
+	// Verify request headers and resolved URL are captured.
+	if res.ResolvedURL != srv.URL {
+		t.Fatalf("expected ResolvedURL=%q, got=%q", srv.URL, res.ResolvedURL)
+	}
+	if res.RequestHeaders["Accept"] != "text/plain" {
+		t.Fatalf("expected RequestHeaders[Accept]=text/plain, got=%q", res.RequestHeaders["Accept"])
+	}
 }
 
 func TestRunner_ClassifiesTimeout(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/infra/redaction"
 	"github.com/aalvaropc/lynix/internal/infra/wiring"
 	"github.com/aalvaropc/lynix/internal/infra/workspacefinder"
 	"github.com/aalvaropc/lynix/internal/ports"
@@ -22,8 +23,9 @@ type workspaceCtx struct {
 	envs       ports.EnvironmentLoader
 	envCatalog ports.EnvironmentCatalog
 
-	runner ports.RequestRunner
-	store  ports.ArtifactStore
+	runner   ports.RequestRunner
+	store    ports.ArtifactStore
+	redactor *redaction.Redactor
 }
 
 func loadWorkspace(workspaceFlag string) (*workspaceCtx, error) {
@@ -47,6 +49,7 @@ func loadWorkspace(workspaceFlag string) (*workspaceCtx, error) {
 		envCatalog:  adapters.Envs.(ports.EnvironmentCatalog),
 		runner:      adapters.Runner,
 		store:       adapters.Store,
+		redactor:    adapters.Redactor,
 	}, nil
 }
 
