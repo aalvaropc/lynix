@@ -1,19 +1,63 @@
 name: Demo API
 vars:
-  base_url: "https://api.example.com"
+  base_url: "https://jsonplaceholder.typicode.com"
 
 requests:
-  - name: health
+  - name: get-post
     method: GET
-    url: "{{base_url}}/health"
-    assert:
-      status: 200
-      max_ms: 1500
-
-  - name: users.list
-    method: GET
-    url: "{{base_url}}/v1/users"
+    url: "{{base_url}}/posts/1"
     headers:
       Accept: "application/json"
     assert:
       status: 200
+      max_ms: 5000
+      jsonpath:
+        "$.id":
+          eq: "1"
+        "$.title":
+          exists: true
+      schema_inline:
+        type: object
+        required:
+          - userId
+          - id
+          - title
+          - body
+        properties:
+          userId:
+            type: integer
+          id:
+            type: integer
+          title:
+            type: string
+          body:
+            type: string
+    extract:
+      post_user_id: "$.userId"
+
+  - name: get-user
+    method: GET
+    url: "{{base_url}}/users/{{post_user_id}}"
+    headers:
+      Accept: "application/json"
+    assert:
+      status: 200
+      max_ms: 5000
+      jsonpath:
+        "$.name":
+          exists: true
+        "$.email":
+          contains: "@"
+      schema_inline:
+        type: object
+        required:
+          - id
+          - name
+          - email
+        properties:
+          id:
+            type: integer
+          name:
+            type: string
+          email:
+            type: string
