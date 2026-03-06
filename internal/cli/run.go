@@ -19,11 +19,17 @@ func runCmd() *cobra.Command {
 	var env string
 	var noSave bool
 	var format string
+	var report string
+	var reportPath string
 
 	c := &cobra.Command{
 		Use:   "run",
 		Short: "Run a collection (functional checks) from a Lynix workspace",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := validateReportFlags(report, reportPath); err != nil {
+				return err
+			}
+
 			ws, err := loadWorkspace(workspace)
 			if err != nil {
 				return err
@@ -60,6 +66,12 @@ func runCmd() *cobra.Command {
 				return err
 			}
 
+			if report == "junit" {
+				if err := writeJUnitReport(reportPath, run, runID); err != nil {
+					return err
+				}
+			}
+
 			fails := countFailures(run)
 			if fails > 0 {
 				return fmt.Errorf("run failed (%d failed request(s))", fails)
@@ -72,7 +84,9 @@ func runCmd() *cobra.Command {
 	c.Flags().StringVarP(&collection, "collection", "c", "", "Collection name or path (required)")
 	c.Flags().StringVarP(&env, "env", "e", "", "Environment name or path (optional; defaults to workspace default env)")
 	c.Flags().BoolVar(&noSave, "no-save", false, "Do not save run artifact under runs/")
-	c.Flags().StringVar(&format, "format", "pretty", "Output format: pretty|json|junit")
+	c.Flags().StringVar(&format, "format", "pretty", "Output format: pretty|json")
+	c.Flags().StringVar(&report, "report", "", "Report type to generate (currently only \"junit\")")
+	c.Flags().StringVar(&reportPath, "report-path", "", "File path to write the report to")
 
 	if err := c.MarkFlagRequired("collection"); err != nil {
 		panic(fmt.Sprintf("MarkFlagRequired: %v", err))
@@ -94,10 +108,8 @@ func printRun(w io.Writer, run domain.RunResult, runID string, format string) er
 	case "pretty", "":
 		printPrettyRun(w, run, runID)
 		return nil
-	case "junit":
-		return formatJUnit(w, run, runID)
 	default:
-		return fmt.Errorf("unsupported format %q (expected pretty|json|junit)", format)
+		return fmt.Errorf("unsupported format %q (expected pretty|json)", format)
 	}
 }
 
@@ -218,4 +230,29 @@ func countExtractPassFail(in []domain.ExtractResult) (ok int, bad int) {
 		}
 	}
 	return ok, bad
+}
+
+func validateReportFlags(report, reportPath string) error {
+	if report == "" && reportPath == "" {
+		return nil
+	}
+	if report != "" && reportPath == "" {
+		return fmt.Errorf("--report-path is required when --report is set")
+	}
+	if report == "" && reportPath != "" {
+		return fmt.Errorf("--report is required when --report-path is set")
+	}
+	if report != "junit" {
+		return fmt.Errorf("unsupported report type %q (expected \"junit\")", report)
+	}
+	return nil
+}
+
+func writeJUnitReport(path string, run domain.RunResult, runID string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("failed to create report file %q: %w", path, err)
+	}
+	defer f.Close()
+	return formatJUnit(f, run, runID)
 }
