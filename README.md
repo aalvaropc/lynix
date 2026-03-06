@@ -218,6 +218,7 @@ lynix run -c demo                            # Use default env from lynix.yaml
 lynix run -c demo -e dev --no-save           # Skip saving the run artifact
 lynix run -c demo -e dev --format json       # Machine-readable JSON output
 lynix run -c demo -e dev --format pretty     # Human-readable output (default)
+lynix run -c demo -e dev --report junit --report-path results.xml  # JUnit XML report
 lynix run -w /custom/root -c demo -e dev     # Override workspace root
 ```
 
@@ -228,6 +229,8 @@ lynix run -w /custom/root -c demo -e dev     # Override workspace root
 | `--workspace` | `-w` | Workspace root (optional, auto-detected) |
 | `--no-save` | | Skip saving the run artifact |
 | `--format` | | Output format: `pretty` or `json` (default: `pretty`) |
+| `--report` | | Report type to generate (currently only `junit`) |
+| `--report-path` | | File path to write the report to |
 
 **Collection resolution order:**
 1. If the value contains `/` or `\` → treated as a file path
@@ -681,8 +684,8 @@ lynix run -c smoke-tests -e stg
 # JSON output for parsing or downstream steps
 lynix run -c integration-tests -e prod --format json | jq '.results[].assertions'
 
-# JUnit XML for CI test reporters
-lynix run -c smoke-tests -e stg --format junit > results.xml
+# JUnit XML report alongside pretty output
+lynix run -c smoke-tests -e stg --report junit --report-path results.xml
 
 # Skip saving artifacts in ephemeral environments
 lynix run -c smoke-tests -e stg --no-save
@@ -694,7 +697,7 @@ lynix validate -c smoke-tests -e stg
 **GitHub Actions example with JUnit report:**
 ```yaml
 - name: Run API tests
-  run: lynix run -c smoke-tests -e prod --no-save --format junit > results.xml
+  run: lynix run -c smoke-tests -e prod --no-save --report junit --report-path results.xml
 
 - name: Publish test report
   uses: dorny/test-reporter@v1
