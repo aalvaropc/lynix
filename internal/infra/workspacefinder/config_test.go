@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadConfig_AppliesDefaults(t *testing.T) {
@@ -38,5 +39,38 @@ func TestLoadConfig_AppliesDefaults(t *testing.T) {
 	}
 	if cfg.Paths.RunsDir != "runs" {
 		t.Fatalf("expected runs dir=runs, got=%s", cfg.Paths.RunsDir)
+	}
+}
+
+func TestLoadConfig_RetrySettings(t *testing.T) {
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "ws")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	content := []byte(`lynix:
+  run:
+    retries: 3
+    retry_delay_ms: 500
+    retry_5xx: true
+`)
+	if err := os.WriteFile(filepath.Join(root, "lynix.yaml"), content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cfg, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if cfg.Run.Retries != 3 {
+		t.Fatalf("expected retries=3, got=%d", cfg.Run.Retries)
+	}
+	if cfg.Run.RetryDelay != 500*time.Millisecond {
+		t.Fatalf("expected retry_delay=500ms, got=%v", cfg.Run.RetryDelay)
+	}
+	if !cfg.Run.Retry5xx {
+		t.Fatal("expected retry_5xx=true")
 	}
 }

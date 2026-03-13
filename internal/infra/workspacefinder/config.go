@@ -85,6 +85,15 @@ func LoadConfig(root string) (domain.Config, error) {
 	if y.Lynix.Run.TimeoutSeconds > 0 {
 		cfg.Run.Timeout = time.Duration(y.Lynix.Run.TimeoutSeconds) * time.Second
 	}
+	if y.Lynix.Run.Retries != nil {
+		cfg.Run.Retries = *y.Lynix.Run.Retries
+	}
+	if y.Lynix.Run.RetryDelayMS != nil {
+		cfg.Run.RetryDelay = time.Duration(*y.Lynix.Run.RetryDelayMS) * time.Millisecond
+	}
+	if y.Lynix.Run.Retry5xx != nil {
+		cfg.Run.Retry5xx = *y.Lynix.Run.Retry5xx
+	}
 
 	return cfg, nil
 }
@@ -120,7 +129,10 @@ type yamlConfig struct {
 		} `yaml:"artifacts"`
 
 		Run struct {
-			TimeoutSeconds int `yaml:"timeout_seconds"`
+			TimeoutSeconds int   `yaml:"timeout_seconds"`
+			Retries        *int  `yaml:"retries"`
+			RetryDelayMS   *int  `yaml:"retry_delay_ms"`
+			Retry5xx       *bool `yaml:"retry_5xx"`
 		} `yaml:"run"`
 	} `yaml:"lynix"`
 }

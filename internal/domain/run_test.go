@@ -52,6 +52,24 @@ func TestClassifyRunError_URLWraps(t *testing.T) {
 	}
 }
 
+// --- IsRetryable ---
+
+func TestIsRetryable_TransientKinds(t *testing.T) {
+	for _, kind := range []RunErrorKind{RunErrorTimeout, RunErrorDNS, RunErrorConn} {
+		if !IsRetryable(kind) {
+			t.Errorf("expected IsRetryable(%s)=true", kind)
+		}
+	}
+}
+
+func TestIsRetryable_NonTransientKinds(t *testing.T) {
+	for _, kind := range []RunErrorKind{RunErrorCanceled, RunErrorHTTP, RunErrorUnknown} {
+		if IsRetryable(kind) {
+			t.Errorf("expected IsRetryable(%s)=false", kind)
+		}
+	}
+}
+
 // --- RequestResult.Failed ---
 
 func TestRequestResult_Failed_ErrorSet(t *testing.T) {

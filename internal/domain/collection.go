@@ -112,6 +112,7 @@ type RequestSpec struct {
 	URL     string
 	Headers Headers
 	Body    BodySpec
+	Tags    []string
 
 	Assert  AssertionsSpec
 	Extract ExtractSpec

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/aalvaropc/lynix/internal/domain"
@@ -22,6 +23,11 @@ func runCmd() *cobra.Command {
 	var report string
 	var reportPath string
 	var failFast bool
+	var only string
+	var tags string
+	var retries int
+	var retryDelayMS int
+	var retry5xx bool
 
 	c := &cobra.Command{
 		Use:   "run",
@@ -51,7 +57,26 @@ func runCmd() *cobra.Command {
 				store = nil
 			}
 
-			uc := usecase.NewRunCollection(ws.collections, ws.envs, ws.runner, store, failFast)
+			// Build retry options: CLI flags override workspace config when explicitly set.
+			retryOpts := usecase.RunOpts{
+				FailFast:   failFast,
+				Only:       splitCSV(only),
+				Tags:       splitCSV(tags),
+				Retries:    ws.cfg.Run.Retries,
+				RetryDelay: ws.cfg.Run.RetryDelay,
+				Retry5xx:   ws.cfg.Run.Retry5xx,
+			}
+			if cmd.Flags().Changed("retries") {
+				retryOpts.Retries = retries
+			}
+			if cmd.Flags().Changed("retry-delay") {
+				retryOpts.RetryDelay = time.Duration(retryDelayMS) * time.Millisecond
+			}
+			if cmd.Flags().Changed("retry-5xx") {
+				retryOpts.Retry5xx = retry5xx
+			}
+
+			uc := usecase.NewRunCollection(ws.collections, ws.envs, ws.runner, store, retryOpts)
 
 			run, runID, err := uc.Execute(cmd.Context(), collectionPath, envArg)
 			if err != nil {
@@ -89,6 +114,11 @@ func runCmd() *cobra.Command {
 	c.Flags().StringVar(&report, "report", "", "Report type to generate (currently only \"junit\")")
 	c.Flags().StringVar(&reportPath, "report-path", "", "File path to write the report to")
 	c.Flags().BoolVar(&failFast, "fail-fast", false, "Stop execution on the first failed request")
+	c.Flags().StringVar(&only, "only", "", "Run only the named requests (comma-separated)")
+	c.Flags().StringVar(&tags, "tags", "", "Run only requests matching any of these tags (comma-separated)")
+	c.Flags().IntVar(&retries, "retries", 0, "Number of retries for transient errors (default 0)")
+	c.Flags().IntVar(&retryDelayMS, "retry-delay", 0, "Delay between retries in milliseconds (default 0)")
+	c.Flags().BoolVar(&retry5xx, "retry-5xx", false, "Retry on HTTP 5xx responses")
 
 	if err := c.MarkFlagRequired("collection"); err != nil {
 		panic(fmt.Sprintf("MarkFlagRequired: %v", err))
@@ -138,6 +168,10 @@ func printPrettyRun(w io.Writer, run domain.RunResult, runID string) {
 		}
 
 		fmt.Fprintf(w, "- [%s] %s (%s) %dms\n", status, r.Name, r.Method, r.LatencyMS)
+
+		if r.Attempts > 1 {
+			fmt.Fprintf(w, "  attempts: %d\n", r.Attempts)
+		}
 
 		if r.Error != nil {
 			fmt.Fprintf(w, "  error: %s (%s)\n", r.Error.Message, r.Error.Kind)
@@ -235,6 +269,21 @@ func validateReportFlags(report, reportPath string) error {
 		return fmt.Errorf("unsupported report type %q (expected \"junit\")", report)
 	}
 	return nil
+}
+
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	var out []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func writeJUnitReport(path string, run domain.RunResult, runID string) error {

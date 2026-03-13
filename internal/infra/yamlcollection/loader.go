@@ -129,6 +129,7 @@ type yamlRequest struct {
 
 	Assert  yamlAssertions    `yaml:"assert"`
 	Extract map[string]string `yaml:"extract"`
+	Tags    []string          `yaml:"tags"`
 }
 
 type yamlAssertions struct {
@@ -195,6 +196,7 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 			Method:  method,
 			URL:     r.URL,
 			Headers: domain.Headers(r.Headers),
+			Tags:    r.Tags,
 			Assert: domain.AssertionsSpec{
 				Status:       r.Assert.Status,
 				MaxLatencyMS: r.Assert.MaxMS,

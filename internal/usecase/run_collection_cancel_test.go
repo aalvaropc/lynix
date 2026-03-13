@@ -35,7 +35,7 @@ func TestRunCollection_StopsOnContextCancel(t *testing.T) {
 	env := domain.Environment{Name: "dev", Vars: domain.Vars{}}
 
 	r := &countingRunner{}
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{env: env}, r, nil, false)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{env: env}, r, nil, RunOpts{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
