@@ -2,6 +2,7 @@ package redaction
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,11 +11,12 @@ import (
 
 func defaultMasking() domain.MaskingConfig {
 	return domain.MaskingConfig{
-		Enabled:            true,
-		MaskRequestHeaders: true,
-		MaskRequestBody:    true,
-		MaskResponseBody:   true,
-		MaskQueryParams:    true,
+		Enabled:             true,
+		MaskRequestHeaders:  true,
+		MaskRequestBody:     true,
+		MaskResponseHeaders: true,
+		MaskResponseBody:    true,
+		MaskQueryParams:     true,
 	}
 }
 
@@ -335,5 +337,146 @@ func TestRedact_EmptyRun(t *testing.T) {
 	out := r.Redact(domain.RunArtifact{})
 	if len(out.Results) != 0 {
 		t.Errorf("expected 0 results, got %d", len(out.Results))
+	}
+}
+
+func TestRedact_ResponseHeaders_Disabled(t *testing.T) {
+	cfg := defaultMasking()
+	cfg.MaskResponseHeaders = false
+	r := New(cfg)
+
+	run := domain.RunArtifact{
+		Results: []domain.RequestResult{{
+			Response: domain.ResponseSnapshot{
+				Headers: map[string][]string{
+					"Set-Cookie": {"session=FAKE_SESSION_ID"},
+				},
+			},
+		}},
+	}
+
+	out := r.Redact(run)
+	if out.Results[0].Response.Headers["Set-Cookie"][0] != "session=FAKE_SESSION_ID" {
+		t.Error("should not mask response headers when MaskResponseHeaders is false")
+	}
+}
+
+// --- CheckForSecrets tests ---
+
+func TestCheckForSecrets_Clean_NoError(t *testing.T) {
+	r := New(defaultMasking())
+
+	run := domain.RunArtifact{
+		Results: []domain.RequestResult{{
+			Name:           "test",
+			RequestHeaders: map[string]string{"Authorization": maskValue, "Content-Type": "application/json"},
+			Response: domain.ResponseSnapshot{
+				Headers: map[string][]string{"Set-Cookie": {maskValue}},
+				Body:    []byte(`{"password":"` + maskValue + `","name":"alice"}`),
+			},
+			ResolvedURL: "https://api.example.com?api_key=" + maskValue + "&page=1",
+			Extracted:   domain.Vars{"token": maskValue, "user_id": "42"},
+		}},
+	}
+
+	if err := r.CheckForSecrets(run); err != nil {
+		t.Errorf("expected no error for clean artifact, got: %v", err)
+	}
+}
+
+func TestCheckForSecrets_UnmaskedHeader_ReturnsError(t *testing.T) {
+	r := New(defaultMasking())
+
+	run := domain.RunArtifact{
+		Results: []domain.RequestResult{{
+			Name:           "login",
+			RequestHeaders: map[string]string{"Authorization": "Bearer real-token"},
+		}},
+	}
+
+	err := r.CheckForSecrets(run)
+	if err == nil {
+		t.Fatal("expected error for unmasked request header")
+	}
+	if !errors.Is(err, ErrSecretDetected) {
+		t.Errorf("expected ErrSecretDetected, got: %v", err)
+	}
+}
+
+func TestCheckForSecrets_UnmaskedResponseHeader_ReturnsError(t *testing.T) {
+	r := New(defaultMasking())
+
+	run := domain.RunArtifact{
+		Results: []domain.RequestResult{{
+			Name: "login",
+			Response: domain.ResponseSnapshot{
+				Headers: map[string][]string{"Set-Cookie": {"session=real-value"}},
+			},
+		}},
+	}
+
+	err := r.CheckForSecrets(run)
+	if err == nil {
+		t.Fatal("expected error for unmasked response header")
+	}
+	if !errors.Is(err, ErrSecretDetected) {
+		t.Errorf("expected ErrSecretDetected, got: %v", err)
+	}
+}
+
+func TestCheckForSecrets_UnmaskedBodyField_ReturnsError(t *testing.T) {
+	r := New(defaultMasking())
+
+	run := domain.RunArtifact{
+		Results: []domain.RequestResult{{
+			Name:        "login",
+			RequestBody: []byte(`{"password":"real-password"}`),
+		}},
+	}
+
+	err := r.CheckForSecrets(run)
+	if err == nil {
+		t.Fatal("expected error for unmasked body field")
+	}
+	if !errors.Is(err, ErrSecretDetected) {
+		t.Errorf("expected ErrSecretDetected, got: %v", err)
+	}
+}
+
+func TestCheckForSecrets_UnmaskedQueryParam_ReturnsError(t *testing.T) {
+	r := New(defaultMasking())
+
+	run := domain.RunArtifact{
+		Results: []domain.RequestResult{{
+			Name:        "fetch",
+			ResolvedURL: "https://api.example.com?api_key=real-key",
+		}},
+	}
+
+	err := r.CheckForSecrets(run)
+	if err == nil {
+		t.Fatal("expected error for unmasked query param")
+	}
+	if !errors.Is(err, ErrSecretDetected) {
+		t.Errorf("expected ErrSecretDetected, got: %v", err)
+	}
+}
+
+func TestCheckForSecrets_UnmaskedExtractedVar_ReturnsError(t *testing.T) {
+	r := New(defaultMasking())
+
+	run := domain.RunArtifact{
+		Results: []domain.RequestResult{{
+			Name:      "login",
+			Extracted: domain.Vars{"token": "real-token-value"},
+		}},
+	}
+
+	err := r.CheckForSecrets(run)
+	if err == nil {
+		t.Fatal("expected error for unmasked extracted var")
+	}
+	if !errors.Is(err, ErrSecretDetected) {
+		t.Errorf("expected ErrSecretDetected, got: %v", err)
 	}
 }

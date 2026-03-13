@@ -4,11 +4,12 @@ import "time"
 
 // Config represents the minimal Lynix configuration loaded from lynix.yaml.
 type Config struct {
-	Masking   MaskingConfig
-	Defaults  DefaultsConfig
-	Paths     PathsConfig
-	Artifacts ArtifactsConfig
-	Run       RunConfig
+	SchemaVersion int
+	Masking       MaskingConfig
+	Defaults      DefaultsConfig
+	Paths         PathsConfig
+	Artifacts     ArtifactsConfig
+	Run           RunConfig
 }
 
 // RunConfig holds runtime execution settings.
@@ -42,14 +43,19 @@ type MaskingConfig struct {
 	Enabled bool
 
 	// Per-surface toggles (all default to true when masking is enabled).
-	MaskRequestHeaders bool
-	MaskRequestBody    bool
-	MaskResponseBody   bool
-	MaskQueryParams    bool
+	MaskRequestHeaders  bool
+	MaskRequestBody     bool
+	MaskResponseHeaders bool
+	MaskResponseBody    bool
+	MaskQueryParams     bool
 
 	// ApplyToOutput controls whether masking also applies to CLI stdout output.
 	// Default false: only artifacts in runs/ are masked.
 	ApplyToOutput bool
+
+	// FailOnDetectedSecret causes artifact save and CLI output to fail if an
+	// unmasked secret is detected after redaction. Default false.
+	FailOnDetectedSecret bool
 
 	// Rules are custom redaction rules in addition to built-in defaults.
 	Rules []RedactionRule
@@ -73,13 +79,16 @@ type ArtifactsConfig struct {
 // DefaultConfig provides sane defaults if lynix.yaml is partially missing.
 func DefaultConfig() Config {
 	return Config{
+		SchemaVersion: 1,
 		Masking: MaskingConfig{
-			Enabled:            true,
-			MaskRequestHeaders: true,
-			MaskRequestBody:    true,
-			MaskResponseBody:   true,
-			MaskQueryParams:    true,
-			ApplyToOutput:      false,
+			Enabled:              true,
+			MaskRequestHeaders:   true,
+			MaskRequestBody:      true,
+			MaskResponseHeaders:  true,
+			MaskResponseBody:     true,
+			MaskQueryParams:      true,
+			ApplyToOutput:        false,
+			FailOnDetectedSecret: false,
 		},
 		Defaults: DefaultsConfig{
 			Environment: "dev",

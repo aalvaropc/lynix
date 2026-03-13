@@ -217,6 +217,85 @@ requests:
 	}
 }
 
+func TestLoadCollection_SchemaVersion_Present(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "demo.yaml")
+
+	content := []byte(`
+schema_version: 1
+name: Versioned API
+requests:
+  - name: health
+    method: GET
+    url: "http://x/health"
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	c, err := l.LoadCollection(p)
+	if err != nil {
+		t.Fatalf("LoadCollection error: %v", err)
+	}
+
+	if c.SchemaVersion != 1 {
+		t.Fatalf("expected schema_version=1, got=%d", c.SchemaVersion)
+	}
+}
+
+func TestLoadCollection_SchemaVersion_Missing_DefaultsToOne(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "demo.yaml")
+
+	content := []byte(`
+name: No Version API
+requests:
+  - name: health
+    method: GET
+    url: "http://x/health"
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	c, err := l.LoadCollection(p)
+	if err != nil {
+		t.Fatalf("LoadCollection error: %v", err)
+	}
+
+	if c.SchemaVersion != 1 {
+		t.Fatalf("expected schema_version default=1, got=%d", c.SchemaVersion)
+	}
+}
+
+func TestLoadCollection_SchemaVersion_Invalid_ReturnsError(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "bad.yaml")
+
+	content := []byte(`
+schema_version: 0
+name: Bad Version API
+requests:
+  - name: health
+    method: GET
+    url: "http://x/health"
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	_, err := l.LoadCollection(p)
+	if err == nil {
+		t.Fatal("expected error for schema_version=0")
+	}
+	if !domain.IsKind(err, domain.KindInvalidConfig) {
+		t.Fatalf("expected KindInvalidConfig, got: %v", err)
+	}
+}
+
 func TestLoadCollection_DuplicateBodyTypes(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "bad.yaml")

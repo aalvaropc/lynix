@@ -22,10 +22,16 @@ type Redacter interface {
 	Redact(run domain.RunArtifact) domain.RunArtifact
 }
 
+// SecretChecker is an optional interface a Redacter may implement.
+type SecretChecker interface {
+	CheckForSecrets(run domain.RunArtifact) error
+}
+
 type JSONStore struct {
 	rootDir        string
 	runsDirName    string
 	maskingEnabled bool
+	failOnSecret   bool
 	saveHeaders    bool
 	saveBody       bool
 	writeIndex     bool
@@ -66,6 +72,7 @@ func NewJSONStore(root string, cfg domain.Config, opts ...Option) *JSONStore {
 		rootDir:        root,
 		runsDirName:    runsDir,
 		maskingEnabled: cfg.Masking.Enabled,
+		failOnSecret:   cfg.Masking.FailOnDetectedSecret,
 		saveHeaders:    cfg.Artifacts.SaveResponseHeaders,
 		saveBody:       cfg.Artifacts.SaveResponseBody,
 		writeIndex:     false,
@@ -131,6 +138,14 @@ func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
 			toSave = s.redacter.Redact(toSave)
 		} else {
 			toSave = maskArtifact(toSave)
+		}
+	}
+
+	if s.failOnSecret {
+		if checker, ok := s.redacter.(SecretChecker); ok {
+			if err := checker.CheckForSecrets(toSave); err != nil {
+				return "", err
+			}
 		}
 	}
 

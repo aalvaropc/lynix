@@ -312,6 +312,7 @@ lynix envs list
 Collections are YAML files stored in `collections/`. They describe a sequence of HTTP requests with optional assertions and variable extraction.
 
 ```yaml
+schema_version: 1
 name: Auth Flow
 
 # Default variables (lowest priority — overridden by env vars)
@@ -564,6 +565,7 @@ Variables extracted from responses are merged into the running set and available
 
 ```yaml
 # env/dev.yaml
+schema_version: 1
 vars:
   base_url: "http://localhost:8080"
   username: "dev-user"
@@ -572,6 +574,7 @@ vars:
 
 ```yaml
 # env/stg.yaml
+schema_version: 1
 vars:
   base_url: "https://staging-api.example.com"
   username: "stg-user"
@@ -594,9 +597,18 @@ vars:
 
 ```yaml
 lynix:
+  schema_version: 1                   # Schema version (required >= 1)
+
   # Redact sensitive headers and variables before saving run artifacts
   masking:
     enabled: true
+    # mask_request_headers: true
+    # mask_request_body: true
+    # mask_response_headers: true     # Toggle response header masking
+    # mask_response_body: true
+    # mask_query_params: true
+    # apply_to_output: false
+    # fail_on_detected_secret: false  # Fail if unmasked secrets detected in artifacts
 
   # Default environment when -e / --env is not specified
   defaults:
@@ -794,6 +806,26 @@ Three values are injected at build time via ldflags:
 | `Version` | `git describe --tags --dirty --always` |
 | `Commit` | `git rev-parse --short HEAD` |
 | `Date` | UTC build timestamp |
+
+---
+
+## Editor Integration
+
+### VS Code / YAML Schema Validation
+
+Lynix ships JSON Schema files under `schemas/`. With the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml), add to `.vscode/settings.json`:
+
+```json
+{
+  "yaml.schemas": {
+    "./schemas/collection.schema.json": "collections/*.yaml",
+    "./schemas/environment.schema.json": "env/*.yaml",
+    "./schemas/workspace.schema.json": "lynix.yaml"
+  }
+}
+```
+
+This gives auto-complete and inline validation for collection, environment, and workspace YAML files.
 
 ---
 

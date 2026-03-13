@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/aalvaropc/lynix/schemas/collection.schema.json",
+  "title": "Lynix Collection",
+  "description": "Schema for Lynix collection YAML files.",
+  "type": "object",
+  "required": ["name", "requests"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1,
+      "description": "Schema version for forward compatibility."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Collection name."
+    },
+    "vars": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Default variables available to all requests."
+    },
+    "requests": {
+      "type": "array",
+      "minItems": 0,
+      "items": { "$ref": "#/$defs/request" },
+      "description": "Ordered list of HTTP requests."
+    }
+  },
+  "$defs": {
+    "request": {
+      "type": "object",
+      "required": ["name", "method", "url"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "method": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "json": {
+          "description": "JSON request body."
+        },
+        "form": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "raw": {
+          "type": "string"
+        },
+        "content_type": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "assert": { "$ref": "#/$defs/assertions" },
+        "extract": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Variable extraction: name -> JSONPath expression."
+        }
+      }
+    },
+    "assertions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "integer" },
+        "max_ms": {
+          "oneOf": [
+            { "type": "integer" },
+            { "type": "string" }
+          ]
+        },
+        "jsonpath": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/jsonpath_assertion" }
+        },
+        "schema": { "type": "string" },
+        "schema_inline": { "type": "object" }
+      }
+    },
+    "jsonpath_assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "exists": { "type": "boolean" },
+        "eq": { "type": "string" },
+        "contains": { "type": "string" },
+        "matches": { "type": "string" },
+        "gt": { "type": "number" },
+        "lt": { "type": "number" }
+      }
+    }
+  }
+}

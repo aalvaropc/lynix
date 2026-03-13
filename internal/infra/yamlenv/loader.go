@@ -65,7 +65,7 @@ func (l *Loader) LoadEnvironment(nameOrPath string) (domain.Environment, error) 
 		}
 	}
 
-	base, err := readVars(envPath)
+	env, err := readEnv(envPath)
 	if err != nil {
 		return domain.Environment{}, err
 	}
@@ -78,7 +78,7 @@ func (l *Loader) LoadEnvironment(nameOrPath string) (domain.Environment, error) 
 	}
 
 	merged := domain.Vars{}
-	for k, v := range base {
+	for k, v := range env.Vars {
 		merged[k] = v
 	}
 	for k, v := range secrets {
@@ -86,8 +86,9 @@ func (l *Loader) LoadEnvironment(nameOrPath string) (domain.Environment, error) 
 	}
 
 	return domain.Environment{
-		Name: envName,
-		Vars: merged,
+		SchemaVersion: env.SchemaVersion,
+		Name:          envName,
+		Vars:          merged,
 	}, nil
 }
 
@@ -134,13 +135,19 @@ func (l *Loader) ListEnvironments(_ context.Context, root string) ([]domain.Envi
 }
 
 type yamlEnv struct {
-	Vars map[string]string `yaml:"vars"`
+	SchemaVersion *int              `yaml:"schema_version"`
+	Vars          map[string]string `yaml:"vars"`
 }
 
-func readVars(path string) (domain.Vars, error) {
+type parsedEnv struct {
+	SchemaVersion int
+	Vars          domain.Vars
+}
+
+func readEnv(path string) (parsedEnv, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, &domain.OpError{
+		return parsedEnv{}, &domain.OpError{
 			Op:   "yamlenv.load",
 			Kind: domain.KindNotFound,
 			Path: path,
@@ -150,7 +157,7 @@ func readVars(path string) (domain.Vars, error) {
 
 	var y yamlEnv
 	if err := yaml.Unmarshal(b, &y); err != nil {
-		return nil, &domain.OpError{
+		return parsedEnv{}, &domain.OpError{
 			Op:   "yamlenv.load",
 			Kind: domain.KindInvalidConfig,
 			Path: path,
@@ -162,7 +169,23 @@ func readVars(path string) (domain.Vars, error) {
 		y.Vars = map[string]string{}
 	}
 
-	return domain.Vars(y.Vars), nil
+	sv := 1
+	if y.SchemaVersion != nil {
+		sv = *y.SchemaVersion
+	}
+
+	return parsedEnv{
+		SchemaVersion: sv,
+		Vars:          domain.Vars(y.Vars),
+	}, nil
+}
+
+func readVars(path string) (domain.Vars, error) {
+	env, err := readEnv(path)
+	if err != nil {
+		return nil, err
+	}
+	return env.Vars, nil
 }
 
 func readVarsOptional(path string) (domain.Vars, error) {
