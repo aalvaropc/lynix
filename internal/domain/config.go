@@ -13,7 +13,10 @@ type Config struct {
 
 // RunConfig holds runtime execution settings.
 type RunConfig struct {
-	Timeout time.Duration
+	Timeout    time.Duration
+	Retries    int
+	RetryDelay time.Duration
+	Retry5xx   bool
 }
 
 // RedactionScope controls which surface a redaction rule applies to.

@@ -74,6 +74,7 @@ type RequestResult struct {
 
 	Response ResponseSnapshot
 	Error    *RunError
+	Attempts int
 }
 
 // Failed reports whether this request should be considered failed:
@@ -110,6 +111,16 @@ type RunResult struct {
 
 // RunArtifact is the persisted representation for a run (MVP: same as RunResult).
 type RunArtifact = RunResult
+
+// IsRetryable reports whether a run error kind is transient and worth retrying.
+func IsRetryable(kind RunErrorKind) bool {
+	switch kind {
+	case RunErrorTimeout, RunErrorDNS, RunErrorConn:
+		return true
+	default:
+		return false
+	}
+}
 
 // NewRunError builds a RunError from an error using domain classification.
 func NewRunError(err error) *RunError {

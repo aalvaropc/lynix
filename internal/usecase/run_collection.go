@@ -13,12 +13,27 @@ import (
 	ucextract "github.com/aalvaropc/lynix/internal/usecase/extract"
 )
 
+// RunOpts groups behavioral parameters for RunCollection.
+type RunOpts struct {
+	FailFast   bool
+	Only       []string
+	Tags       []string
+	Retries    int
+	RetryDelay time.Duration
+	Retry5xx   bool
+}
+
 type RunCollection struct {
 	collections ports.CollectionLoader
 	envs        ports.EnvironmentLoader
 	runner      ports.RequestRunner
 	store       ports.ArtifactStore // optional (can be nil)
 	failFast    bool
+	only        []string
+	tags        []string
+	retries     int
+	retryDelay  time.Duration
+	retry5xx    bool
 }
 
 func NewRunCollection(
@@ -26,14 +41,19 @@ func NewRunCollection(
 	el ports.EnvironmentLoader,
 	rr ports.RequestRunner,
 	store ports.ArtifactStore,
-	failFast bool,
+	opts RunOpts,
 ) *RunCollection {
 	return &RunCollection{
 		collections: cl,
 		envs:        el,
 		runner:      rr,
 		store:       store,
-		failFast:    failFast,
+		failFast:    opts.FailFast,
+		only:        opts.Only,
+		tags:        opts.Tags,
+		retries:     opts.Retries,
+		retryDelay:  opts.RetryDelay,
+		retry5xx:    opts.Retry5xx,
 	}
 }
 
@@ -66,6 +86,11 @@ func (uc *RunCollection) Execute(
 		}
 	}
 
+	col.Requests, err = uc.filterRequests(col.Requests)
+	if err != nil {
+		return domain.RunResult{}, "", err
+	}
+
 	// collection vars < env vars < extracted runtime vars (updated per request)
 	vars := domain.Merge(col.Vars, env.Vars)
 
@@ -83,7 +108,7 @@ func (uc *RunCollection) Execute(
 			return run, "", err
 		}
 
-		rr, runErr := uc.runner.Run(ctx, req, vars)
+		rr, runErr := uc.runWithRetries(ctx, req, vars)
 		if runErr != nil {
 			// Runner error (config-level): continue but mark the request as failed.
 			run.Results = append(run.Results, domain.RequestResult{
@@ -97,7 +122,8 @@ func (uc *RunCollection) Execute(
 				Response: domain.ResponseSnapshot{
 					Headers: map[string][]string{},
 				},
-				Error: domain.NewRunError(runErr),
+				Error:    domain.NewRunError(runErr),
+				Attempts: 1,
 			})
 			if uc.failFast {
 				break
@@ -142,6 +168,105 @@ func (uc *RunCollection) Execute(
 	}
 
 	return run, id, nil
+}
+
+// runWithRetries wraps uc.runner.Run with retry logic for transient errors.
+func (uc *RunCollection) runWithRetries(
+	ctx context.Context,
+	req domain.RequestSpec,
+	vars domain.Vars,
+) (domain.RequestResult, error) {
+	maxAttempts := 1 + uc.retries
+	var rr domain.RequestResult
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return rr, err
+		}
+
+		var runErr error
+		rr, runErr = uc.runner.Run(ctx, req, vars)
+		rr.Attempts = attempt
+
+		// Config-level error: never retry.
+		if runErr != nil {
+			return rr, runErr
+		}
+
+		// Check if the result is retryable.
+		shouldRetry := false
+		if rr.Error != nil && domain.IsRetryable(rr.Error.Kind) {
+			shouldRetry = true
+		}
+		if uc.retry5xx && rr.StatusCode >= 500 {
+			shouldRetry = true
+		}
+
+		if !shouldRetry || attempt == maxAttempts {
+			return rr, nil
+		}
+
+		// Wait before retrying (interruptible via context).
+		if uc.retryDelay > 0 {
+			select {
+			case <-ctx.Done():
+				return rr, ctx.Err()
+			case <-time.After(uc.retryDelay):
+			}
+		}
+	}
+	return rr, nil
+}
+
+// filterRequests applies --only and --tags filtering.
+// --only names must exist in the collection (error on typo).
+// --tags with no match returns 0 results (not an error).
+// Combination is intersection: request must match both.
+func (uc *RunCollection) filterRequests(requests []domain.RequestSpec) ([]domain.RequestSpec, error) {
+	if len(uc.only) == 0 && len(uc.tags) == 0 {
+		return requests, nil
+	}
+
+	// Validate --only names exist.
+	if len(uc.only) > 0 {
+		nameSet := make(map[string]bool, len(requests))
+		for _, r := range requests {
+			nameSet[r.Name] = true
+		}
+		for _, name := range uc.only {
+			if !nameSet[name] {
+				return nil, fmt.Errorf("--only: request %q not found in collection", name)
+			}
+		}
+	}
+
+	onlySet := make(map[string]bool, len(uc.only))
+	for _, n := range uc.only {
+		onlySet[n] = true
+	}
+
+	tagsSet := make(map[string]bool, len(uc.tags))
+	for _, t := range uc.tags {
+		tagsSet[t] = true
+	}
+
+	var filtered []domain.RequestSpec
+	for _, r := range requests {
+		matchOnly := len(onlySet) == 0 || onlySet[r.Name]
+		matchTags := len(tagsSet) == 0 || hasAnyTag(r.Tags, tagsSet)
+		if matchOnly && matchTags {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered, nil
+}
+
+func hasAnyTag(tags []string, wanted map[string]bool) bool {
+	for _, t := range tags {
+		if wanted[t] {
+			return true
+		}
+	}
+	return false
 }
 
 // loadSchemaBytes resolves the JSON Schema bytes from a file path or inline definition.

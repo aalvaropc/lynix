@@ -155,6 +155,68 @@ requests:
 	}
 }
 
+func TestLoadCollection_WithTags(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "demo.yaml")
+
+	content := []byte(`
+name: Tagged API
+requests:
+  - name: smoke
+    method: GET
+    url: "http://x/health"
+    tags: [smoke, auth]
+    assert:
+      status: 200
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	c, err := l.LoadCollection(p)
+	if err != nil {
+		t.Fatalf("LoadCollection error: %v", err)
+	}
+
+	if len(c.Requests) != 1 {
+		t.Fatalf("expected 1 request, got=%d", len(c.Requests))
+	}
+	tags := c.Requests[0].Tags
+	if len(tags) != 2 {
+		t.Fatalf("expected 2 tags, got=%d", len(tags))
+	}
+	if tags[0] != "smoke" || tags[1] != "auth" {
+		t.Fatalf("expected tags=[smoke, auth], got=%v", tags)
+	}
+}
+
+func TestLoadCollection_WithoutTags(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "demo.yaml")
+
+	content := []byte(`
+name: No Tags API
+requests:
+  - name: health
+    method: GET
+    url: "http://x/health"
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	c, err := l.LoadCollection(p)
+	if err != nil {
+		t.Fatalf("LoadCollection error: %v", err)
+	}
+
+	if c.Requests[0].Tags != nil {
+		t.Fatalf("expected nil tags, got=%v", c.Requests[0].Tags)
+	}
+}
+
 func TestLoadCollection_DuplicateBodyTypes(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "bad.yaml")

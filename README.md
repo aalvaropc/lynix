@@ -220,6 +220,10 @@ lynix run -c demo -e dev --format json       # Machine-readable JSON output
 lynix run -c demo -e dev --format pretty     # Human-readable output (default)
 lynix run -c demo -e dev --report junit --report-path results.xml  # JUnit XML report
 lynix run -c demo -e dev --fail-fast         # Stop on first failure
+lynix run -c demo -e dev --only health,login # Run only named requests
+lynix run -c demo -e dev --tags smoke,auth   # Run only requests with matching tags
+lynix run -c demo -e dev --retries 3 --retry-delay 500  # Retry transient errors
+lynix run -c demo -e dev --retries 2 --retry-5xx        # Also retry 5xx responses
 lynix run -w /custom/root -c demo -e dev     # Override workspace root
 ```
 
@@ -233,6 +237,11 @@ lynix run -w /custom/root -c demo -e dev     # Override workspace root
 | `--report` | | Report type to generate (currently only `junit`) |
 | `--report-path` | | File path to write the report to |
 | `--fail-fast` | | Stop execution on the first failed request |
+| `--only` | | Run only the named requests (comma-separated) |
+| `--tags` | | Run only requests matching any of these tags (comma-separated) |
+| `--retries` | | Number of retries for transient errors (default: 0) |
+| `--retry-delay` | | Delay between retries in milliseconds (default: 0) |
+| `--retry-5xx` | | Also retry on HTTP 5xx responses |
 
 **Collection resolution order:**
 1. If the value contains `/` or `\` → treated as a file path
@@ -365,6 +374,7 @@ requests:
 | `form` | | Form URL-encoded body (string key-value map) |
 | `raw` | | Raw text body |
 | `content_type` | | Overrides `Content-Type` header (mainly for `raw` bodies) |
+| `tags` | | List of tags for selective execution with `--tags` |
 | `assert` | | Assertions on the response |
 | `extract` | | Variables to extract from the response body |
 
@@ -606,6 +616,9 @@ lynix:
   # Global timeout for an entire collection run
   run:
     timeout_seconds: 300           # Default: 300 (5 minutes)
+    retries: 0                     # Number of retries for transient errors
+    retry_delay_ms: 0              # Delay between retries in milliseconds
+    retry_5xx: false               # Also retry on HTTP 5xx responses
 ```
 
 ---
@@ -691,6 +704,12 @@ lynix run -c smoke-tests -e stg --report junit --report-path results.xml
 
 # Stop on first failure (fail-fast)
 lynix run -c smoke-tests -e stg --fail-fast --no-save
+
+# Run only tagged requests
+lynix run -c integration-tests -e stg --tags smoke
+
+# Run specific requests by name
+lynix run -c integration-tests -e stg --only health,login
 
 # Skip saving artifacts in ephemeral environments
 lynix run -c smoke-tests -e stg --no-save

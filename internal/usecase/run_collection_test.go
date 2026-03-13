@@ -134,7 +134,7 @@ func TestRunCollection_Execute_StoreNil(t *testing.T) {
 		StatusCode: 200,
 		Response:   domain.ResponseSnapshot{Body: []byte(`{}`)},
 	}}
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, false)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{})
 
 	run, id, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
 	if err != nil {
@@ -160,7 +160,7 @@ func TestRunCollection_Execute_StoreCalled(t *testing.T) {
 		Response:   domain.ResponseSnapshot{Body: []byte(`{}`)},
 	}}
 	store := &fakeStore{}
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, store, false)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, store, RunOpts{})
 
 	_, id, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
 	if err != nil {
@@ -176,7 +176,7 @@ func TestRunCollection_Execute_StoreCalled(t *testing.T) {
 
 func TestRunCollection_Execute_ErrorLoadingCollection(t *testing.T) {
 	loadErr := errors.New("collection not found")
-	uc := NewRunCollection(errCollectionLoader{err: loadErr}, fakeEnvLoader{}, &stubRunner{}, nil, false)
+	uc := NewRunCollection(errCollectionLoader{err: loadErr}, fakeEnvLoader{}, &stubRunner{}, nil, RunOpts{})
 
 	_, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
 	if err == nil {
@@ -189,7 +189,7 @@ func TestRunCollection_Execute_ErrorLoadingCollection(t *testing.T) {
 
 func TestRunCollection_Execute_ErrorLoadingEnv(t *testing.T) {
 	envErr := errors.New("env not found")
-	uc := NewRunCollection(fakeCollectionLoader{}, errEnvLoader{err: envErr}, &stubRunner{}, nil, false)
+	uc := NewRunCollection(fakeCollectionLoader{}, errEnvLoader{err: envErr}, &stubRunner{}, nil, RunOpts{})
 
 	_, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
 	if err == nil {
@@ -214,7 +214,7 @@ func TestRunCollection_Execute_RunnerError_ContinuesNext(t *testing.T) {
 		},
 		errs: []error{errors.New("runner failed"), nil},
 	}
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, false)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{})
 
 	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
 	if err != nil {
@@ -240,7 +240,7 @@ func TestRunCollection_Execute_ContextCancelledBeforeFirstRequest(t *testing.T) 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before Execute
 
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, &stubRunner{}, nil, false)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, &stubRunner{}, nil, RunOpts{})
 	_, _, err := uc.Execute(ctx, "col.yaml", "env.yaml")
 	if err == nil {
 		t.Fatal("expected context error")
@@ -262,7 +262,7 @@ func TestRunCollection_Execute_ContextCancelledDuringIteration(t *testing.T) {
 		cancel: cancel,
 		result: domain.RequestResult{StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
 	}
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, false)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{})
 
 	run, _, err := uc.Execute(ctx, "col.yaml", "env.yaml")
 	if err == nil {
@@ -289,7 +289,7 @@ func TestRunCollection_Execute_StoreSaveError(t *testing.T) {
 	}}
 	saveErr := errors.New("store unavailable")
 	store := &errStore{err: saveErr}
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, store, false)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, store, RunOpts{})
 
 	run, id, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
 	if err == nil {
@@ -330,7 +330,7 @@ func TestRunCollection_Execute_VarChainingViaExtract(t *testing.T) {
 		},
 		errs: []error{nil, nil},
 	}
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, false)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{})
 
 	_, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
 	if err != nil {
@@ -416,7 +416,7 @@ func TestRunCollection_ExtractsAndChainsVars(t *testing.T) {
 	r := httprunner.New(httpclient.New(cfg))
 
 	st := &fakeStore{}
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{env: env}, r, st, false)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{env: env}, r, st, RunOpts{})
 
 	out, id, err := uc.Execute(context.Background(), "demo.yaml", "dev")
 	if err != nil {
@@ -502,7 +502,7 @@ func TestRunCollection_ExtractFail_AllowsNextRequestToFailMissingVar(t *testing.
 	cfg.Timeout = 2 * time.Second
 	r := httprunner.New(httpclient.New(cfg))
 
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{env: env}, r, nil, false)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{env: env}, r, nil, RunOpts{})
 
 	out, _, err := uc.Execute(context.Background(), "demo.yaml", "dev")
 	if err != nil {
@@ -542,7 +542,7 @@ func TestRunCollection_Execute_FailFast_StopsOnRunnerError(t *testing.T) {
 		},
 		errs: []error{errors.New("runner failed"), nil, nil},
 	}
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, true)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{FailFast: true})
 
 	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
 	if err != nil {
@@ -574,7 +574,7 @@ func TestRunCollection_Execute_FailFast_StopsOnAssertionFailure(t *testing.T) {
 		},
 		errs: []error{nil, nil, nil},
 	}
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, true)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{FailFast: true})
 
 	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
 	if err != nil {
@@ -603,7 +603,7 @@ func TestRunCollection_Execute_FailFast_StopsOnExtractFailure(t *testing.T) {
 		},
 		errs: []error{nil, nil},
 	}
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, true)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{FailFast: true})
 
 	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
 	if err != nil {
@@ -630,7 +630,7 @@ func TestRunCollection_Execute_FailFast_AllPass_RunsAll(t *testing.T) {
 		},
 		errs: []error{nil, nil, nil},
 	}
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, true)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{FailFast: true})
 
 	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
 	if err != nil {
@@ -656,7 +656,7 @@ func TestRunCollection_Execute_FailFast_StillSavesArtifact(t *testing.T) {
 		errs: []error{errors.New("boom"), nil},
 	}
 	store := &fakeStore{}
-	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, store, true)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, store, RunOpts{FailFast: true})
 
 	run, id, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
 	if err != nil {
@@ -670,6 +670,322 @@ func TestRunCollection_Execute_FailFast_StillSavesArtifact(t *testing.T) {
 	}
 	if len(run.Results) != 1 {
 		t.Fatalf("expected 1 partial result saved, got %d", len(run.Results))
+	}
+}
+
+// --- only/tags filter tests ---
+
+func TestRunCollection_Execute_OnlyFilter_RunsSubset(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com"},
+			{Name: "req2", Method: domain.MethodGet, URL: "http://b.com"},
+			{Name: "req3", Method: domain.MethodGet, URL: "http://c.com"},
+		},
+	}
+	runner := &multiCallRunner{
+		results: []domain.RequestResult{
+			{Name: "req2", StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+		},
+		errs: []error{nil},
+	}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Only: []string{"req2"}})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(run.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(run.Results))
+	}
+	if runner.idx != 1 {
+		t.Fatalf("expected runner called once, got %d", runner.idx)
+	}
+}
+
+func TestRunCollection_Execute_OnlyFilter_UnknownName_ReturnsError(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com"},
+		},
+	}
+	runner := &stubRunner{result: domain.RequestResult{
+		StatusCode: 200,
+		Response:   domain.ResponseSnapshot{Body: []byte(`{}`)},
+	}}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Only: []string{"nonexistent"}})
+
+	_, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err == nil {
+		t.Fatal("expected error for unknown --only name")
+	}
+}
+
+func TestRunCollection_Execute_TagsFilter_RunsTaggedRequests(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com", Tags: []string{"smoke"}},
+			{Name: "req2", Method: domain.MethodGet, URL: "http://b.com", Tags: []string{"auth"}},
+			{Name: "req3", Method: domain.MethodGet, URL: "http://c.com"},
+		},
+	}
+	runner := &multiCallRunner{
+		results: []domain.RequestResult{
+			{StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+		},
+		errs: []error{nil},
+	}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Tags: []string{"smoke"}})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(run.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(run.Results))
+	}
+}
+
+func TestRunCollection_Execute_OnlyAndTags_Intersection(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com", Tags: []string{"smoke"}},
+			{Name: "req2", Method: domain.MethodGet, URL: "http://b.com", Tags: []string{"auth"}},
+			{Name: "req3", Method: domain.MethodGet, URL: "http://c.com", Tags: []string{"smoke"}},
+		},
+	}
+	runner := &multiCallRunner{
+		results: []domain.RequestResult{
+			{StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+		},
+		errs: []error{nil},
+	}
+	// only req1 and req3 match names, but only req1 and req3 have "smoke" tag
+	// intersection: only req1 passes both
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Only: []string{"req1", "req3"}, Tags: []string{"smoke"}})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(run.Results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(run.Results))
+	}
+}
+
+func TestRunCollection_Execute_TagsFilter_NoMatch_RunsNothing(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com", Tags: []string{"auth"}},
+			{Name: "req2", Method: domain.MethodGet, URL: "http://b.com"},
+		},
+	}
+	runner := &stubRunner{result: domain.RequestResult{
+		StatusCode: 200,
+		Response:   domain.ResponseSnapshot{Body: []byte(`{}`)},
+	}}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Tags: []string{"nonexistent"}})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(run.Results) != 0 {
+		t.Fatalf("expected 0 results, got %d", len(run.Results))
+	}
+}
+
+// --- retry tests ---
+
+func TestRunCollection_Execute_Retry_TransientError_Recovers(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com"},
+		},
+	}
+	// First call: connection error (transient), second call: success.
+	runner := &multiCallRunner{
+		results: []domain.RequestResult{
+			{
+				Error:    &domain.RunError{Kind: domain.RunErrorConn, Message: "connection refused"},
+				Response: domain.ResponseSnapshot{Body: []byte(`{}`)},
+			},
+			{StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+		},
+		errs: []error{nil, nil},
+	}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Retries: 1})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(run.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(run.Results))
+	}
+	if run.Results[0].Attempts != 2 {
+		t.Fatalf("expected Attempts=2, got %d", run.Results[0].Attempts)
+	}
+	if run.Results[0].Error != nil {
+		t.Fatalf("expected success after retry, got error: %v", run.Results[0].Error)
+	}
+}
+
+func TestRunCollection_Execute_Retry_AllAttemptsFail(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com"},
+		},
+	}
+	runner := &multiCallRunner{
+		results: []domain.RequestResult{
+			{Error: &domain.RunError{Kind: domain.RunErrorTimeout, Message: "timeout"}, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+			{Error: &domain.RunError{Kind: domain.RunErrorTimeout, Message: "timeout"}, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+			{Error: &domain.RunError{Kind: domain.RunErrorTimeout, Message: "timeout"}, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+		},
+		errs: []error{nil, nil, nil},
+	}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Retries: 2})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(run.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(run.Results))
+	}
+	if run.Results[0].Attempts != 3 {
+		t.Fatalf("expected Attempts=3, got %d", run.Results[0].Attempts)
+	}
+	if run.Results[0].Error == nil {
+		t.Fatal("expected error after all retries exhausted")
+	}
+}
+
+func TestRunCollection_Execute_Retry_NonTransient_NoRetry(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com"},
+		},
+	}
+	runner := &multiCallRunner{
+		results: []domain.RequestResult{
+			{Error: &domain.RunError{Kind: domain.RunErrorCanceled, Message: "canceled"}, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+			{StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+		},
+		errs: []error{nil, nil},
+	}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Retries: 2})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if run.Results[0].Attempts != 1 {
+		t.Fatalf("expected Attempts=1 (non-transient, no retry), got %d", run.Results[0].Attempts)
+	}
+}
+
+func TestRunCollection_Execute_Retry_ConfigError_NoRetry(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com"},
+		},
+	}
+	runner := &multiCallRunner{
+		results: []domain.RequestResult{
+			{},
+			{StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+		},
+		errs: []error{errors.New("config error"), nil},
+	}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Retries: 2})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Config-level error: goes to the runner-error branch, never retried.
+	if len(run.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(run.Results))
+	}
+	if run.Results[0].Attempts != 1 {
+		t.Fatalf("expected Attempts=1 (config error, no retry), got %d", run.Results[0].Attempts)
+	}
+	if run.Results[0].Error == nil {
+		t.Fatal("expected error for config-level failure")
+	}
+}
+
+func TestRunCollection_Execute_Retry5xx_Enabled(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com"},
+		},
+	}
+	runner := &multiCallRunner{
+		results: []domain.RequestResult{
+			{StatusCode: 503, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+			{StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+		},
+		errs: []error{nil, nil},
+	}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Retries: 1, Retry5xx: true})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if run.Results[0].Attempts != 2 {
+		t.Fatalf("expected Attempts=2, got %d", run.Results[0].Attempts)
+	}
+	if run.Results[0].StatusCode != 200 {
+		t.Fatalf("expected status 200 after retry, got %d", run.Results[0].StatusCode)
+	}
+}
+
+func TestRunCollection_Execute_Retry5xx_Disabled(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com"},
+		},
+	}
+	runner := &multiCallRunner{
+		results: []domain.RequestResult{
+			{StatusCode: 503, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+			{StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+		},
+		errs: []error{nil, nil},
+	}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Retries: 1, Retry5xx: false})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if run.Results[0].Attempts != 1 {
+		t.Fatalf("expected Attempts=1, got %d", run.Results[0].Attempts)
+	}
+}
+
+func TestRunCollection_Execute_Retry_ZeroRetries_SingleAttempt(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com"},
+		},
+	}
+	runner := &stubRunner{result: domain.RequestResult{
+		StatusCode: 200,
+		Response:   domain.ResponseSnapshot{Body: []byte(`{}`)},
+	}}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Retries: 0})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if run.Results[0].Attempts != 1 {
+		t.Fatalf("expected Attempts=1, got %d", run.Results[0].Attempts)
 	}
 }
 
