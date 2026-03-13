@@ -51,3 +51,40 @@ func TestClassifyRunError_URLWraps(t *testing.T) {
 		t.Fatalf("expected dns, got=%s", got)
 	}
 }
+
+// --- RequestResult.Failed ---
+
+func TestRequestResult_Failed_ErrorSet(t *testing.T) {
+	r := RequestResult{Error: &RunError{Kind: RunErrorConn, Message: "refused"}}
+	if !r.Failed() {
+		t.Error("expected Failed()=true when Error is set")
+	}
+}
+
+func TestRequestResult_Failed_AssertionFail(t *testing.T) {
+	r := RequestResult{
+		Assertions: []AssertionResult{{Passed: false}},
+	}
+	if !r.Failed() {
+		t.Error("expected Failed()=true when assertion fails")
+	}
+}
+
+func TestRequestResult_Failed_ExtractFail(t *testing.T) {
+	r := RequestResult{
+		Extracts: []ExtractResult{{Success: false}},
+	}
+	if !r.Failed() {
+		t.Error("expected Failed()=true when extract fails")
+	}
+}
+
+func TestRequestResult_Failed_AllPass(t *testing.T) {
+	r := RequestResult{
+		Assertions: []AssertionResult{{Passed: true}},
+		Extracts:   []ExtractResult{{Success: true}},
+	}
+	if r.Failed() {
+		t.Error("expected Failed()=false when all pass")
+	}
+}

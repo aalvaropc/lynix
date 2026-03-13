@@ -18,6 +18,7 @@ type RunCollection struct {
 	envs        ports.EnvironmentLoader
 	runner      ports.RequestRunner
 	store       ports.ArtifactStore // optional (can be nil)
+	failFast    bool
 }
 
 func NewRunCollection(
@@ -25,12 +26,14 @@ func NewRunCollection(
 	el ports.EnvironmentLoader,
 	rr ports.RequestRunner,
 	store ports.ArtifactStore,
+	failFast bool,
 ) *RunCollection {
 	return &RunCollection{
 		collections: cl,
 		envs:        el,
 		runner:      rr,
 		store:       store,
+		failFast:    failFast,
 	}
 }
 
@@ -96,6 +99,9 @@ func (uc *RunCollection) Execute(
 				},
 				Error: domain.NewRunError(runErr),
 			})
+			if uc.failFast {
+				break
+			}
 			continue
 		}
 
@@ -112,6 +118,10 @@ func (uc *RunCollection) Execute(
 		}
 
 		run.Results = append(run.Results, rr)
+
+		if uc.failFast && rr.Failed() {
+			break
+		}
 	}
 
 	run.EndedAt = time.Now()

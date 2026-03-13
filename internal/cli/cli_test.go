@@ -331,7 +331,7 @@ func TestRunCmd_Flags(t *testing.T) {
 	if cmd.Use != "run" {
 		t.Errorf("expected Use=run, got %q", cmd.Use)
 	}
-	for _, flag := range []string{"collection", "env", "workspace", "no-save", "format"} {
+	for _, flag := range []string{"collection", "env", "workspace", "no-save", "format", "report", "report-path", "fail-fast"} {
 		if cmd.Flags().Lookup(flag) == nil {
 			t.Errorf("expected --%s flag on run command", flag)
 		}
