@@ -1,4 +1,5 @@
 lynix:
+  schema_version: 1
   masking:
     enabled: true
     # mask_request_headers: true

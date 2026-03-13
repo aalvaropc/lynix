@@ -6,8 +6,9 @@ type Vars map[string]string
 // Environment defines variables for a given runtime context (dev/stg/prod).
 // Secrets may be merged on top by infrastructure implementations.
 type Environment struct {
-	Name string
-	Vars Vars
+	SchemaVersion int
+	Name          string
+	Vars          Vars
 }
 
 // Get returns a value for the given key and a boolean indicating if it exists.

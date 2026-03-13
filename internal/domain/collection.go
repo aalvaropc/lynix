@@ -120,6 +120,8 @@ type RequestSpec struct {
 
 // Collection groups multiple requests under one logical unit (Git-friendly).
 type Collection struct {
+	SchemaVersion int
+
 	Name string
 
 	// Vars are default variables available to all requests in the collection.

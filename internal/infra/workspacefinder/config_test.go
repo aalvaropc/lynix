@@ -130,6 +130,68 @@ func TestLoadConfig_FailOnDetectedSecret_Default(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_SchemaVersion_Present(t *testing.T) {
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "ws")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	content := []byte("lynix:\n  schema_version: 1\n")
+	if err := os.WriteFile(filepath.Join(root, "lynix.yaml"), content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cfg, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if cfg.SchemaVersion != 1 {
+		t.Fatalf("expected SchemaVersion=1, got=%d", cfg.SchemaVersion)
+	}
+}
+
+func TestLoadConfig_SchemaVersion_Missing_DefaultsToOne(t *testing.T) {
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "ws")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	content := []byte("lynix:\n  masking:\n    enabled: true\n")
+	if err := os.WriteFile(filepath.Join(root, "lynix.yaml"), content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cfg, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if cfg.SchemaVersion != 1 {
+		t.Fatalf("expected SchemaVersion default=1, got=%d", cfg.SchemaVersion)
+	}
+}
+
+func TestLoadConfig_SchemaVersion_Invalid_ReturnsError(t *testing.T) {
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "ws")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	content := []byte("lynix:\n  schema_version: 0\n")
+	if err := os.WriteFile(filepath.Join(root, "lynix.yaml"), content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := LoadConfig(root)
+	if err == nil {
+		t.Fatal("expected error for schema_version=0")
+	}
+}
+
 func TestLoadConfig_RetrySettings(t *testing.T) {
 	tmp := t.TempDir()
 	root := filepath.Join(tmp, "ws")

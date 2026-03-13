@@ -111,9 +111,10 @@ func readCollectionName(path string) (string, error) {
 }
 
 type yamlCollection struct {
-	Name     string            `yaml:"name"`
-	Vars     map[string]string `yaml:"vars"`
-	Requests []yamlRequest     `yaml:"requests"`
+	SchemaVersion *int              `yaml:"schema_version"`
+	Name          string            `yaml:"name"`
+	Vars          map[string]string `yaml:"vars"`
+	Requests      []yamlRequest     `yaml:"requests"`
 }
 
 type yamlRequest struct {
@@ -151,14 +152,23 @@ type yamlJSONPathAssertion struct {
 }
 
 func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
+	schemaVersion := 1
+	if yc.SchemaVersion != nil {
+		schemaVersion = *yc.SchemaVersion
+	}
+	if schemaVersion < 1 {
+		return domain.Collection{}, invalidField(path, "schema_version", "must be >= 1")
+	}
+
 	if strings.TrimSpace(yc.Name) == "" {
 		return domain.Collection{}, invalidField(path, "name", "collection name is required")
 	}
 
 	col := domain.Collection{
-		Name:     yc.Name,
-		Vars:     domain.Vars(yc.Vars),
-		Requests: make([]domain.RequestSpec, 0, len(yc.Requests)),
+		SchemaVersion: schemaVersion,
+		Name:          yc.Name,
+		Vars:          domain.Vars(yc.Vars),
+		Requests:      make([]domain.RequestSpec, 0, len(yc.Requests)),
 	}
 
 	for i, r := range yc.Requests {

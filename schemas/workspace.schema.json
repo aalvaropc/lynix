@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/aalvaropc/lynix/schemas/workspace.schema.json",
+  "title": "Lynix Workspace",
+  "description": "Schema for lynix.yaml workspace configuration.",
+  "type": "object",
+  "required": ["lynix"],
+  "additionalProperties": false,
+  "properties": {
+    "lynix": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Schema version for forward compatibility."
+        },
+        "masking": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "mask_request_headers": { "type": "boolean", "default": true },
+            "mask_request_body": { "type": "boolean", "default": true },
+            "mask_response_headers": { "type": "boolean", "default": true },
+            "mask_response_body": { "type": "boolean", "default": true },
+            "mask_query_params": { "type": "boolean", "default": true },
+            "apply_to_output": { "type": "boolean", "default": false },
+            "fail_on_detected_secret": { "type": "boolean", "default": false },
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["pattern"],
+                "additionalProperties": false,
+                "properties": {
+                  "pattern": { "type": "string", "minLength": 1 },
+                  "scope": {
+                    "type": "string",
+                    "enum": ["all", "header", "body", "query"],
+                    "default": "all"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "env": { "type": "string", "default": "dev" }
+          }
+        },
+        "paths": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "collections_dir": { "type": "string", "default": "collections" },
+            "environments_dir": { "type": "string", "default": "env" },
+            "runs_dir": { "type": "string", "default": "runs" }
+          }
+        },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "save_response_headers": { "type": "boolean", "default": true },
+            "save_response_body": { "type": "boolean", "default": false }
+          }
+        },
+        "run": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "timeout_seconds": { "type": "integer", "minimum": 1, "default": 300 },
+            "retries": { "type": "integer", "minimum": 0, "default": 0 },
+            "retry_delay_ms": { "type": "integer", "minimum": 0, "default": 0 },
+            "retry_5xx": { "type": "boolean", "default": false }
+          }
+        }
+      }
+    }
+  }
+}

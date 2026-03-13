@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/aalvaropc/lynix/schemas/environment.schema.json",
+  "title": "Lynix Environment",
+  "description": "Schema for Lynix environment YAML files.",
+  "type": "object",
+  "required": ["vars"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1,
+      "description": "Schema version for forward compatibility."
+    },
+    "vars": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Key-value variables for this environment."
+    }
+  }
+}

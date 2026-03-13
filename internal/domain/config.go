@@ -4,11 +4,12 @@ import "time"
 
 // Config represents the minimal Lynix configuration loaded from lynix.yaml.
 type Config struct {
-	Masking   MaskingConfig
-	Defaults  DefaultsConfig
-	Paths     PathsConfig
-	Artifacts ArtifactsConfig
-	Run       RunConfig
+	SchemaVersion int
+	Masking       MaskingConfig
+	Defaults      DefaultsConfig
+	Paths         PathsConfig
+	Artifacts     ArtifactsConfig
+	Run           RunConfig
 }
 
 // RunConfig holds runtime execution settings.
@@ -78,6 +79,7 @@ type ArtifactsConfig struct {
 // DefaultConfig provides sane defaults if lynix.yaml is partially missing.
 func DefaultConfig() Config {
 	return Config{
+		SchemaVersion: 1,
 		Masking: MaskingConfig{
 			Enabled:              true,
 			MaskRequestHeaders:   true,

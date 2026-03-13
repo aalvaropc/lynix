@@ -35,6 +35,19 @@ func LoadConfig(root string) (domain.Config, error) {
 		}
 	}
 
+	// Schema version
+	if y.Lynix.SchemaVersion != nil {
+		if *y.Lynix.SchemaVersion < 1 {
+			return cfg, &domain.OpError{
+				Op:   "workspacefinder.loadconfig",
+				Kind: domain.KindInvalidConfig,
+				Path: path,
+				Err:  fmt.Errorf("%w: schema_version must be >= 1", domain.ErrInvalidConfig),
+			}
+		}
+		cfg.SchemaVersion = *y.Lynix.SchemaVersion
+	}
+
 	// Apply parsed values on top of defaults.
 	if y.Lynix.Masking.Enabled != nil {
 		cfg.Masking.Enabled = *y.Lynix.Masking.Enabled
@@ -106,6 +119,8 @@ func LoadConfig(root string) (domain.Config, error) {
 
 type yamlConfig struct {
 	Lynix struct {
+		SchemaVersion *int `yaml:"schema_version"`
+
 		Masking struct {
 			Enabled              *bool `yaml:"enabled"`
 			MaskRequestHeaders   *bool `yaml:"mask_request_headers"`
