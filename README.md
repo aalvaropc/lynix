@@ -219,6 +219,7 @@ lynix run -c demo -e dev --no-save           # Skip saving the run artifact
 lynix run -c demo -e dev --format json       # Machine-readable JSON output
 lynix run -c demo -e dev --format pretty     # Human-readable output (default)
 lynix run -c demo -e dev --report junit --report-path results.xml  # JUnit XML report
+lynix run -c demo -e dev --fail-fast         # Stop on first failure
 lynix run -w /custom/root -c demo -e dev     # Override workspace root
 ```
 
@@ -231,6 +232,7 @@ lynix run -w /custom/root -c demo -e dev     # Override workspace root
 | `--format` | | Output format: `pretty` or `json` (default: `pretty`) |
 | `--report` | | Report type to generate (currently only `junit`) |
 | `--report-path` | | File path to write the report to |
+| `--fail-fast` | | Stop execution on the first failed request |
 
 **Collection resolution order:**
 1. If the value contains `/` or `\` → treated as a file path
@@ -686,6 +688,9 @@ lynix run -c integration-tests -e prod --format json | jq '.results[].assertions
 
 # JUnit XML report alongside pretty output
 lynix run -c smoke-tests -e stg --report junit --report-path results.xml
+
+# Stop on first failure (fail-fast)
+lynix run -c smoke-tests -e stg --fail-fast --no-save
 
 # Skip saving artifacts in ephemeral environments
 lynix run -c smoke-tests -e stg --no-save

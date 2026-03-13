@@ -175,7 +175,7 @@ func startRunAsync(
 		defer cancel()
 
 		adapters := wiring.NewAdapters(workspaceRoot, cfg, save)
-		uc := usecase.NewRunCollection(adapters.Collections, adapters.Envs, adapters.Runner, adapters.Store)
+		uc := usecase.NewRunCollection(adapters.Collections, adapters.Envs, adapters.Runner, adapters.Store, false)
 
 		run, id, execErr := uc.Execute(ctx, collectionPath, envName)
 

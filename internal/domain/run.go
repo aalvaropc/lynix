@@ -76,6 +76,25 @@ type RequestResult struct {
 	Error    *RunError
 }
 
+// Failed reports whether this request should be considered failed:
+// runner error, any assertion failure, or any extract failure.
+func (r RequestResult) Failed() bool {
+	if r.Error != nil {
+		return true
+	}
+	for _, a := range r.Assertions {
+		if !a.Passed {
+			return true
+		}
+	}
+	for _, e := range r.Extracts {
+		if !e.Success {
+			return true
+		}
+	}
+	return false
+}
+
 // RunResult is a collection-level execution result suitable for UI and artifacts.
 type RunResult struct {
 	CollectionName string

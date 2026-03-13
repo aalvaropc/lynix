@@ -21,6 +21,7 @@ func runCmd() *cobra.Command {
 	var format string
 	var report string
 	var reportPath string
+	var failFast bool
 
 	c := &cobra.Command{
 		Use:   "run",
@@ -50,7 +51,7 @@ func runCmd() *cobra.Command {
 				store = nil
 			}
 
-			uc := usecase.NewRunCollection(ws.collections, ws.envs, ws.runner, store)
+			uc := usecase.NewRunCollection(ws.collections, ws.envs, ws.runner, store, failFast)
 
 			run, runID, err := uc.Execute(cmd.Context(), collectionPath, envArg)
 			if err != nil {
@@ -87,6 +88,7 @@ func runCmd() *cobra.Command {
 	c.Flags().StringVar(&format, "format", "pretty", "Output format: pretty|json")
 	c.Flags().StringVar(&report, "report", "", "Report type to generate (currently only \"junit\")")
 	c.Flags().StringVar(&reportPath, "report-path", "", "File path to write the report to")
+	c.Flags().BoolVar(&failFast, "fail-fast", false, "Stop execution on the first failed request")
 
 	if err := c.MarkFlagRequired("collection"); err != nil {
 		panic(fmt.Sprintf("MarkFlagRequired: %v", err))
@@ -194,20 +196,7 @@ func countFailures(run domain.RunResult) int {
 }
 
 func isRequestFailed(r domain.RequestResult) bool {
-	if r.Error != nil {
-		return true
-	}
-	for _, a := range r.Assertions {
-		if !a.Passed {
-			return true
-		}
-	}
-	for _, e := range r.Extracts {
-		if !e.Success {
-			return true
-		}
-	}
-	return false
+	return r.Failed()
 }
 
 func countAssertionPassFail(in []domain.AssertionResult) (pass int, fail int) {
