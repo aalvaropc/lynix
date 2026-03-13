@@ -2,11 +2,16 @@ package redaction
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 
 	"github.com/aalvaropc/lynix/internal/domain"
 )
+
+// ErrSecretDetected is returned when an unmasked secret is found in an artifact.
+var ErrSecretDetected = errors.New("detected unmasked secret in artifact")
 
 const maskValue = "********"
 
@@ -52,7 +57,7 @@ func (r *Redactor) Redact(run domain.RunArtifact) domain.RunArtifact {
 		}
 
 		// Response headers
-		if len(rr.Response.Headers) > 0 {
+		if r.cfg.MaskResponseHeaders && len(rr.Response.Headers) > 0 {
 			c.Response = cloneResponseSnapshot(rr.Response)
 			for k := range c.Response.Headers {
 				if r.isHeaderSensitive(k) {
@@ -216,6 +221,112 @@ func (r *Redactor) walkAndMask(v any) {
 			r.walkAndMask(item)
 		}
 	}
+}
+
+// CheckForSecrets scans a (presumably already-redacted) RunArtifact for any
+// sensitive values that were NOT masked. Returns ErrSecretDetected on first hit.
+func (r *Redactor) CheckForSecrets(run domain.RunArtifact) error {
+	for _, rr := range run.Results {
+		// Request headers
+		for k, v := range rr.RequestHeaders {
+			if r.isHeaderSensitive(k) && v != maskValue {
+				return fmt.Errorf("%w: request header %q in request %q", ErrSecretDetected, k, rr.Name)
+			}
+		}
+
+		// Response headers
+		for k, vals := range rr.Response.Headers {
+			if r.isHeaderSensitive(k) {
+				for _, v := range vals {
+					if v != maskValue {
+						return fmt.Errorf("%w: response header %q in request %q", ErrSecretDetected, k, rr.Name)
+					}
+				}
+			}
+		}
+
+		// Request body JSON keys
+		if err := r.checkJSONSecrets(rr.RequestBody, "request body", rr.Name); err != nil {
+			return err
+		}
+
+		// Response body JSON keys
+		if err := r.checkJSONSecrets(rr.Response.Body, "response body", rr.Name); err != nil {
+			return err
+		}
+
+		// Query params in resolved URL
+		if rr.ResolvedURL != "" {
+			if err := r.checkQuerySecrets(rr.ResolvedURL, rr.Name); err != nil {
+				return err
+			}
+		}
+
+		// Extracted vars
+		for k, v := range rr.Extracted {
+			if r.isKeySensitive(k) && v != maskValue {
+				return fmt.Errorf("%w: extracted var %q in request %q", ErrSecretDetected, k, rr.Name)
+			}
+		}
+	}
+	return nil
+}
+
+func (r *Redactor) checkJSONSecrets(body []byte, surface, reqName string) error {
+	if len(body) == 0 {
+		return nil
+	}
+	var doc any
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return nil // not JSON
+	}
+	if key := r.findUnmaskedKey(doc); key != "" {
+		return fmt.Errorf("%w: %s key %q in request %q", ErrSecretDetected, surface, key, reqName)
+	}
+	return nil
+}
+
+// findUnmaskedKey walks a JSON document and returns the first sensitive key
+// whose value is not the mask placeholder. Returns "" if clean.
+func (r *Redactor) findUnmaskedKey(v any) string {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, val := range t {
+			if r.isKeySensitive(k) {
+				if s, ok := val.(string); !ok || s != maskValue {
+					return k
+				}
+			} else {
+				if found := r.findUnmaskedKey(val); found != "" {
+					return found
+				}
+			}
+		}
+	case []any:
+		for _, item := range t {
+			if found := r.findUnmaskedKey(item); found != "" {
+				return found
+			}
+		}
+	}
+	return ""
+}
+
+func (r *Redactor) checkQuerySecrets(rawURL, reqName string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil
+	}
+	for k, vals := range u.Query() {
+		if r.isQueryParamSensitive(k) {
+			for _, v := range vals {
+				if v != maskValue {
+					return fmt.Errorf("%w: query param %q in request %q", ErrSecretDetected, k, reqName)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // --- deep copy helpers (migrated from runstore) ---

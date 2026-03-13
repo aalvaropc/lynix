@@ -51,8 +51,14 @@ func LoadConfig(root string) (domain.Config, error) {
 	if y.Lynix.Masking.MaskQueryParams != nil {
 		cfg.Masking.MaskQueryParams = *y.Lynix.Masking.MaskQueryParams
 	}
+	if y.Lynix.Masking.MaskResponseHeaders != nil {
+		cfg.Masking.MaskResponseHeaders = *y.Lynix.Masking.MaskResponseHeaders
+	}
 	if y.Lynix.Masking.ApplyToOutput != nil {
 		cfg.Masking.ApplyToOutput = *y.Lynix.Masking.ApplyToOutput
+	}
+	if y.Lynix.Masking.FailOnDetectedSecret != nil {
+		cfg.Masking.FailOnDetectedSecret = *y.Lynix.Masking.FailOnDetectedSecret
 	}
 	for _, r := range y.Lynix.Masking.Rules {
 		scope := domain.RedactionScope(r.Scope)
@@ -101,13 +107,15 @@ func LoadConfig(root string) (domain.Config, error) {
 type yamlConfig struct {
 	Lynix struct {
 		Masking struct {
-			Enabled            *bool `yaml:"enabled"`
-			MaskRequestHeaders *bool `yaml:"mask_request_headers"`
-			MaskRequestBody    *bool `yaml:"mask_request_body"`
-			MaskResponseBody   *bool `yaml:"mask_response_body"`
-			MaskQueryParams    *bool `yaml:"mask_query_params"`
-			ApplyToOutput      *bool `yaml:"apply_to_output"`
-			Rules              []struct {
+			Enabled              *bool `yaml:"enabled"`
+			MaskRequestHeaders   *bool `yaml:"mask_request_headers"`
+			MaskRequestBody      *bool `yaml:"mask_request_body"`
+			MaskResponseHeaders  *bool `yaml:"mask_response_headers"`
+			MaskResponseBody     *bool `yaml:"mask_response_body"`
+			MaskQueryParams      *bool `yaml:"mask_query_params"`
+			ApplyToOutput        *bool `yaml:"apply_to_output"`
+			FailOnDetectedSecret *bool `yaml:"fail_on_detected_secret"`
+			Rules                []struct {
 				Pattern string `yaml:"pattern"`
 				Scope   string `yaml:"scope"`
 			} `yaml:"rules"`

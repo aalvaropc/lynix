@@ -42,14 +42,19 @@ type MaskingConfig struct {
 	Enabled bool
 
 	// Per-surface toggles (all default to true when masking is enabled).
-	MaskRequestHeaders bool
-	MaskRequestBody    bool
-	MaskResponseBody   bool
-	MaskQueryParams    bool
+	MaskRequestHeaders  bool
+	MaskRequestBody     bool
+	MaskResponseHeaders bool
+	MaskResponseBody    bool
+	MaskQueryParams     bool
 
 	// ApplyToOutput controls whether masking also applies to CLI stdout output.
 	// Default false: only artifacts in runs/ are masked.
 	ApplyToOutput bool
+
+	// FailOnDetectedSecret causes artifact save and CLI output to fail if an
+	// unmasked secret is detected after redaction. Default false.
+	FailOnDetectedSecret bool
 
 	// Rules are custom redaction rules in addition to built-in defaults.
 	Rules []RedactionRule
@@ -74,12 +79,14 @@ type ArtifactsConfig struct {
 func DefaultConfig() Config {
 	return Config{
 		Masking: MaskingConfig{
-			Enabled:            true,
-			MaskRequestHeaders: true,
-			MaskRequestBody:    true,
-			MaskResponseBody:   true,
-			MaskQueryParams:    true,
-			ApplyToOutput:      false,
+			Enabled:              true,
+			MaskRequestHeaders:   true,
+			MaskRequestBody:      true,
+			MaskResponseHeaders:  true,
+			MaskResponseBody:     true,
+			MaskQueryParams:      true,
+			ApplyToOutput:        false,
+			FailOnDetectedSecret: false,
 		},
 		Defaults: DefaultsConfig{
 			Environment: "dev",

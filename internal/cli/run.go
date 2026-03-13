@@ -88,6 +88,12 @@ func runCmd() *cobra.Command {
 				run = ws.redactor.Redact(run)
 			}
 
+			if ws.cfg.Masking.FailOnDetectedSecret && ws.redactor != nil {
+				if err := ws.redactor.CheckForSecrets(run); err != nil {
+					return err
+				}
+			}
+
 			if err := printRun(os.Stdout, run, runID, format); err != nil {
 				return err
 			}
