@@ -4,6 +4,9 @@
 
 No accounts. No dashboards. No proprietary formats. Just a single binary and a folder of YAML files.
 
+<!-- TODO: Add asciinema/GIF demo recording here -->
+<!-- asciinema rec: lynix init, edit collection, lynix run -c demo -e dev -->
+
 ---
 
 ## Why Lynix?
@@ -18,6 +21,7 @@ No accounts. No dashboards. No proprietary formats. Just a single binary and a f
 | JSON Schema validation | ✓ | ✗ | Manual |
 | Single binary | ✓ | ✗ | ✓ |
 | Sensitive data masking | ✓ | Partial | ✗ |
+| Import from curl/Postman | ✓ | N/A | N/A |
 
 ---
 
@@ -32,6 +36,7 @@ No accounts. No dashboards. No proprietary formats. Just a single binary and a f
 - **Run artifacts** — timestamped JSON files saved under `runs/` for traceability and audit
 - **Sensitive data masking** — redacts `Authorization`, `Cookie`, token, secret, and password fields before saving
 - **Built-in variables** — `{{$uuid}}` and `{{$timestamp}}` available out of the box
+- **Import from curl & Postman** — `lynix import curl` and `lynix import postman` convert existing collections to Lynix YAML
 - **Single binary** — one Go executable, no runtime dependencies
 
 ---
@@ -120,6 +125,23 @@ lynix
 **Headlessly (CLI):**
 ```bash
 lynix run -c demo -e dev
+```
+
+---
+
+## Examples
+
+The [`examples/`](examples/) directory contains runnable examples you can try immediately — no API keys required:
+
+| Example | What it shows |
+|---------|---------------|
+| [health-check](examples/health-check/) | Single GET with status, latency, and JSONPath assertions |
+| [rest-crud](examples/rest-crud/) | Full CRUD lifecycle with JSON Schema validation |
+| [auth-chain](examples/auth-chain/) | Login, extract token, chain into authenticated requests |
+
+```bash
+# Try one now
+lynix run -c examples/health-check/collection.yaml -e examples/health-check/env.yaml --no-save
 ```
 
 ---
@@ -351,6 +373,21 @@ lynix import postman collection.json --name "Renamed API"
 **Unsupported (warned):** Pre-request/test scripts, auth blocks, multipart form-data, Postman dynamic variables (`{{$randomInt}}`).
 
 Postman `{{variable}}` syntax passes through directly as it matches Lynix templating.
+
+### Migrate from existing tools
+
+Already have curl commands or Postman collections? Import them in seconds:
+
+```bash
+# From a curl command (e.g., copied from browser DevTools)
+lynix import curl 'curl -H "Authorization: Bearer tok" https://api.example.com/users' -o collections/users.yaml
+
+# From a Postman export
+lynix import postman my-collection.json -o collections/imported.yaml
+
+# Then run immediately
+lynix run -c imported -e dev
+```
 
 ---
 
@@ -942,8 +979,11 @@ internal/
 ├── infra/              # Adapter implementations
 │   ├── httpclient/     # net/http client with timeouts + HTTP/2
 │   ├── httprunner/     # Resolves vars → executes → captures response
-│   ├── yamlcollection/ # YAML → domain.Collection
+│   ├── yamlcollection/ # YAML ↔ domain.Collection (loader + writer)
 │   ├── yamlenv/        # YAML → domain.Environment
+│   ├── curlparse/      # curl command → domain.Collection
+│   ├── postmanparse/   # Postman v2.1 JSON → domain.Collection
+│   ├── redaction/      # Sensitive data masking engine
 │   ├── runstore/       # JSON run artifacts + JSONL index
 │   ├── fsworkspace/    # Workspace initializer (embed.FS templates)
 │   ├── workspacefinder/# Walks up dir tree to find lynix.yaml
