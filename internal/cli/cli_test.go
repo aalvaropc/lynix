@@ -319,7 +319,7 @@ func TestRootCmd_RegistersSubcommands(t *testing.T) {
 	for _, sub := range cmd.Commands() {
 		names[sub.Use] = true
 	}
-	for _, expected := range []string{"run", "validate", "version", "init", "collections", "envs"} {
+	for _, expected := range []string{"run", "validate", "version", "init", "collections", "envs", "import"} {
 		if !names[expected] {
 			t.Errorf("expected subcommand %q to be registered", expected)
 		}
@@ -373,6 +373,287 @@ func TestEnvsCmd_HasListSubcommand(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected 'list' subcommand under envs")
+	}
+}
+
+func TestImportCmd_HasCurlSubcommand(t *testing.T) {
+	cmd := importCmd()
+	found := false
+	for _, sub := range cmd.Commands() {
+		if sub.Name() == "curl" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'curl' subcommand under import")
+	}
+}
+
+func TestImportCmd_HasPostmanSubcommand(t *testing.T) {
+	cmd := importCmd()
+	found := false
+	for _, sub := range cmd.Commands() {
+		if sub.Name() == "postman" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'postman' subcommand under import")
+	}
+}
+
+func TestImportCmd_Use(t *testing.T) {
+	cmd := importCmd()
+	if cmd.Use != "import" {
+		t.Errorf("expected Use=import, got %q", cmd.Use)
+	}
+}
+
+func TestImportCmd_Short(t *testing.T) {
+	cmd := importCmd()
+	if cmd.Short == "" {
+		t.Error("expected non-empty Short description")
+	}
+}
+
+func TestImportCmd_HasTwoSubcommands(t *testing.T) {
+	cmd := importCmd()
+	if len(cmd.Commands()) != 2 {
+		t.Errorf("expected 2 subcommands, got %d", len(cmd.Commands()))
+	}
+}
+
+func TestImportCurlCmd_Flags(t *testing.T) {
+	cmd := importCurlCmd()
+	for _, flag := range []string{"output", "from-file", "name"} {
+		if cmd.Flags().Lookup(flag) == nil {
+			t.Errorf("expected --%s flag on import curl command", flag)
+		}
+	}
+}
+
+func TestImportCurlCmd_OutputShortFlag(t *testing.T) {
+	cmd := importCurlCmd()
+	f := cmd.Flags().ShorthandLookup("o")
+	if f == nil {
+		t.Error("expected -o short flag for output")
+	}
+}
+
+func TestImportCurlCmd_MaxArgs(t *testing.T) {
+	cmd := importCurlCmd()
+	// Should accept 0 or 1 args
+	err := cmd.Args(cmd, []string{"arg1"})
+	if err != nil {
+		t.Errorf("expected 1 arg to be accepted: %v", err)
+	}
+	err = cmd.Args(cmd, []string{})
+	if err != nil {
+		t.Errorf("expected 0 args to be accepted: %v", err)
+	}
+	err = cmd.Args(cmd, []string{"a", "b"})
+	if err == nil {
+		t.Error("expected error for 2 args")
+	}
+}
+
+func TestImportCurlCmd_NoArgs_NoFromFile_ReturnsError(t *testing.T) {
+	cmd := importCurlCmd()
+	cmd.SetArgs([]string{})
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("expected error when no arg and no --from-file")
+	}
+}
+
+func TestImportCurlCmd_WithArg_Succeeds(t *testing.T) {
+	cmd := importCurlCmd()
+	cmd.SetArgs([]string{"curl https://api.example.com/health"})
+	err := cmd.Execute()
+	if err != nil {
+		t.Errorf("expected success with positional arg: %v", err)
+	}
+}
+
+func TestImportCurlCmd_FromFile(t *testing.T) {
+	tmp := t.TempDir()
+	curlFile := filepath.Join(tmp, "curl.txt")
+	if err := os.WriteFile(curlFile, []byte("curl https://api.example.com/health"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := importCurlCmd()
+	cmd.SetArgs([]string{"--from-file", curlFile})
+	err := cmd.Execute()
+	if err != nil {
+		t.Errorf("expected success with --from-file: %v", err)
+	}
+}
+
+func TestImportCurlCmd_FromFile_NotFound(t *testing.T) {
+	cmd := importCurlCmd()
+	cmd.SetArgs([]string{"--from-file", "/nonexistent/curl.txt"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("expected error for non-existent --from-file")
+	}
+}
+
+func TestImportCurlCmd_OutputToFile(t *testing.T) {
+	tmp := t.TempDir()
+	outFile := filepath.Join(tmp, "output.yaml")
+
+	cmd := importCurlCmd()
+	cmd.SetArgs([]string{"curl https://api.example.com/health", "-o", outFile})
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(outFile); os.IsNotExist(err) {
+		t.Error("expected output file to be created")
+	}
+}
+
+func TestImportCurlCmd_NameOverride(t *testing.T) {
+	cmd := importCurlCmd()
+	tmp := t.TempDir()
+	outFile := filepath.Join(tmp, "named.yaml")
+
+	cmd.SetArgs([]string{"curl https://api.example.com/health", "--name", "My Custom API", "-o", outFile})
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	b, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "My Custom API") {
+		t.Errorf("expected custom name in output:\n%s", string(b))
+	}
+}
+
+func TestImportPostmanCmd_Flags(t *testing.T) {
+	cmd := importPostmanCmd()
+	for _, flag := range []string{"output", "name"} {
+		if cmd.Flags().Lookup(flag) == nil {
+			t.Errorf("expected --%s flag on import postman command", flag)
+		}
+	}
+}
+
+func TestImportPostmanCmd_OutputShortFlag(t *testing.T) {
+	cmd := importPostmanCmd()
+	f := cmd.Flags().ShorthandLookup("o")
+	if f == nil {
+		t.Error("expected -o short flag for output")
+	}
+}
+
+func TestImportPostmanCmd_ExactArgs(t *testing.T) {
+	cmd := importPostmanCmd()
+	err := cmd.Args(cmd, []string{})
+	if err == nil {
+		t.Error("expected error for 0 args")
+	}
+	err = cmd.Args(cmd, []string{"a", "b"})
+	if err == nil {
+		t.Error("expected error for 2 args")
+	}
+	err = cmd.Args(cmd, []string{"file.json"})
+	if err != nil {
+		t.Errorf("expected 1 arg accepted: %v", err)
+	}
+}
+
+func TestImportPostmanCmd_FileNotFound(t *testing.T) {
+	cmd := importPostmanCmd()
+	cmd.SetArgs([]string{"/nonexistent/file.json"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("expected error for non-existent file")
+	}
+}
+
+func TestImportPostmanCmd_ValidFile(t *testing.T) {
+	tmp := t.TempDir()
+	jsonFile := filepath.Join(tmp, "collection.json")
+	content := `{"info":{"name":"Test","schema":""},"item":[{"name":"R","request":{"method":"GET","url":"https://e.com/"}}]}`
+	if err := os.WriteFile(jsonFile, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := importPostmanCmd()
+	cmd.SetArgs([]string{jsonFile})
+	err := cmd.Execute()
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestImportPostmanCmd_OutputToFile(t *testing.T) {
+	tmp := t.TempDir()
+	jsonFile := filepath.Join(tmp, "collection.json")
+	content := `{"info":{"name":"Test","schema":""},"item":[{"name":"R","request":{"method":"GET","url":"https://e.com/"}}]}`
+	if err := os.WriteFile(jsonFile, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	outFile := filepath.Join(tmp, "output.yaml")
+	cmd := importPostmanCmd()
+	cmd.SetArgs([]string{jsonFile, "-o", outFile})
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(outFile); os.IsNotExist(err) {
+		t.Error("expected output file to be created")
+	}
+}
+
+func TestImportPostmanCmd_NameOverride(t *testing.T) {
+	tmp := t.TempDir()
+	jsonFile := filepath.Join(tmp, "collection.json")
+	content := `{"info":{"name":"Original","schema":""},"item":[{"name":"R","request":{"method":"GET","url":"https://e.com/"}}]}`
+	if err := os.WriteFile(jsonFile, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	outFile := filepath.Join(tmp, "named.yaml")
+	cmd := importPostmanCmd()
+	cmd.SetArgs([]string{jsonFile, "--name", "Overridden Name", "-o", outFile})
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	b, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "Overridden Name") {
+		t.Errorf("expected custom name in output:\n%s", string(b))
+	}
+	if strings.Contains(string(b), "Original") {
+		t.Errorf("expected original name to be overridden:\n%s", string(b))
+	}
+}
+
+func TestImportPostmanCmd_InvalidJSON(t *testing.T) {
+	tmp := t.TempDir()
+	jsonFile := filepath.Join(tmp, "bad.json")
+	if err := os.WriteFile(jsonFile, []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := importPostmanCmd()
+	cmd.SetArgs([]string{jsonFile})
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("expected error for invalid JSON file")
 	}
 }
 
