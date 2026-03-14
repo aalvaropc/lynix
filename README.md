@@ -307,6 +307,53 @@ lynix envs list
 
 ---
 
+### `lynix import curl`
+
+Import a curl command into a Lynix YAML collection.
+
+```bash
+lynix import curl 'curl -X POST -H "Content-Type: application/json" -d '\''{"name":"test"}'\'' https://api.example.com/users'
+lynix import curl 'curl https://api.example.com/health' -o collections/health.yaml
+lynix import curl --from-file saved-curl.txt --name "My API"
+```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--output` | `-o` | Write YAML to file instead of stdout |
+| `--from-file` | | Read curl command from a file |
+| `--name` | | Override collection name |
+
+**Supported curl flags:** `-X`, `-H`, `-d`/`--data`/`--data-raw`, `--json`, `-u` (basic auth).
+
+**Unsupported (warned):** `--compressed`, `-k`, `-L`, `--cert`, `--key`, `-o`, `-v`, `-s`, `-F` (multipart), `-d @file`.
+
+The importer extracts `base_url` as a variable and rewrites the URL to use `{{base_url}}`.
+
+---
+
+### `lynix import postman`
+
+Import a Postman v2.1 collection JSON file into a Lynix YAML collection.
+
+```bash
+lynix import postman collection.json
+lynix import postman collection.json -o collections/imported.yaml
+lynix import postman collection.json --name "Renamed API"
+```
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--output` | `-o` | Write YAML to file instead of stdout |
+| `--name` | | Override collection name |
+
+**Supported:** Requests with headers, JSON bodies (`raw` + `language: json`), URL-encoded bodies, collection variables, nested folders (flattened with dot-prefix names).
+
+**Unsupported (warned):** Pre-request/test scripts, auth blocks, multipart form-data, Postman dynamic variables (`{{$randomInt}}`).
+
+Postman `{{variable}}` syntax passes through directly as it matches Lynix templating.
+
+---
+
 ## Collection Format
 
 Collections are YAML files stored in `collections/`. They describe a sequence of HTTP requests with optional assertions and variable extraction.
