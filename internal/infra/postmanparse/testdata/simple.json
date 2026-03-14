@@ -1,0 +1,23 @@
+{
+  "info": {
+    "name": "Simple Testdata",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get Health",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "https://api.example.com/health"
+        },
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ]
+      }
+    }
+  ]
+}
