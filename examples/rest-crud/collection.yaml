@@ -1,0 +1,72 @@
+schema_version: 1
+name: REST CRUD
+
+vars:
+  base_url: "https://jsonplaceholder.typicode.com"
+
+requests:
+  - name: create-post
+    method: POST
+    url: "{{base_url}}/posts"
+    headers:
+      Content-Type: "application/json"
+    json:
+      title: "Lynix Test Post"
+      body: "Created by Lynix REST CRUD example"
+      userId: 1
+    assert:
+      status: 201
+      jsonpath:
+        "$.id":
+          exists: true
+        "$.title":
+          eq: "Lynix Test Post"
+    extract:
+      post_id: "$.id"
+
+  - name: read-post
+    method: GET
+    url: "{{base_url}}/posts/1"
+    headers:
+      Accept: "application/json"
+    assert:
+      status: 200
+      jsonpath:
+        "$.id":
+          eq: "1"
+        "$.userId":
+          exists: true
+      schema_inline:
+        type: object
+        required: [id, title, body, userId]
+        properties:
+          id:
+            type: integer
+          title:
+            type: string
+          body:
+            type: string
+          userId:
+            type: integer
+
+  - name: update-post
+    method: PUT
+    url: "{{base_url}}/posts/1"
+    headers:
+      Content-Type: "application/json"
+    json:
+      id: 1
+      title: "Updated Title"
+      body: "Updated body"
+      userId: 1
+    assert:
+      status: 200
+      jsonpath:
+        "$.title":
+          eq: "Updated Title"
+
+  - name: delete-post
+    method: DELETE
+    url: "{{base_url}}/posts/1"
+    assert:
+      status: 200

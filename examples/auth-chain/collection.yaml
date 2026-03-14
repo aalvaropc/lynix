@@ -1,0 +1,54 @@
+schema_version: 1
+name: Auth Chain
+
+vars:
+  base_url: "https://jsonplaceholder.typicode.com"
+
+requests:
+  - name: login
+    method: POST
+    url: "{{base_url}}/posts"
+    headers:
+      Content-Type: "application/json"
+    json:
+      username: "{{username}}"
+      password: "{{password}}"
+    assert:
+      status: 201
+      jsonpath:
+        "$.id":
+          exists: true
+    extract:
+      auth_token: "$.id"
+    tags:
+      - auth
+
+  - name: get-profile
+    method: GET
+    url: "{{base_url}}/users/{{auth_token}}"
+    headers:
+      Accept: "application/json"
+      Authorization: "Bearer {{auth_token}}"
+    assert:
+      status: 200
+      max_ms: 3000
+      jsonpath:
+        "$.name":
+          exists: true
+        "$.email":
+          contains: "@"
+    extract:
+      user_name: "$.name"
+    tags:
+      - profile
+
+  - name: get-user-posts
+    method: GET
+    url: "{{base_url}}/posts?userId={{auth_token}}"
+    headers:
+      Accept: "application/json"
+      Authorization: "Bearer {{auth_token}}"
+    assert:
+      status: 200
+    tags:
+      - data
