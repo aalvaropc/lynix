@@ -162,3 +162,36 @@ The CI pipeline runs on every push and PR:
 - `build` job: cross-compile for Linux, macOS, and Windows (amd64 + arm64)
 
 All three jobs must pass for a PR to be merged.
+
+---
+
+## Extending Lynix
+
+### Adding a new CLI command
+
+1. Create `internal/cli/<command>.go` with a function returning `*cobra.Command`
+2. Register it in `internal/cli/root.go` via `cmd.AddCommand()`
+3. Add structure tests in `internal/cli/cli_test.go` (flags, subcommands)
+4. Follow the pattern in `collections.go` (parent) or `import.go` (parent + subcommands)
+
+### Adding a new assertion type
+
+1. Add the assertion field to `domain.AssertionsSpec` in `internal/domain/collection.go`
+2. Add the YAML mapping in `internal/infra/yamlcollection/loader.go` (yaml struct + `mapAndValidate`)
+3. Implement evaluation in `internal/usecase/assert/evaluate.go`
+4. Add tests in `internal/usecase/assert/evaluate_test.go` following `TestEvaluate_<Type>_<Scenario>` naming
+5. Update `schemas/collection.schema.json` to include the new field
+
+### Adding a new infra adapter
+
+1. Create a new package under `internal/infra/<adapter>/`
+2. If the adapter implements a port, satisfy the interface from `internal/ports/`
+3. Wire it in `internal/infra/wiring/wiring.go` if it needs to be injected into use cases
+4. Never import `infra` from `domain` — always go through ports
+
+### Adding a new importer
+
+1. Create `internal/infra/<format>parse/parse.go` with a `Parse()` function returning `Result{Collection, Warnings}`
+2. Add the subcommand in `internal/cli/import.go` under the existing `importCmd()` parent
+3. Use `yamlcollection.MarshalCollection()` to serialize the output
+4. Include round-trip tests (parse -> marshal -> load -> verify)
