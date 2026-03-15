@@ -80,6 +80,13 @@ func (r *Runner) Run(ctx context.Context, req domain.RequestSpec, vars domain.Va
 		},
 	}
 
+	// Per-request timeout overrides the global client timeout.
+	if req.TimeoutMS != nil && *req.TimeoutMS > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(*req.TimeoutMS)*time.Millisecond)
+		defer cancel()
+	}
+
 	httpReq, err := httpclient.BuildRequest(ctx, resolved)
 	if err != nil {
 		return domain.RequestResult{}, err
