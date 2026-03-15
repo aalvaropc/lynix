@@ -7,7 +7,7 @@ lynix:
     # mask_response_headers: true
     # mask_response_body: true
     # mask_query_params: true
-    # apply_to_output: false
+    # mask_cli_output: false
     # fail_on_detected_secret: false
     # rules:
     #   - pattern: ssn

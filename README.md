@@ -650,7 +650,7 @@ lynix:
     # mask_response_headers: true     # Toggle response header masking
     # mask_response_body: true
     # mask_query_params: true
-    # apply_to_output: false
+    # mask_cli_output: false
     # fail_on_detected_secret: false  # Fail if unmasked secrets detected in artifacts
 
   # Default environment when -e / --env is not specified

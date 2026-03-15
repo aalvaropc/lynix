@@ -27,7 +27,8 @@
             "mask_response_headers": { "type": "boolean", "default": true },
             "mask_response_body": { "type": "boolean", "default": true },
             "mask_query_params": { "type": "boolean", "default": true },
-            "apply_to_output": { "type": "boolean", "default": false },
+            "mask_cli_output": { "type": "boolean", "default": false, "description": "Whether masking also applies to CLI stdout output." },
+            "apply_to_output": { "type": "boolean", "default": false, "deprecated": true, "description": "Deprecated. Use mask_cli_output instead." },
             "fail_on_detected_secret": { "type": "boolean", "default": false },
             "rules": {
               "type": "array",

@@ -67,8 +67,10 @@ func LoadConfig(root string) (domain.Config, error) {
 	if y.Lynix.Masking.MaskResponseHeaders != nil {
 		cfg.Masking.MaskResponseHeaders = *y.Lynix.Masking.MaskResponseHeaders
 	}
-	if y.Lynix.Masking.ApplyToOutput != nil {
-		cfg.Masking.ApplyToOutput = *y.Lynix.Masking.ApplyToOutput
+	if y.Lynix.Masking.MaskCLIOutput != nil {
+		cfg.Masking.MaskCLIOutput = *y.Lynix.Masking.MaskCLIOutput
+	} else if y.Lynix.Masking.ApplyToOutput != nil {
+		cfg.Masking.MaskCLIOutput = *y.Lynix.Masking.ApplyToOutput
 	}
 	if y.Lynix.Masking.FailOnDetectedSecret != nil {
 		cfg.Masking.FailOnDetectedSecret = *y.Lynix.Masking.FailOnDetectedSecret
@@ -128,7 +130,8 @@ type yamlConfig struct {
 			MaskResponseHeaders  *bool `yaml:"mask_response_headers"`
 			MaskResponseBody     *bool `yaml:"mask_response_body"`
 			MaskQueryParams      *bool `yaml:"mask_query_params"`
-			ApplyToOutput        *bool `yaml:"apply_to_output"`
+			MaskCLIOutput        *bool `yaml:"mask_cli_output"`
+			ApplyToOutput        *bool `yaml:"apply_to_output"` // deprecated alias
 			FailOnDetectedSecret *bool `yaml:"fail_on_detected_secret"`
 			Rules                []struct {
 				Pattern string `yaml:"pattern"`

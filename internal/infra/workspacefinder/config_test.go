@@ -192,6 +192,51 @@ func TestLoadConfig_SchemaVersion_Invalid_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_MaskCLIOutput_NewKey(t *testing.T) {
+	root := writeWorkspaceConfig(t, "lynix:\n  masking:\n    mask_cli_output: true\n")
+	cfg, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+	if !cfg.Masking.MaskCLIOutput {
+		t.Fatal("expected MaskCLIOutput=true")
+	}
+}
+
+func TestLoadConfig_MaskCLIOutput_OldKeyAlias(t *testing.T) {
+	root := writeWorkspaceConfig(t, "lynix:\n  masking:\n    apply_to_output: true\n")
+	cfg, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+	if !cfg.Masking.MaskCLIOutput {
+		t.Fatal("expected MaskCLIOutput=true via old apply_to_output alias")
+	}
+}
+
+func TestLoadConfig_MaskCLIOutput_NewKeyTakesPrecedence(t *testing.T) {
+	root := writeWorkspaceConfig(t, "lynix:\n  masking:\n    mask_cli_output: false\n    apply_to_output: true\n")
+	cfg, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+	if cfg.Masking.MaskCLIOutput {
+		t.Fatal("expected MaskCLIOutput=false (new key takes precedence over old)")
+	}
+}
+
+func writeWorkspaceConfig(t *testing.T, yaml string) string {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "ws")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "lynix.yaml"), []byte(yaml), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	return root
+}
+
 func TestLoadConfig_RetrySettings(t *testing.T) {
 	tmp := t.TempDir()
 	root := filepath.Join(tmp, "ws")

@@ -84,7 +84,7 @@ func runCmd() *cobra.Command {
 				return err
 			}
 
-			if ws.cfg.Masking.ApplyToOutput && ws.redactor != nil {
+			if ws.cfg.Masking.MaskCLIOutput && ws.redactor != nil {
 				run = ws.redactor.Redact(run)
 			}
 
