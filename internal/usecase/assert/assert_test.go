@@ -67,7 +67,7 @@ func TestMaxLatency_FailMessage(t *testing.T) {
 // --- Evaluate ---
 
 func TestEvaluate_NoAssertions(t *testing.T) {
-	results := Evaluate(domain.AssertionsSpec{}, 200, 50, []byte(`{}`), nil)
+	results := Evaluate(domain.AssertionsSpec{}, 200, 50, []byte(`{}`), nil, nil)
 	if len(results) != 0 {
 		t.Fatalf("expected 0 results, got %d", len(results))
 	}
@@ -76,7 +76,7 @@ func TestEvaluate_NoAssertions(t *testing.T) {
 func TestEvaluate_OnlyStatus(t *testing.T) {
 	s := 200
 	spec := domain.AssertionsSpec{Status: &s}
-	results := Evaluate(spec, 200, 50, nil, nil)
+	results := Evaluate(spec, 200, 50, nil, nil, nil)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -88,7 +88,7 @@ func TestEvaluate_OnlyStatus(t *testing.T) {
 func TestEvaluate_OnlyMaxLatency(t *testing.T) {
 	ms := 1000
 	spec := domain.AssertionsSpec{MaxLatencyMS: &ms}
-	results := Evaluate(spec, 200, 500, nil, nil)
+	results := Evaluate(spec, 200, 500, nil, nil, nil)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -105,7 +105,7 @@ func TestEvaluate_JSONPathExists_True(t *testing.T) {
 	}
 
 	body := []byte(`{"data":{"id":123}}`)
-	out := Evaluate(spec, 200, 10, body, nil)
+	out := Evaluate(spec, 200, 10, body, nil, nil)
 
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got=%d", len(out))
@@ -123,7 +123,7 @@ func TestEvaluate_JSONPathExists_False(t *testing.T) {
 	}
 
 	body := []byte(`{"data":{"id":123}}`)
-	out := Evaluate(spec, 200, 10, body, nil)
+	out := Evaluate(spec, 200, 10, body, nil, nil)
 
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got=%d", len(out))
@@ -140,7 +140,7 @@ func TestEvaluate_JSONPath_NonJSONBody(t *testing.T) {
 		},
 	}
 
-	out := Evaluate(spec, 200, 10, []byte("hello"), nil)
+	out := Evaluate(spec, 200, 10, []byte("hello"), nil, nil)
 
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got=%d", len(out))
@@ -158,7 +158,7 @@ func TestEvaluate_JSONPath_InvalidExpr(t *testing.T) {
 	}
 
 	body := []byte(`{"data":{"id":123}}`)
-	out := Evaluate(spec, 200, 10, body, nil)
+	out := Evaluate(spec, 200, 10, body, nil, nil)
 
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got=%d", len(out))
@@ -175,7 +175,7 @@ func TestEvaluate_InvalidBodyMarksAllJSONPathFailed(t *testing.T) {
 			"$.age":  {Exists: true},
 		},
 	}
-	out := Evaluate(spec, 200, 50, []byte("not json"), nil)
+	out := Evaluate(spec, 200, 50, []byte("not json"), nil, nil)
 	if len(out) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(out))
 	}
@@ -199,7 +199,7 @@ func TestEvaluate_MultipleAssertionsCombined(t *testing.T) {
 			"$.id": {Exists: true},
 		},
 	}
-	results := Evaluate(spec, 200, 100, []byte(`{"id":42}`), nil)
+	results := Evaluate(spec, 200, 100, []byte(`{"id":42}`), nil, nil)
 	if len(results) != 3 {
 		t.Fatalf("expected 3 results, got %d", len(results))
 	}
@@ -222,7 +222,7 @@ func TestEvaluate_JSONPathExistsFalseSkipped(t *testing.T) {
 			"$.name": {Exists: false},
 		},
 	}
-	results := Evaluate(spec, 200, 50, []byte(`{"name":"alice"}`), nil)
+	results := Evaluate(spec, 200, 50, []byte(`{"name":"alice"}`), nil, nil)
 	if len(results) != 0 {
 		t.Fatalf("expected 0 results for Exists=false, got %d", len(results))
 	}
@@ -238,7 +238,7 @@ func TestEvaluate_JSONPathEq_Pass(t *testing.T) {
 			"$.name": {Eq: strPtr("alice")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil, nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -253,7 +253,7 @@ func TestEvaluate_JSONPathEq_Fail(t *testing.T) {
 			"$.name": {Eq: strPtr("alice")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"name":"bob"}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"bob"}`), nil, nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -268,7 +268,7 @@ func TestEvaluate_JSONPathEq_Number(t *testing.T) {
 			"$.count": {Eq: strPtr("42")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"count":42}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"count":42}`), nil, nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -285,7 +285,7 @@ func TestEvaluate_JSONPathContains_Pass(t *testing.T) {
 			"$.name": {Contains: strPtr("ali")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil, nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -300,7 +300,7 @@ func TestEvaluate_JSONPathContains_Fail(t *testing.T) {
 			"$.name": {Contains: strPtr("ali")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"name":"bob"}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"bob"}`), nil, nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -317,7 +317,7 @@ func TestEvaluate_JSONPathMatches_Pass(t *testing.T) {
 			"$.email": {Matches: strPtr("^.+@.+")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"email":"a@b.com"}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"email":"a@b.com"}`), nil, nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -332,7 +332,7 @@ func TestEvaluate_JSONPathMatches_Fail(t *testing.T) {
 			"$.email": {Matches: strPtr("^.+@.+")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"email":"notanemail"}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"email":"notanemail"}`), nil, nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -347,7 +347,7 @@ func TestEvaluate_JSONPathMatches_InvalidRegex(t *testing.T) {
 			"$.x": {Matches: strPtr("[invalid")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"x":"y"}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"x":"y"}`), nil, nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -366,7 +366,7 @@ func TestEvaluate_JSONPathGt_Pass(t *testing.T) {
 			"$.count": {Gt: float64Ptr(0)},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"count":5}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"count":5}`), nil, nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -381,7 +381,7 @@ func TestEvaluate_JSONPathGt_Fail(t *testing.T) {
 			"$.count": {Gt: float64Ptr(5)},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"count":0}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"count":0}`), nil, nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -398,7 +398,7 @@ func TestEvaluate_JSONPathLt_Pass(t *testing.T) {
 			"$.count": {Lt: float64Ptr(10)},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"count":5}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"count":5}`), nil, nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -413,7 +413,7 @@ func TestEvaluate_JSONPathLt_Fail(t *testing.T) {
 			"$.count": {Lt: float64Ptr(5)},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"count":10}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"count":10}`), nil, nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -430,7 +430,7 @@ func TestEvaluate_JSONPathMultipleChecksOnSamePath(t *testing.T) {
 			"$.name": {Eq: strPtr("alice"), Contains: strPtr("ali")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil, nil)
 	if len(out) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(out))
 	}
@@ -449,7 +449,7 @@ func TestEvaluate_JSONPathEq_MissingPath(t *testing.T) {
 			"$.name": {Eq: strPtr("alice")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"x":1}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"x":1}`), nil, nil)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(out))
 	}
@@ -466,7 +466,7 @@ func TestEvaluate_JSONPathNotEq_Pass(t *testing.T) {
 			"$.name": {NotEq: strPtr("bob")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil, nil)
 	if len(out) != 1 || !out[0].Passed {
 		t.Fatalf("expected pass, got %+v", out)
 	}
@@ -478,7 +478,7 @@ func TestEvaluate_JSONPathNotEq_Fail(t *testing.T) {
 			"$.name": {NotEq: strPtr("alice")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil, nil)
 	if len(out) != 1 || out[0].Passed {
 		t.Fatalf("expected fail, got %+v", out)
 	}
@@ -490,7 +490,7 @@ func TestEvaluate_JSONPathNotEq_MissingPath(t *testing.T) {
 			"$.missing": {NotEq: strPtr("x")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil, nil)
 	if len(out) != 1 || out[0].Passed {
 		t.Fatalf("expected fail for missing path")
 	}
@@ -504,7 +504,7 @@ func TestEvaluate_JSONPathNotContains_Pass(t *testing.T) {
 			"$.msg": {NotContains: strPtr("error")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"msg":"all good"}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"msg":"all good"}`), nil, nil)
 	if len(out) != 1 || !out[0].Passed {
 		t.Fatalf("expected pass, got %+v", out)
 	}
@@ -516,7 +516,7 @@ func TestEvaluate_JSONPathNotContains_Fail(t *testing.T) {
 			"$.msg": {NotContains: strPtr("error")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"msg":"internal error occurred"}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"msg":"internal error occurred"}`), nil, nil)
 	if len(out) != 1 || out[0].Passed {
 		t.Fatalf("expected fail, got %+v", out)
 	}
@@ -528,8 +528,199 @@ func TestEvaluate_JSONPathNotContains_MissingPath(t *testing.T) {
 			"$.missing": {NotContains: strPtr("x")},
 		},
 	}
-	out := Evaluate(spec, 200, 10, []byte(`{"msg":"ok"}`), nil)
+	out := Evaluate(spec, 200, 10, []byte(`{"msg":"ok"}`), nil, nil)
 	if len(out) != 1 || out[0].Passed {
 		t.Fatalf("expected fail for missing path")
+	}
+}
+
+// --- Header assertions ---
+
+func TestEvaluate_HeaderExists_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"Content-Type": {Exists: true},
+		},
+	}
+	headers := map[string][]string{"Content-Type": {"application/json"}}
+	out := Evaluate(spec, 200, 10, nil, nil, headers)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if !out[0].Passed {
+		t.Fatalf("expected pass, got: %s", out[0].Message)
+	}
+	if out[0].Name != "header.exists" {
+		t.Fatalf("expected Name=header.exists, got %q", out[0].Name)
+	}
+}
+
+func TestEvaluate_HeaderExists_Fail(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"X-Custom": {Exists: true},
+		},
+	}
+	headers := map[string][]string{"Content-Type": {"text/html"}}
+	out := Evaluate(spec, 200, 10, nil, nil, headers)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(out))
+	}
+	if out[0].Passed {
+		t.Fatalf("expected fail")
+	}
+}
+
+func TestEvaluate_HeaderEq_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"Content-Type": {Eq: strPtr("application/json")},
+		},
+	}
+	headers := map[string][]string{"Content-Type": {"application/json"}}
+	out := Evaluate(spec, 200, 10, nil, nil, headers)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("expected pass, got %+v", out)
+	}
+}
+
+func TestEvaluate_HeaderEq_Fail(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"Content-Type": {Eq: strPtr("application/json")},
+		},
+	}
+	headers := map[string][]string{"Content-Type": {"text/html"}}
+	out := Evaluate(spec, 200, 10, nil, nil, headers)
+	if len(out) != 1 || out[0].Passed {
+		t.Fatalf("expected fail, got %+v", out)
+	}
+}
+
+func TestEvaluate_HeaderEq_CaseInsensitive(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"content-type": {Eq: strPtr("application/json")},
+		},
+	}
+	headers := map[string][]string{"Content-Type": {"application/json"}}
+	out := Evaluate(spec, 200, 10, nil, nil, headers)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("expected pass (case-insensitive), got %+v", out)
+	}
+}
+
+func TestEvaluate_HeaderContains_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"Content-Type": {Contains: strPtr("json")},
+		},
+	}
+	headers := map[string][]string{"Content-Type": {"application/json; charset=utf-8"}}
+	out := Evaluate(spec, 200, 10, nil, nil, headers)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("expected pass, got %+v", out)
+	}
+}
+
+func TestEvaluate_HeaderContains_Fail(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"Content-Type": {Contains: strPtr("xml")},
+		},
+	}
+	headers := map[string][]string{"Content-Type": {"application/json"}}
+	out := Evaluate(spec, 200, 10, nil, nil, headers)
+	if len(out) != 1 || out[0].Passed {
+		t.Fatalf("expected fail, got %+v", out)
+	}
+}
+
+func TestEvaluate_HeaderNotEq_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"Content-Type": {NotEq: strPtr("text/html")},
+		},
+	}
+	headers := map[string][]string{"Content-Type": {"application/json"}}
+	out := Evaluate(spec, 200, 10, nil, nil, headers)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("expected pass, got %+v", out)
+	}
+}
+
+func TestEvaluate_HeaderNotEq_Fail(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"Content-Type": {NotEq: strPtr("application/json")},
+		},
+	}
+	headers := map[string][]string{"Content-Type": {"application/json"}}
+	out := Evaluate(spec, 200, 10, nil, nil, headers)
+	if len(out) != 1 || out[0].Passed {
+		t.Fatalf("expected fail, got %+v", out)
+	}
+}
+
+func TestEvaluate_HeaderNotContains_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"Content-Type": {NotContains: strPtr("xml")},
+		},
+	}
+	headers := map[string][]string{"Content-Type": {"application/json"}}
+	out := Evaluate(spec, 200, 10, nil, nil, headers)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("expected pass, got %+v", out)
+	}
+}
+
+func TestEvaluate_HeaderNotContains_Fail(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"Content-Type": {NotContains: strPtr("json")},
+		},
+	}
+	headers := map[string][]string{"Content-Type": {"application/json"}}
+	out := Evaluate(spec, 200, 10, nil, nil, headers)
+	if len(out) != 1 || out[0].Passed {
+		t.Fatalf("expected fail, got %+v", out)
+	}
+}
+
+func TestEvaluate_HeaderMultiValue(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"Set-Cookie": {Contains: strPtr("session")},
+		},
+	}
+	headers := map[string][]string{"Set-Cookie": {"session=abc123", "theme=dark"}}
+	out := Evaluate(spec, 200, 10, nil, nil, headers)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("expected pass (multi-value joined), got %+v", out)
+	}
+}
+
+func TestEvaluate_HeaderMissing_AllFail(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"X-Missing": {
+				Exists:      true,
+				Eq:          strPtr("val"),
+				Contains:    strPtr("v"),
+				NotEq:       strPtr("other"),
+				NotContains: strPtr("x"),
+			},
+		},
+	}
+	headers := map[string][]string{"Content-Type": {"text/html"}}
+	out := Evaluate(spec, 200, 10, nil, nil, headers)
+	if len(out) != 5 {
+		t.Fatalf("expected 5 results for missing header, got %d", len(out))
+	}
+	for _, r := range out {
+		if r.Passed {
+			t.Errorf("expected %q to fail for missing header, got pass", r.Name)
+		}
 	}
 }

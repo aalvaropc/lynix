@@ -138,6 +138,7 @@ type yamlAssertions struct {
 	MaxMS  *int `yaml:"max_ms"`
 
 	JSONPath     map[string]yamlJSONPathAssertion `yaml:"jsonpath"`
+	Headers      map[string]yamlJSONPathAssertion `yaml:"headers"`
 	Schema       *string                          `yaml:"schema"`
 	SchemaInline map[string]any                   `yaml:"schema_inline"`
 }
@@ -213,6 +214,7 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 				Status:       r.Assert.Status,
 				MaxLatencyMS: r.Assert.MaxMS,
 				JSONPath:     mapJSONPath(r.Assert.JSONPath),
+				Headers:      mapJSONPath(r.Assert.Headers),
 				Schema:       schemaPtr,
 				SchemaInline: r.Assert.SchemaInline,
 			},
@@ -224,6 +226,9 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 		}
 		if req.Assert.JSONPath == nil {
 			req.Assert.JSONPath = map[string]domain.ValueAssertion{}
+		}
+		if req.Assert.Headers == nil {
+			req.Assert.Headers = map[string]domain.ValueAssertion{}
 		}
 		if req.Extract == nil {
 			req.Extract = domain.ExtractSpec{}

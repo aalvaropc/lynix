@@ -100,6 +100,11 @@
           "description": "JSONPath assertions. Each key must be a valid JSONPath expression (e.g. \"$.data\", \"$.users[0].id\") evaluated against the response body.",
           "additionalProperties": { "$ref": "#/$defs/value_assertion" }
         },
+        "headers": {
+          "type": "object",
+          "description": "Response header assertions. Keys are header names (case-insensitive).",
+          "additionalProperties": { "$ref": "#/$defs/value_assertion" }
+        },
         "schema": { "type": "string" },
         "schema_inline": { "type": "object" }
       }

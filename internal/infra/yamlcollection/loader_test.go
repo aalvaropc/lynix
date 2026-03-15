@@ -395,6 +395,65 @@ requests:
 	}
 }
 
+func TestLoadCollection_HeaderAssertions(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "demo.yaml")
+
+	content := []byte(`
+name: Header API
+requests:
+  - name: check
+    method: GET
+    url: "http://x/api"
+    assert:
+      status: 200
+      headers:
+        "Content-Type":
+          eq: "application/json"
+          contains: "json"
+        "Cache-Control":
+          exists: true
+          not_contains: "no-store"
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	c, err := l.LoadCollection(p)
+	if err != nil {
+		t.Fatalf("LoadCollection error: %v", err)
+	}
+
+	if len(c.Requests) != 1 {
+		t.Fatalf("expected 1 request, got=%d", len(c.Requests))
+	}
+
+	hdr := c.Requests[0].Assert.Headers
+
+	ct, ok := hdr["Content-Type"]
+	if !ok {
+		t.Fatal("expected Content-Type assertion")
+	}
+	if ct.Eq == nil || *ct.Eq != "application/json" {
+		t.Errorf("expected Content-Type eq=application/json, got=%v", ct.Eq)
+	}
+	if ct.Contains == nil || *ct.Contains != "json" {
+		t.Errorf("expected Content-Type contains=json, got=%v", ct.Contains)
+	}
+
+	cc, ok := hdr["Cache-Control"]
+	if !ok {
+		t.Fatal("expected Cache-Control assertion")
+	}
+	if !cc.Exists {
+		t.Error("expected Cache-Control exists=true")
+	}
+	if cc.NotContains == nil || *cc.NotContains != "no-store" {
+		t.Errorf("expected Cache-Control not_contains=no-store, got=%v", cc.NotContains)
+	}
+}
+
 func TestLoadCollection_SchemaBothError(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "bad.yaml")

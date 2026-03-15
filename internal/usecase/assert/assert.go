@@ -3,6 +3,7 @@ package assert
 import (
 	"encoding/json"
 	"fmt"
+	"net/textproto"
 	"regexp"
 	"strconv"
 	"strings"
@@ -54,7 +55,7 @@ func MaxLatency(maxMs int, latencyMs int64) domain.AssertionResult {
 // Evaluate applies the assertions spec against the observed response data.
 // It parses JSON only if JSONPath assertions are present.
 // schemaBytes is the pre-loaded JSON Schema content (nil if no schema assertion).
-func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []byte, schemaBytes []byte) []domain.AssertionResult {
+func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []byte, schemaBytes []byte, headers map[string][]string) []domain.AssertionResult {
 	var out []domain.AssertionResult
 
 	if spec.Status != nil {
@@ -68,27 +69,45 @@ func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []by
 		out = append(out, SchemaValidate(schemaBytes, body))
 	}
 
-	if len(spec.JSONPath) == 0 {
-		return out
-	}
-
-	doc, err := parseJSON(body)
-	if err != nil {
-		for expr, a := range spec.JSONPath {
-			ctx := checkContext{kind: "jsonpath", key: expr}
-			out = append(out, valueChecks(ctx, a, nil,
-				fmt.Errorf("response body is not valid JSON"))...)
+	if len(spec.JSONPath) > 0 {
+		doc, err := parseJSON(body)
+		if err != nil {
+			for expr, a := range spec.JSONPath {
+				ctx := checkContext{kind: "jsonpath", key: expr}
+				out = append(out, valueChecks(ctx, a, nil,
+					fmt.Errorf("response body is not valid JSON"))...)
+			}
+		} else {
+			for expr, a := range spec.JSONPath {
+				ctx := checkContext{kind: "jsonpath", key: expr}
+				val, getErr := jsonpath.Get(expr, doc)
+				out = append(out, valueChecks(ctx, a, val, getErr)...)
+			}
 		}
-		return out
 	}
 
-	for expr, a := range spec.JSONPath {
-		ctx := checkContext{kind: "jsonpath", key: expr}
-		val, getErr := jsonpath.Get(expr, doc)
+	for name, a := range spec.Headers {
+		ctx := checkContext{kind: "header", key: name}
+		val, found := lookupHeader(headers, name)
+		var getErr error
+		if !found {
+			getErr = fmt.Errorf("header %q not present in response", name)
+		}
 		out = append(out, valueChecks(ctx, a, val, getErr)...)
 	}
 
 	return out
+}
+
+// lookupHeader performs a case-insensitive header lookup.
+// Multi-value headers are joined with ", ".
+func lookupHeader(headers map[string][]string, name string) (string, bool) {
+	canonical := textproto.CanonicalMIMEHeaderKey(name)
+	values, ok := headers[canonical]
+	if !ok || len(values) == 0 {
+		return "", false
+	}
+	return strings.Join(values, ", "), true
 }
 
 func valueChecks(ctx checkContext, a domain.ValueAssertion, val any, getErr error) []domain.AssertionResult {
