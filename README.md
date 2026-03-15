@@ -611,7 +611,6 @@ Variables extracted from responses are merged into the running set and available
 
 ```yaml
 # env/dev.yaml
-schema_version: 1
 vars:
   base_url: "http://localhost:8080"
   username: "dev-user"
@@ -620,7 +619,6 @@ vars:
 
 ```yaml
 # env/stg.yaml
-schema_version: 1
 vars:
   base_url: "https://staging-api.example.com"
   username: "stg-user"
