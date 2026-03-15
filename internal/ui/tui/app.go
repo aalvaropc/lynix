@@ -24,7 +24,6 @@ const (
 	screenSettings
 	screenRunWizard
 	screenResults
-	screenPlaceholder
 )
 
 type menuItem struct {
@@ -105,12 +104,9 @@ func newModel(deps Deps) model {
 	}
 
 	items := []list.Item{
-		menuItem{"Run (Functional)", "Execute requests and checks (MVP target)"},
-		menuItem{"Bench (Performance)", "Load testing and metrics (v0.2)"},
-		menuItem{"Compare (Baselines)", "Detect regressions (v1.0)"},
+		menuItem{"Run (Functional)", "Execute requests and validate responses"},
 		menuItem{"Collections", "Browse and validate YAML collections"},
-		menuItem{"Environments", "Manage env vars and secrets (MVP target)"},
-		menuItem{"Reports", "View/export reports (MVP+)"},
+		menuItem{"Environments", "Manage env vars and secrets"},
 		menuItem{"Settings", "Workspace and defaults"},
 		menuItem{"Quit", "Exit Lynix"},
 	}
@@ -313,10 +309,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.wizardStep = 1
 					m.toast = ""
 					return m, m.maybePreviewSelectedCollection(m.runColList)
-				default:
-					m.scr = screenPlaceholder
-					m.toast = it.title
-					return m, nil
 				}
 			}
 
@@ -574,16 +566,6 @@ func (m model) View() string {
 
 	case screenResults:
 		return wrap.Render(header + "\n" + workspaceLine + "\n\n" + m.viewResults() + footer)
-
-	case screenPlaceholder:
-		card := m.theme.Card.Render(
-			fmt.Sprintf("%s\n\n%s\n\n%s",
-				m.theme.Title.Render("Placeholder"),
-				"This screen is not implemented yet.",
-				m.theme.Help.Render("esc/b back • q home"),
-			),
-		)
-		return wrap.Render(header + "\n" + workspaceLine + "\n\n" + card + footer)
 
 	default:
 		return wrap.Render(header + "\n" + "unknown state" + footer)

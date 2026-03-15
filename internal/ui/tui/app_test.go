@@ -286,7 +286,6 @@ func TestModel_View_AllScreens(t *testing.T) {
 		{"collections", screenCollections},
 		{"runWizard", screenRunWizard},
 		{"results", screenResults},
-		{"placeholder", screenPlaceholder},
 	}
 
 	for _, tc := range screens {

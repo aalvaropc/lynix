@@ -66,6 +66,16 @@
           "type": "array",
           "items": { "type": "string" }
         },
+        "delay_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Delay in milliseconds before executing this request."
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Per-request timeout in milliseconds. Overrides the global HTTP client timeout."
+        },
         "assert": { "$ref": "#/$defs/assertions" },
         "extract": {
           "type": "object",
@@ -103,7 +113,9 @@
         "contains": { "type": "string" },
         "matches": { "type": "string" },
         "gt": { "type": "number" },
-        "lt": { "type": "number" }
+        "lt": { "type": "number" },
+        "not_eq": { "type": "string" },
+        "not_contains": { "type": "string" }
       }
     }
   }

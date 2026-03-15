@@ -137,10 +137,23 @@ func printRun(w io.Writer, run domain.RunResult, runID string, format string) er
 	case "json":
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		// Include runID (optional) as a wrapper to avoid changing domain model.
+
+		duration := run.EndedAt.Sub(run.StartedAt)
+		if run.StartedAt.IsZero() || run.EndedAt.IsZero() {
+			duration = 0
+		}
+		passed, failed, errs := summarizeResults(run)
+
 		payload := map[string]any{
 			"run_id": runID,
 			"run":    run,
+			"summary": map[string]any{
+				"total":       len(run.Results),
+				"passed":      passed,
+				"failed":      failed,
+				"errors":      errs,
+				"duration_ms": duration.Milliseconds(),
+			},
 		}
 		return enc.Encode(payload)
 	case "pretty", "":
@@ -223,6 +236,28 @@ func printPrettyRun(w io.Writer, run domain.RunResult, runID string) {
 
 		fmt.Fprintln(w)
 	}
+
+	passed, failed, errs := summarizeResults(run)
+	fmt.Fprintln(w, "───────────────────────────────────")
+	fmt.Fprintf(w, "Results: %d passed, %d failed, %d error", passed, failed, errs)
+	if errs != 1 {
+		fmt.Fprint(w, "s")
+	}
+	fmt.Fprintf(w, " (%s)\n", total)
+}
+
+func summarizeResults(run domain.RunResult) (passed, failed, errors int) {
+	for _, r := range run.Results {
+		switch {
+		case r.Error != nil:
+			errors++
+		case r.Failed():
+			failed++
+		default:
+			passed++
+		}
+	}
+	return
 }
 
 func countFailures(run domain.RunResult) int {

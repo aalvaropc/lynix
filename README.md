@@ -458,6 +458,8 @@ requests:
 | `form` | | Form URL-encoded body (string key-value map) |
 | `raw` | | Raw text body |
 | `tags` | | List of tags for selective execution with `--tags` |
+| `delay_ms` | | Delay in milliseconds before executing this request |
+| `timeout_ms` | | Per-request timeout in ms — aborts the request if exceeded (distinct from `max_ms` which is an assertion) |
 | `assert` | | Assertions on the response |
 | `extract` | | Variables to extract from the response body |
 
@@ -473,6 +475,11 @@ Variables are injected using `{{variable_name}}` syntax. Works in URLs, headers,
 |----------|-------|
 | `{{$uuid}}` | Random UUID v4 |
 | `{{$timestamp}}` | Current Unix timestamp (seconds) |
+| `{{$isoTimestamp}}` | ISO 8601 UTC timestamp (`2024-06-01T12:00:00Z`) |
+| `{{$randomInt}}` | Random integer 0–9999 |
+| `{{$randomString}}` | Random 8-character alphanumeric string |
+| `{{$randomEmail}}` | Random email (`user_abc123@test.lynix`) |
+| `{{$randomBool}}` | Random `true` or `false` |
 
 ---
 
@@ -513,6 +520,8 @@ assert:
       matches: "^regex$"    # Go stdlib regexp
       gt: 10                # numeric greater-than
       lt: 1000              # numeric less-than
+      not_eq: "forbidden"   # string inequality
+      not_contains: "error" # substring absence
 ```
 
 | Operator | Type | Description |
@@ -523,6 +532,8 @@ assert:
 | `matches` | string | Value matches the given regular expression |
 | `gt` | number | Numeric value is greater than threshold |
 | `lt` | number | Numeric value is less than threshold |
+| `not_eq` | string | Value does NOT equal the given string |
+| `not_contains` | string | Value does NOT contain the given substring |
 
 **JSONPath syntax** follows [PaesslerAG/jsonpath](https://github.com/PaesslerAG/jsonpath):
 - `$.field` — top-level field

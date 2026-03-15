@@ -457,3 +457,79 @@ func TestEvaluate_JSONPathEq_MissingPath(t *testing.T) {
 		t.Fatalf("expected fail for missing path")
 	}
 }
+
+// --- JSONPath not_eq ---
+
+func TestEvaluate_JSONPathNotEq_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.name": {NotEq: strPtr("bob")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("expected pass, got %+v", out)
+	}
+}
+
+func TestEvaluate_JSONPathNotEq_Fail(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.name": {NotEq: strPtr("alice")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil)
+	if len(out) != 1 || out[0].Passed {
+		t.Fatalf("expected fail, got %+v", out)
+	}
+}
+
+func TestEvaluate_JSONPathNotEq_MissingPath(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.missing": {NotEq: strPtr("x")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"name":"alice"}`), nil)
+	if len(out) != 1 || out[0].Passed {
+		t.Fatalf("expected fail for missing path")
+	}
+}
+
+// --- JSONPath not_contains ---
+
+func TestEvaluate_JSONPathNotContains_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.msg": {NotContains: strPtr("error")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"msg":"all good"}`), nil)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("expected pass, got %+v", out)
+	}
+}
+
+func TestEvaluate_JSONPathNotContains_Fail(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.msg": {NotContains: strPtr("error")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"msg":"internal error occurred"}`), nil)
+	if len(out) != 1 || out[0].Passed {
+		t.Fatalf("expected fail, got %+v", out)
+	}
+}
+
+func TestEvaluate_JSONPathNotContains_MissingPath(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.JSONPathAssertion{
+			"$.missing": {NotContains: strPtr("x")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"msg":"ok"}`), nil)
+	if len(out) != 1 || out[0].Passed {
+		t.Fatalf("expected fail for missing path")
+	}
+}

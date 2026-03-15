@@ -311,6 +311,95 @@ func TestPrintPrettyRun_RequestWithError(t *testing.T) {
 	}
 }
 
+// --- summarizeResults ---
+
+func TestSummarizeResults_AllPass(t *testing.T) {
+	run := domain.RunResult{
+		Results: []domain.RequestResult{
+			{Name: "a", StatusCode: 200},
+			{Name: "b", StatusCode: 200},
+		},
+	}
+	p, f, e := summarizeResults(run)
+	if p != 2 || f != 0 || e != 0 {
+		t.Fatalf("expected 2/0/0, got %d/%d/%d", p, f, e)
+	}
+}
+
+func TestSummarizeResults_MixedStates(t *testing.T) {
+	run := domain.RunResult{
+		Results: []domain.RequestResult{
+			{Name: "ok", StatusCode: 200},
+			{Name: "fail", Assertions: []domain.AssertionResult{{Passed: false}}},
+			{Name: "err", Error: &domain.RunError{Kind: domain.RunErrorConn, Message: "refused"}},
+		},
+	}
+	p, f, e := summarizeResults(run)
+	if p != 1 || f != 1 || e != 1 {
+		t.Fatalf("expected 1/1/1, got %d/%d/%d", p, f, e)
+	}
+}
+
+func TestSummarizeResults_Empty(t *testing.T) {
+	p, f, e := summarizeResults(domain.RunResult{})
+	if p != 0 || f != 0 || e != 0 {
+		t.Fatalf("expected 0/0/0, got %d/%d/%d", p, f, e)
+	}
+}
+
+func TestPrintPrettyRun_SummaryLine(t *testing.T) {
+	run := domain.RunResult{
+		Results: []domain.RequestResult{
+			{Name: "ok", StatusCode: 200},
+			{Name: "fail", Assertions: []domain.AssertionResult{{Passed: false}}},
+		},
+	}
+	var buf bytes.Buffer
+	printPrettyRun(&buf, run, "")
+	out := buf.String()
+	if !strings.Contains(out, "Results:") {
+		t.Errorf("expected summary line in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "1 passed") {
+		t.Errorf("expected '1 passed' in summary, got:\n%s", out)
+	}
+	if !strings.Contains(out, "1 failed") {
+		t.Errorf("expected '1 failed' in summary, got:\n%s", out)
+	}
+}
+
+func TestPrintRun_JSON_ContainsSummary(t *testing.T) {
+	now := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	run := domain.RunResult{
+		StartedAt: now,
+		EndedAt:   now.Add(100 * time.Millisecond),
+		Results: []domain.RequestResult{
+			{Name: "ok", StatusCode: 200},
+		},
+	}
+	var buf bytes.Buffer
+	if err := printRun(&buf, run, "", "json"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	summary, ok := payload["summary"].(map[string]any)
+	if !ok {
+		t.Fatal("expected 'summary' key in JSON output")
+	}
+	if summary["total"] != float64(1) {
+		t.Errorf("expected total=1, got %v", summary["total"])
+	}
+	if summary["passed"] != float64(1) {
+		t.Errorf("expected passed=1, got %v", summary["passed"])
+	}
+	if summary["duration_ms"] != float64(100) {
+		t.Errorf("expected duration_ms=100, got %v", summary["duration_ms"])
+	}
+}
+
 // --- command structure ---
 
 func TestRootCmd_RegistersSubcommands(t *testing.T) {

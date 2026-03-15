@@ -123,12 +123,14 @@ type yamlRequest struct {
 	URL     string            `yaml:"url"`
 	Headers map[string]string `yaml:"headers"`
 
-	JSON    map[string]any    `yaml:"json"`
-	Form    map[string]string `yaml:"form"`
-	Raw     string            `yaml:"raw"`
-	Assert  yamlAssertions    `yaml:"assert"`
-	Extract map[string]string `yaml:"extract"`
-	Tags    []string          `yaml:"tags"`
+	JSON      map[string]any    `yaml:"json"`
+	Form      map[string]string `yaml:"form"`
+	Raw       string            `yaml:"raw"`
+	DelayMS   *int              `yaml:"delay_ms"`
+	TimeoutMS *int              `yaml:"timeout_ms"`
+	Assert    yamlAssertions    `yaml:"assert"`
+	Extract   map[string]string `yaml:"extract"`
+	Tags      []string          `yaml:"tags"`
 }
 
 type yamlAssertions struct {
@@ -141,12 +143,14 @@ type yamlAssertions struct {
 }
 
 type yamlJSONPathAssertion struct {
-	Exists   bool     `yaml:"exists"`
-	Eq       *string  `yaml:"eq"`
-	Contains *string  `yaml:"contains"`
-	Matches  *string  `yaml:"matches"`
-	Gt       *float64 `yaml:"gt"`
-	Lt       *float64 `yaml:"lt"`
+	Exists      bool     `yaml:"exists"`
+	Eq          *string  `yaml:"eq"`
+	Contains    *string  `yaml:"contains"`
+	Matches     *string  `yaml:"matches"`
+	Gt          *float64 `yaml:"gt"`
+	Lt          *float64 `yaml:"lt"`
+	NotEq       *string  `yaml:"not_eq"`
+	NotContains *string  `yaml:"not_contains"`
 }
 
 func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
@@ -253,6 +257,16 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 			return domain.Collection{}, invalidField(path, fieldPrefix+".body", err.Error())
 		}
 
+		if r.DelayMS != nil && *r.DelayMS < 0 {
+			return domain.Collection{}, invalidField(path, fieldPrefix+".delay_ms", "must be >= 0")
+		}
+		req.DelayMS = r.DelayMS
+
+		if r.TimeoutMS != nil && *r.TimeoutMS <= 0 {
+			return domain.Collection{}, invalidField(path, fieldPrefix+".timeout_ms", "must be > 0")
+		}
+		req.TimeoutMS = r.TimeoutMS
+
 		col.Requests = append(col.Requests, req)
 	}
 
@@ -266,12 +280,14 @@ func mapJSONPath(in map[string]yamlJSONPathAssertion) map[string]domain.JSONPath
 	out := make(map[string]domain.JSONPathAssertion, len(in))
 	for k, v := range in {
 		out[k] = domain.JSONPathAssertion{
-			Exists:   v.Exists,
-			Eq:       v.Eq,
-			Contains: v.Contains,
-			Matches:  v.Matches,
-			Gt:       v.Gt,
-			Lt:       v.Lt,
+			Exists:      v.Exists,
+			Eq:          v.Eq,
+			Contains:    v.Contains,
+			Matches:     v.Matches,
+			Gt:          v.Gt,
+			Lt:          v.Lt,
+			NotEq:       v.NotEq,
+			NotContains: v.NotContains,
 		}
 	}
 	return out

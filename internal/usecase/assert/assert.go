@@ -101,6 +101,12 @@ func jsonPathChecks(expr string, a domain.JSONPathAssertion, val any, getErr err
 	if a.Lt != nil {
 		out = append(out, checkLt(expr, val, getErr, *a.Lt))
 	}
+	if a.NotEq != nil {
+		out = append(out, checkNotEq(expr, val, getErr, *a.NotEq))
+	}
+	if a.NotContains != nil {
+		out = append(out, checkNotContains(expr, val, getErr, *a.NotContains))
+	}
 	return out
 }
 
@@ -281,6 +287,66 @@ func checkLt(expr string, val any, getErr error, threshold float64) domain.Asser
 		Name:    "jsonpath.lt",
 		Passed:  false,
 		Message: fmt.Sprintf("jsonpath %q: expected < %v, got %v", expr, threshold, f),
+	}
+}
+
+func checkNotEq(expr string, val any, getErr error, expected string) domain.AssertionResult {
+	if getErr != nil {
+		return domain.AssertionResult{
+			Name:    "jsonpath.not_eq",
+			Passed:  false,
+			Message: fmt.Sprintf("jsonpath %q: %v", expr, getErr),
+		}
+	}
+	s, err := jsonPathToString(val)
+	if err != nil {
+		return domain.AssertionResult{
+			Name:    "jsonpath.not_eq",
+			Passed:  false,
+			Message: fmt.Sprintf("jsonpath %q: %v", expr, err),
+		}
+	}
+	if s != expected {
+		return domain.AssertionResult{
+			Name:    "jsonpath.not_eq",
+			Passed:  true,
+			Message: fmt.Sprintf("jsonpath %q not eq %q (got %q)", expr, expected, s),
+		}
+	}
+	return domain.AssertionResult{
+		Name:    "jsonpath.not_eq",
+		Passed:  false,
+		Message: fmt.Sprintf("jsonpath %q: expected not %q, but got %q", expr, expected, s),
+	}
+}
+
+func checkNotContains(expr string, val any, getErr error, sub string) domain.AssertionResult {
+	if getErr != nil {
+		return domain.AssertionResult{
+			Name:    "jsonpath.not_contains",
+			Passed:  false,
+			Message: fmt.Sprintf("jsonpath %q: %v", expr, getErr),
+		}
+	}
+	s, err := jsonPathToString(val)
+	if err != nil {
+		return domain.AssertionResult{
+			Name:    "jsonpath.not_contains",
+			Passed:  false,
+			Message: fmt.Sprintf("jsonpath %q: %v", expr, err),
+		}
+	}
+	if !strings.Contains(s, sub) {
+		return domain.AssertionResult{
+			Name:    "jsonpath.not_contains",
+			Passed:  true,
+			Message: fmt.Sprintf("jsonpath %q does not contain %q", expr, sub),
+		}
+	}
+	return domain.AssertionResult{
+		Name:    "jsonpath.not_contains",
+		Passed:  false,
+		Message: fmt.Sprintf("jsonpath %q: %q contains %q", expr, s, sub),
 	}
 }
 
