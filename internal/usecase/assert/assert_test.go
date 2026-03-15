@@ -99,7 +99,7 @@ func TestEvaluate_OnlyMaxLatency(t *testing.T) {
 
 func TestEvaluate_JSONPathExists_True(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.data.id": {Exists: true},
 		},
 	}
@@ -117,7 +117,7 @@ func TestEvaluate_JSONPathExists_True(t *testing.T) {
 
 func TestEvaluate_JSONPathExists_False(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.data.missing": {Exists: true},
 		},
 	}
@@ -135,7 +135,7 @@ func TestEvaluate_JSONPathExists_False(t *testing.T) {
 
 func TestEvaluate_JSONPath_NonJSONBody(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.data.id": {Exists: true},
 		},
 	}
@@ -152,7 +152,7 @@ func TestEvaluate_JSONPath_NonJSONBody(t *testing.T) {
 
 func TestEvaluate_JSONPath_InvalidExpr(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.data[": {Exists: true},
 		},
 	}
@@ -170,7 +170,7 @@ func TestEvaluate_JSONPath_InvalidExpr(t *testing.T) {
 
 func TestEvaluate_InvalidBodyMarksAllJSONPathFailed(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.name": {Exists: true},
 			"$.age":  {Exists: true},
 		},
@@ -195,7 +195,7 @@ func TestEvaluate_MultipleAssertionsCombined(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		Status:       &s,
 		MaxLatencyMS: &ms,
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.id": {Exists: true},
 		},
 	}
@@ -218,7 +218,7 @@ func TestEvaluate_MultipleAssertionsCombined(t *testing.T) {
 func TestEvaluate_JSONPathExistsFalseSkipped(t *testing.T) {
 	// Exists: false entries produce no assertion result.
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.name": {Exists: false},
 		},
 	}
@@ -234,7 +234,7 @@ func strPtr(s string) *string { return &s }
 
 func TestEvaluate_JSONPathEq_Pass(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.name": {Eq: strPtr("alice")},
 		},
 	}
@@ -249,7 +249,7 @@ func TestEvaluate_JSONPathEq_Pass(t *testing.T) {
 
 func TestEvaluate_JSONPathEq_Fail(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.name": {Eq: strPtr("alice")},
 		},
 	}
@@ -264,7 +264,7 @@ func TestEvaluate_JSONPathEq_Fail(t *testing.T) {
 
 func TestEvaluate_JSONPathEq_Number(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.count": {Eq: strPtr("42")},
 		},
 	}
@@ -281,7 +281,7 @@ func TestEvaluate_JSONPathEq_Number(t *testing.T) {
 
 func TestEvaluate_JSONPathContains_Pass(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.name": {Contains: strPtr("ali")},
 		},
 	}
@@ -296,7 +296,7 @@ func TestEvaluate_JSONPathContains_Pass(t *testing.T) {
 
 func TestEvaluate_JSONPathContains_Fail(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.name": {Contains: strPtr("ali")},
 		},
 	}
@@ -313,7 +313,7 @@ func TestEvaluate_JSONPathContains_Fail(t *testing.T) {
 
 func TestEvaluate_JSONPathMatches_Pass(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.email": {Matches: strPtr("^.+@.+")},
 		},
 	}
@@ -328,7 +328,7 @@ func TestEvaluate_JSONPathMatches_Pass(t *testing.T) {
 
 func TestEvaluate_JSONPathMatches_Fail(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.email": {Matches: strPtr("^.+@.+")},
 		},
 	}
@@ -343,7 +343,7 @@ func TestEvaluate_JSONPathMatches_Fail(t *testing.T) {
 
 func TestEvaluate_JSONPathMatches_InvalidRegex(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.x": {Matches: strPtr("[invalid")},
 		},
 	}
@@ -362,7 +362,7 @@ func float64Ptr(f float64) *float64 { return &f }
 
 func TestEvaluate_JSONPathGt_Pass(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.count": {Gt: float64Ptr(0)},
 		},
 	}
@@ -377,7 +377,7 @@ func TestEvaluate_JSONPathGt_Pass(t *testing.T) {
 
 func TestEvaluate_JSONPathGt_Fail(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.count": {Gt: float64Ptr(5)},
 		},
 	}
@@ -394,7 +394,7 @@ func TestEvaluate_JSONPathGt_Fail(t *testing.T) {
 
 func TestEvaluate_JSONPathLt_Pass(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.count": {Lt: float64Ptr(10)},
 		},
 	}
@@ -409,7 +409,7 @@ func TestEvaluate_JSONPathLt_Pass(t *testing.T) {
 
 func TestEvaluate_JSONPathLt_Fail(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.count": {Lt: float64Ptr(5)},
 		},
 	}
@@ -426,7 +426,7 @@ func TestEvaluate_JSONPathLt_Fail(t *testing.T) {
 
 func TestEvaluate_JSONPathMultipleChecksOnSamePath(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.name": {Eq: strPtr("alice"), Contains: strPtr("ali")},
 		},
 	}
@@ -445,7 +445,7 @@ func TestEvaluate_JSONPathMultipleChecksOnSamePath(t *testing.T) {
 
 func TestEvaluate_JSONPathEq_MissingPath(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.name": {Eq: strPtr("alice")},
 		},
 	}
@@ -462,7 +462,7 @@ func TestEvaluate_JSONPathEq_MissingPath(t *testing.T) {
 
 func TestEvaluate_JSONPathNotEq_Pass(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.name": {NotEq: strPtr("bob")},
 		},
 	}
@@ -474,7 +474,7 @@ func TestEvaluate_JSONPathNotEq_Pass(t *testing.T) {
 
 func TestEvaluate_JSONPathNotEq_Fail(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.name": {NotEq: strPtr("alice")},
 		},
 	}
@@ -486,7 +486,7 @@ func TestEvaluate_JSONPathNotEq_Fail(t *testing.T) {
 
 func TestEvaluate_JSONPathNotEq_MissingPath(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.missing": {NotEq: strPtr("x")},
 		},
 	}
@@ -500,7 +500,7 @@ func TestEvaluate_JSONPathNotEq_MissingPath(t *testing.T) {
 
 func TestEvaluate_JSONPathNotContains_Pass(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.msg": {NotContains: strPtr("error")},
 		},
 	}
@@ -512,7 +512,7 @@ func TestEvaluate_JSONPathNotContains_Pass(t *testing.T) {
 
 func TestEvaluate_JSONPathNotContains_Fail(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.msg": {NotContains: strPtr("error")},
 		},
 	}
@@ -524,7 +524,7 @@ func TestEvaluate_JSONPathNotContains_Fail(t *testing.T) {
 
 func TestEvaluate_JSONPathNotContains_MissingPath(t *testing.T) {
 	spec := domain.AssertionsSpec{
-		JSONPath: map[string]domain.JSONPathAssertion{
+		JSONPath: map[string]domain.ValueAssertion{
 			"$.missing": {NotContains: strPtr("x")},
 		},
 	}

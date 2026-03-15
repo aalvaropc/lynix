@@ -223,7 +223,7 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 			req.Headers = domain.Headers{}
 		}
 		if req.Assert.JSONPath == nil {
-			req.Assert.JSONPath = map[string]domain.JSONPathAssertion{}
+			req.Assert.JSONPath = map[string]domain.ValueAssertion{}
 		}
 		if req.Extract == nil {
 			req.Extract = domain.ExtractSpec{}
@@ -273,13 +273,13 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 	return col, nil
 }
 
-func mapJSONPath(in map[string]yamlJSONPathAssertion) map[string]domain.JSONPathAssertion {
+func mapJSONPath(in map[string]yamlJSONPathAssertion) map[string]domain.ValueAssertion {
 	if in == nil {
 		return nil
 	}
-	out := make(map[string]domain.JSONPathAssertion, len(in))
+	out := make(map[string]domain.ValueAssertion, len(in))
 	for k, v := range in {
-		out[k] = domain.JSONPathAssertion{
+		out[k] = domain.ValueAssertion{
 			Exists:      v.Exists,
 			Eq:          v.Eq,
 			Contains:    v.Contains,
