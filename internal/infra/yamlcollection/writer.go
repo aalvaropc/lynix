@@ -28,7 +28,8 @@ type writeRequest struct {
 }
 
 type writeAssertions struct {
-	Status *int `yaml:"status,omitempty"`
+	Status  *int                             `yaml:"status,omitempty"`
+	Headers map[string]yamlJSONPathAssertion `yaml:"headers,omitempty"`
 }
 
 // MarshalCollection serializes a domain.Collection into YAML bytes.
@@ -70,8 +71,24 @@ func MarshalCollection(col domain.Collection) ([]byte, error) {
 			wr.Tags = r.Tags
 		}
 
-		if r.Assert.Status != nil {
-			wr.Assert = &writeAssertions{Status: r.Assert.Status}
+		if r.Assert.Status != nil || len(r.Assert.Headers) > 0 {
+			wa := &writeAssertions{Status: r.Assert.Status}
+			if len(r.Assert.Headers) > 0 {
+				wa.Headers = make(map[string]yamlJSONPathAssertion, len(r.Assert.Headers))
+				for k, v := range r.Assert.Headers {
+					wa.Headers[k] = yamlJSONPathAssertion{
+						Exists:      v.Exists,
+						Eq:          v.Eq,
+						Contains:    v.Contains,
+						Matches:     v.Matches,
+						Gt:          v.Gt,
+						Lt:          v.Lt,
+						NotEq:       v.NotEq,
+						NotContains: v.NotContains,
+					}
+				}
+			}
+			wr.Assert = wa
 		}
 
 		if len(r.Extract) > 0 {

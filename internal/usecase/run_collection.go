@@ -141,7 +141,7 @@ func (uc *RunCollection) Execute(
 		}
 
 		// Assertions (always evaluated, even if rr.Error != nil)
-		rr.Assertions = ucassert.Evaluate(req.Assert, rr.StatusCode, rr.LatencyMS, rr.Response.Body, schemaCache[i])
+		rr.Assertions = ucassert.Evaluate(req.Assert, rr.StatusCode, rr.LatencyMS, rr.Response.Body, schemaCache[i], rr.Response.Headers)
 
 		extracted, extractResults := ucextract.Apply(rr.Response.Body, req.Extract)
 		rr.Extracts = extractResults

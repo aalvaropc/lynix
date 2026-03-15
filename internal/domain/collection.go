@@ -69,8 +69,8 @@ func (b BodySpec) Validate() error {
 	return nil
 }
 
-// JSONPathAssertion defines a JSONPath-based check.
-type JSONPathAssertion struct {
+// ValueAssertion defines a value-based check (used for JSONPath and header assertions).
+type ValueAssertion struct {
 	Exists      bool     // value exists and is non-empty
 	Eq          *string  // toStr(value) == *Eq
 	Contains    *string  // toStr(value) contains substring
@@ -91,7 +91,10 @@ type AssertionsSpec struct {
 
 	// JSONPath contains JSONPath assertions keyed by a JSONPath expression (optional).
 	// The key is passed directly to jsonpath.Get(), e.g. "$.data", "$.users[0].id".
-	JSONPath map[string]JSONPathAssertion
+	JSONPath map[string]ValueAssertion
+
+	// Headers contains response header assertions keyed by header name (case-insensitive).
+	Headers map[string]ValueAssertion
 
 	// Schema is a file path to a JSON Schema file (relative to collection dir).
 	// The response body is validated against this schema.

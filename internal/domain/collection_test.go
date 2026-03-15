@@ -21,7 +21,7 @@ func TestCompileDomain(t *testing.T) {
 				Assert: AssertionsSpec{
 					Status:       &status,
 					MaxLatencyMS: &maxLatency,
-					JSONPath: map[string]JSONPathAssertion{
+					JSONPath: map[string]ValueAssertion{
 						"$.data": {Exists: true},
 					},
 				},

@@ -3,6 +3,7 @@ package assert
 import (
 	"encoding/json"
 	"fmt"
+	"net/textproto"
 	"regexp"
 	"strconv"
 	"strings"
@@ -10,6 +11,14 @@ import (
 	"github.com/PaesslerAG/jsonpath"
 	"github.com/aalvaropc/lynix/internal/domain"
 )
+
+// checkContext carries the assertion target kind (e.g. "jsonpath", "header") and key
+// (e.g. JSONPath expression or header name) so the 8 check functions can produce
+// correctly-labelled results without hard-coding a single target.
+type checkContext struct {
+	kind string // "jsonpath" or "header"
+	key  string // JSONPath expression or header name
+}
 
 func Status(expected int, got int) domain.AssertionResult {
 	if got == expected {
@@ -46,7 +55,7 @@ func MaxLatency(maxMs int, latencyMs int64) domain.AssertionResult {
 // Evaluate applies the assertions spec against the observed response data.
 // It parses JSON only if JSONPath assertions are present.
 // schemaBytes is the pre-loaded JSON Schema content (nil if no schema assertion).
-func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []byte, schemaBytes []byte) []domain.AssertionResult {
+func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []byte, schemaBytes []byte, headers map[string][]string) []domain.AssertionResult {
 	var out []domain.AssertionResult
 
 	if spec.Status != nil {
@@ -60,297 +69,325 @@ func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []by
 		out = append(out, SchemaValidate(schemaBytes, body))
 	}
 
-	if len(spec.JSONPath) == 0 {
-		return out
-	}
-
-	doc, err := parseJSON(body)
-	if err != nil {
-		for expr, a := range spec.JSONPath {
-			out = append(out, jsonPathChecks(expr, a, nil,
-				fmt.Errorf("response body is not valid JSON"))...)
+	if len(spec.JSONPath) > 0 {
+		doc, err := parseJSON(body)
+		if err != nil {
+			for expr, a := range spec.JSONPath {
+				ctx := checkContext{kind: "jsonpath", key: expr}
+				out = append(out, valueChecks(ctx, a, nil,
+					fmt.Errorf("response body is not valid JSON"))...)
+			}
+		} else {
+			for expr, a := range spec.JSONPath {
+				ctx := checkContext{kind: "jsonpath", key: expr}
+				val, getErr := jsonpath.Get(expr, doc)
+				out = append(out, valueChecks(ctx, a, val, getErr)...)
+			}
 		}
-		return out
 	}
 
-	for expr, a := range spec.JSONPath {
-		val, getErr := jsonpath.Get(expr, doc)
-		out = append(out, jsonPathChecks(expr, a, val, getErr)...)
+	for name, a := range spec.Headers {
+		ctx := checkContext{kind: "header", key: name}
+		val, found := lookupHeader(headers, name)
+		var getErr error
+		if !found {
+			getErr = fmt.Errorf("header %q not present in response", name)
+		}
+		out = append(out, valueChecks(ctx, a, val, getErr)...)
 	}
 
 	return out
 }
 
-func jsonPathChecks(expr string, a domain.JSONPathAssertion, val any, getErr error) []domain.AssertionResult {
+// lookupHeader performs a case-insensitive header lookup.
+// Multi-value headers are joined with ", ".
+func lookupHeader(headers map[string][]string, name string) (string, bool) {
+	canonical := textproto.CanonicalMIMEHeaderKey(name)
+	values, ok := headers[canonical]
+	if !ok || len(values) == 0 {
+		return "", false
+	}
+	return strings.Join(values, ", "), true
+}
+
+func valueChecks(ctx checkContext, a domain.ValueAssertion, val any, getErr error) []domain.AssertionResult {
 	var out []domain.AssertionResult
 	if a.Exists {
-		out = append(out, checkExists(expr, val, getErr))
+		out = append(out, checkExists(ctx, val, getErr))
 	}
 	if a.Eq != nil {
-		out = append(out, checkEq(expr, val, getErr, *a.Eq))
+		out = append(out, checkEq(ctx, val, getErr, *a.Eq))
 	}
 	if a.Contains != nil {
-		out = append(out, checkContains(expr, val, getErr, *a.Contains))
+		out = append(out, checkContains(ctx, val, getErr, *a.Contains))
 	}
 	if a.Matches != nil {
-		out = append(out, checkMatches(expr, val, getErr, *a.Matches))
+		out = append(out, checkMatches(ctx, val, getErr, *a.Matches))
 	}
 	if a.Gt != nil {
-		out = append(out, checkGt(expr, val, getErr, *a.Gt))
+		out = append(out, checkGt(ctx, val, getErr, *a.Gt))
 	}
 	if a.Lt != nil {
-		out = append(out, checkLt(expr, val, getErr, *a.Lt))
+		out = append(out, checkLt(ctx, val, getErr, *a.Lt))
 	}
 	if a.NotEq != nil {
-		out = append(out, checkNotEq(expr, val, getErr, *a.NotEq))
+		out = append(out, checkNotEq(ctx, val, getErr, *a.NotEq))
 	}
 	if a.NotContains != nil {
-		out = append(out, checkNotContains(expr, val, getErr, *a.NotContains))
+		out = append(out, checkNotContains(ctx, val, getErr, *a.NotContains))
 	}
 	return out
 }
 
-func checkExists(expr string, val any, getErr error) domain.AssertionResult {
+func checkExists(ctx checkContext, val any, getErr error) domain.AssertionResult {
+	name := ctx.kind + ".exists"
 	if getErr != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.exists",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("invalid jsonpath %q: %v", expr, getErr),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, getErr),
 		}
 	}
-	if isEmptyJSONPathValue(val) {
+	if isEmptyValue(val) {
 		return domain.AssertionResult{
-			Name:    "jsonpath.exists",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: expected value to exist, got empty", expr),
+			Message: fmt.Sprintf("%s %q: expected value to exist, got empty", ctx.kind, ctx.key),
 		}
 	}
 	return domain.AssertionResult{
-		Name:    "jsonpath.exists",
+		Name:    name,
 		Passed:  true,
-		Message: fmt.Sprintf("jsonpath %q exists", expr),
+		Message: fmt.Sprintf("%s %q exists", ctx.kind, ctx.key),
 	}
 }
 
-func checkEq(expr string, val any, getErr error, expected string) domain.AssertionResult {
+func checkEq(ctx checkContext, val any, getErr error, expected string) domain.AssertionResult {
+	name := ctx.kind + ".eq"
 	if getErr != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.eq",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: %v", expr, getErr),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, getErr),
 		}
 	}
-	s, err := jsonPathToString(val)
+	s, err := valueToString(val)
 	if err != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.eq",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: %v", expr, err),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, err),
 		}
 	}
 	if s == expected {
 		return domain.AssertionResult{
-			Name:    "jsonpath.eq",
+			Name:    name,
 			Passed:  true,
-			Message: fmt.Sprintf("jsonpath %q eq %q", expr, expected),
+			Message: fmt.Sprintf("%s %q eq %q", ctx.kind, ctx.key, expected),
 		}
 	}
 	return domain.AssertionResult{
-		Name:    "jsonpath.eq",
+		Name:    name,
 		Passed:  false,
-		Message: fmt.Sprintf("jsonpath %q: expected %q, got %q", expr, expected, s),
+		Message: fmt.Sprintf("%s %q: expected %q, got %q", ctx.kind, ctx.key, expected, s),
 	}
 }
 
-func checkContains(expr string, val any, getErr error, sub string) domain.AssertionResult {
+func checkContains(ctx checkContext, val any, getErr error, sub string) domain.AssertionResult {
+	name := ctx.kind + ".contains"
 	if getErr != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.contains",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: %v", expr, getErr),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, getErr),
 		}
 	}
-	s, err := jsonPathToString(val)
+	s, err := valueToString(val)
 	if err != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.contains",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: %v", expr, err),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, err),
 		}
 	}
 	if strings.Contains(s, sub) {
 		return domain.AssertionResult{
-			Name:    "jsonpath.contains",
+			Name:    name,
 			Passed:  true,
-			Message: fmt.Sprintf("jsonpath %q contains %q", expr, sub),
+			Message: fmt.Sprintf("%s %q contains %q", ctx.kind, ctx.key, sub),
 		}
 	}
 	return domain.AssertionResult{
-		Name:    "jsonpath.contains",
+		Name:    name,
 		Passed:  false,
-		Message: fmt.Sprintf("jsonpath %q: %q does not contain %q", expr, s, sub),
+		Message: fmt.Sprintf("%s %q: %q does not contain %q", ctx.kind, ctx.key, s, sub),
 	}
 }
 
-func checkMatches(expr string, val any, getErr error, pattern string) domain.AssertionResult {
+func checkMatches(ctx checkContext, val any, getErr error, pattern string) domain.AssertionResult {
+	name := ctx.kind + ".matches"
 	if getErr != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.matches",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: %v", expr, getErr),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, getErr),
 		}
 	}
-	s, err := jsonPathToString(val)
+	s, err := valueToString(val)
 	if err != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.matches",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: %v", expr, err),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, err),
 		}
 	}
 	re, err := regexp.Compile(pattern)
 	if err != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.matches",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: invalid regex %q: %v", expr, pattern, err),
+			Message: fmt.Sprintf("%s %q: invalid regex %q: %v", ctx.kind, ctx.key, pattern, err),
 		}
 	}
 	if re.MatchString(s) {
 		return domain.AssertionResult{
-			Name:    "jsonpath.matches",
+			Name:    name,
 			Passed:  true,
-			Message: fmt.Sprintf("jsonpath %q matches %q", expr, pattern),
+			Message: fmt.Sprintf("%s %q matches %q", ctx.kind, ctx.key, pattern),
 		}
 	}
 	return domain.AssertionResult{
-		Name:    "jsonpath.matches",
+		Name:    name,
 		Passed:  false,
-		Message: fmt.Sprintf("jsonpath %q: %q does not match %q", expr, s, pattern),
+		Message: fmt.Sprintf("%s %q: %q does not match %q", ctx.kind, ctx.key, s, pattern),
 	}
 }
 
-func checkGt(expr string, val any, getErr error, threshold float64) domain.AssertionResult {
+func checkGt(ctx checkContext, val any, getErr error, threshold float64) domain.AssertionResult {
+	name := ctx.kind + ".gt"
 	if getErr != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.gt",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: %v", expr, getErr),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, getErr),
 		}
 	}
-	f, err := jsonPathToFloat64(val)
+	f, err := valueToFloat64(val)
 	if err != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.gt",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: %v", expr, err),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, err),
 		}
 	}
 	if f > threshold {
 		return domain.AssertionResult{
-			Name:    "jsonpath.gt",
+			Name:    name,
 			Passed:  true,
-			Message: fmt.Sprintf("jsonpath %q: %v > %v", expr, f, threshold),
+			Message: fmt.Sprintf("%s %q: %v > %v", ctx.kind, ctx.key, f, threshold),
 		}
 	}
 	return domain.AssertionResult{
-		Name:    "jsonpath.gt",
+		Name:    name,
 		Passed:  false,
-		Message: fmt.Sprintf("jsonpath %q: expected > %v, got %v", expr, threshold, f),
+		Message: fmt.Sprintf("%s %q: expected > %v, got %v", ctx.kind, ctx.key, threshold, f),
 	}
 }
 
-func checkLt(expr string, val any, getErr error, threshold float64) domain.AssertionResult {
+func checkLt(ctx checkContext, val any, getErr error, threshold float64) domain.AssertionResult {
+	name := ctx.kind + ".lt"
 	if getErr != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.lt",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: %v", expr, getErr),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, getErr),
 		}
 	}
-	f, err := jsonPathToFloat64(val)
+	f, err := valueToFloat64(val)
 	if err != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.lt",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: %v", expr, err),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, err),
 		}
 	}
 	if f < threshold {
 		return domain.AssertionResult{
-			Name:    "jsonpath.lt",
+			Name:    name,
 			Passed:  true,
-			Message: fmt.Sprintf("jsonpath %q: %v < %v", expr, f, threshold),
+			Message: fmt.Sprintf("%s %q: %v < %v", ctx.kind, ctx.key, f, threshold),
 		}
 	}
 	return domain.AssertionResult{
-		Name:    "jsonpath.lt",
+		Name:    name,
 		Passed:  false,
-		Message: fmt.Sprintf("jsonpath %q: expected < %v, got %v", expr, threshold, f),
+		Message: fmt.Sprintf("%s %q: expected < %v, got %v", ctx.kind, ctx.key, threshold, f),
 	}
 }
 
-func checkNotEq(expr string, val any, getErr error, expected string) domain.AssertionResult {
+func checkNotEq(ctx checkContext, val any, getErr error, expected string) domain.AssertionResult {
+	name := ctx.kind + ".not_eq"
 	if getErr != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.not_eq",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: %v", expr, getErr),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, getErr),
 		}
 	}
-	s, err := jsonPathToString(val)
+	s, err := valueToString(val)
 	if err != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.not_eq",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: %v", expr, err),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, err),
 		}
 	}
 	if s != expected {
 		return domain.AssertionResult{
-			Name:    "jsonpath.not_eq",
+			Name:    name,
 			Passed:  true,
-			Message: fmt.Sprintf("jsonpath %q not eq %q (got %q)", expr, expected, s),
+			Message: fmt.Sprintf("%s %q not eq %q (got %q)", ctx.kind, ctx.key, expected, s),
 		}
 	}
 	return domain.AssertionResult{
-		Name:    "jsonpath.not_eq",
+		Name:    name,
 		Passed:  false,
-		Message: fmt.Sprintf("jsonpath %q: expected not %q, but got %q", expr, expected, s),
+		Message: fmt.Sprintf("%s %q: expected not %q, but got %q", ctx.kind, ctx.key, expected, s),
 	}
 }
 
-func checkNotContains(expr string, val any, getErr error, sub string) domain.AssertionResult {
+func checkNotContains(ctx checkContext, val any, getErr error, sub string) domain.AssertionResult {
+	name := ctx.kind + ".not_contains"
 	if getErr != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.not_contains",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: %v", expr, getErr),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, getErr),
 		}
 	}
-	s, err := jsonPathToString(val)
+	s, err := valueToString(val)
 	if err != nil {
 		return domain.AssertionResult{
-			Name:    "jsonpath.not_contains",
+			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("jsonpath %q: %v", expr, err),
+			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, err),
 		}
 	}
 	if !strings.Contains(s, sub) {
 		return domain.AssertionResult{
-			Name:    "jsonpath.not_contains",
+			Name:    name,
 			Passed:  true,
-			Message: fmt.Sprintf("jsonpath %q does not contain %q", expr, sub),
+			Message: fmt.Sprintf("%s %q does not contain %q", ctx.kind, ctx.key, sub),
 		}
 	}
 	return domain.AssertionResult{
-		Name:    "jsonpath.not_contains",
+		Name:    name,
 		Passed:  false,
-		Message: fmt.Sprintf("jsonpath %q: %q contains %q", expr, s, sub),
+		Message: fmt.Sprintf("%s %q: %q contains %q", ctx.kind, ctx.key, s, sub),
 	}
 }
 
-func jsonPathToString(val any) (string, error) {
+func valueToString(val any) (string, error) {
 	switch v := val.(type) {
 	case string:
 		return v, nil
@@ -365,7 +402,7 @@ func jsonPathToString(val any) (string, error) {
 	}
 }
 
-func jsonPathToFloat64(val any) (float64, error) {
+func valueToFloat64(val any) (float64, error) {
 	switch v := val.(type) {
 	case float64:
 		return v, nil
@@ -388,7 +425,7 @@ func parseJSON(body []byte) (any, error) {
 	return doc, nil
 }
 
-func isEmptyJSONPathValue(v any) bool {
+func isEmptyValue(v any) bool {
 	if v == nil {
 		return true
 	}
