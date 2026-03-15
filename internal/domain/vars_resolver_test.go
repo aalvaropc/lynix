@@ -1,7 +1,9 @@
 package domain
 
 import (
+	"bytes"
 	"errors"
+	"regexp"
 	"testing"
 	"time"
 )
@@ -16,7 +18,7 @@ func testRuntime(t *testing.T, vars Vars, now func() time.Time, uuidFn func() (s
 	if uuidFn == nil {
 		uuidFn = func() (string, error) { return "00000000-0000-0000-0000-000000000000", nil }
 	}
-	vr := NewVarResolver(WithNow(now), WithUUID(uuidFn))
+	vr := NewVarResolver(WithNow(now), WithUUID(uuidFn), WithRand(bytes.NewReader(make([]byte, 64))))
 	rt, err := vr.NewRuntime(vars)
 	if err != nil {
 		t.Fatalf("NewRuntime: %v", err)
@@ -364,4 +366,63 @@ outer:
 		return i
 	}
 	return -1
+}
+
+// --- New built-in variables ---
+
+func TestResolveString_IsoTimestamp(t *testing.T) {
+	fixed := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	rt := testRuntime(t, Vars{}, func() time.Time { return fixed }, nil)
+
+	got, err := rt.ResolveString("{{$isoTimestamp}}")
+	if err != nil {
+		t.Fatalf("ResolveString: %v", err)
+	}
+	if got != "2024-06-01T12:00:00Z" {
+		t.Fatalf("expected 2024-06-01T12:00:00Z, got %q", got)
+	}
+}
+
+func TestResolveString_RandomInt(t *testing.T) {
+	rt := testRuntime(t, Vars{}, nil, nil)
+	got, err := rt.ResolveString("{{$randomInt}}")
+	if err != nil {
+		t.Fatalf("ResolveString: %v", err)
+	}
+	if !regexp.MustCompile(`^\d{1,4}$`).MatchString(got) {
+		t.Fatalf("expected numeric 0-9999, got %q", got)
+	}
+}
+
+func TestResolveString_RandomString(t *testing.T) {
+	rt := testRuntime(t, Vars{}, nil, nil)
+	got, err := rt.ResolveString("{{$randomString}}")
+	if err != nil {
+		t.Fatalf("ResolveString: %v", err)
+	}
+	if !regexp.MustCompile(`^[a-zA-Z0-9]{8}$`).MatchString(got) {
+		t.Fatalf("expected 8 alphanumeric chars, got %q", got)
+	}
+}
+
+func TestResolveString_RandomEmail(t *testing.T) {
+	rt := testRuntime(t, Vars{}, nil, nil)
+	got, err := rt.ResolveString("{{$randomEmail}}")
+	if err != nil {
+		t.Fatalf("ResolveString: %v", err)
+	}
+	if !regexp.MustCompile(`^user_[a-zA-Z0-9]{6}@test\.lynix$`).MatchString(got) {
+		t.Fatalf("expected user_<6chars>@test.lynix, got %q", got)
+	}
+}
+
+func TestResolveString_RandomBool(t *testing.T) {
+	rt := testRuntime(t, Vars{}, nil, nil)
+	got, err := rt.ResolveString("{{$randomBool}}")
+	if err != nil {
+		t.Fatalf("ResolveString: %v", err)
+	}
+	if got != "true" && got != "false" {
+		t.Fatalf("expected true or false, got %q", got)
+	}
 }

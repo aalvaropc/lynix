@@ -473,6 +473,11 @@ Variables are injected using `{{variable_name}}` syntax. Works in URLs, headers,
 |----------|-------|
 | `{{$uuid}}` | Random UUID v4 |
 | `{{$timestamp}}` | Current Unix timestamp (seconds) |
+| `{{$isoTimestamp}}` | ISO 8601 UTC timestamp (`2024-06-01T12:00:00Z`) |
+| `{{$randomInt}}` | Random integer 0–9999 |
+| `{{$randomString}}` | Random 8-character alphanumeric string |
+| `{{$randomEmail}}` | Random email (`user_abc123@test.lynix`) |
+| `{{$randomBool}}` | Random `true` or `false` |
 
 ---
 

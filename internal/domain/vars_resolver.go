@@ -2,21 +2,25 @@ package domain
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
 )
 
 // VarResolver resolves {{var}} placeholders in strings and JSON-like payloads.
-// It supports built-ins: {{$timestamp}} and {{$uuid}}.
+// Built-ins: {{$timestamp}}, {{$uuid}}, {{$isoTimestamp}}, {{$randomInt}},
+// {{$randomString}}, {{$randomEmail}}, {{$randomBool}}.
 //
 // This lives in domain because it does not depend on YAML/FS/HTTP. Only stdlib.
 type VarResolver struct {
-	now    func() time.Time
-	uuidV4 func() (string, error)
+	now        func() time.Time
+	uuidV4     func() (string, error)
+	randSource io.Reader
 }
 
 // VarResolverOption configures VarResolver.
@@ -32,10 +36,16 @@ func WithUUID(gen func() (string, error)) VarResolverOption {
 	return func(r *VarResolver) { r.uuidV4 = gen }
 }
 
+// WithRand overrides the random source (useful for deterministic tests).
+func WithRand(src io.Reader) VarResolverOption {
+	return func(r *VarResolver) { r.randSource = src }
+}
+
 func NewVarResolver(opts ...VarResolverOption) *VarResolver {
 	r := &VarResolver{
-		now:    time.Now,
-		uuidV4: uuidV4,
+		now:        time.Now,
+		uuidV4:     uuidV4,
+		randSource: rand.Reader,
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -51,16 +61,21 @@ type RuntimeResolver struct {
 	inner    *VarResolver
 }
 
+const alphanumeric = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
 func (r *VarResolver) NewRuntime(vars Vars) (*RuntimeResolver, error) {
-	ts := strconv.FormatInt(r.now().Unix(), 10)
+	now := r.now()
+	ts := strconv.FormatInt(now.Unix(), 10)
+	isoTS := now.UTC().Format(time.RFC3339)
 
 	u, err := r.uuidV4()
 	if err != nil {
-		return nil, &OpError{
-			Op:   "vars.builtins.uuid",
-			Kind: KindExecution,
-			Err:  err,
-		}
+		return nil, &OpError{Op: "vars.builtins.uuid", Kind: KindExecution, Err: err}
+	}
+
+	randomInt, randomStr, randomEmail, randomBool, err := r.generateRandomBuiltins()
+	if err != nil {
+		return nil, err
 	}
 
 	baseCopy := Vars{}
@@ -71,11 +86,63 @@ func (r *VarResolver) NewRuntime(vars Vars) (*RuntimeResolver, error) {
 	return &RuntimeResolver{
 		base: baseCopy,
 		builtins: Vars{
-			"$timestamp": ts,
-			"$uuid":      u,
+			"$timestamp":    ts,
+			"$uuid":         u,
+			"$isoTimestamp": isoTS,
+			"$randomInt":    randomInt,
+			"$randomString": randomStr,
+			"$randomEmail":  randomEmail,
+			"$randomBool":   randomBool,
 		},
 		inner: r,
 	}, nil
+}
+
+func (r *VarResolver) generateRandomBuiltins() (rInt, rStr, rEmail, rBool string, err error) {
+	// $randomInt: 0-9999
+	var intBuf [2]byte
+	if _, err = io.ReadFull(r.randSource, intBuf[:]); err != nil {
+		return "", "", "", "", &OpError{Op: "vars.builtins.random", Kind: KindExecution, Err: err}
+	}
+	rInt = strconv.Itoa(int(binary.BigEndian.Uint16(intBuf[:])) % 10000)
+
+	// $randomString: 8 alphanumeric chars
+	var strBuf [8]byte
+	if _, err = io.ReadFull(r.randSource, strBuf[:]); err != nil {
+		return "", "", "", "", &OpError{Op: "vars.builtins.random", Kind: KindExecution, Err: err}
+	}
+	var sb strings.Builder
+	sb.Grow(8)
+	for _, b := range strBuf {
+		sb.WriteByte(alphanumeric[int(b)%len(alphanumeric)])
+	}
+	rStr = sb.String()
+
+	// $randomEmail: user_<6chars>@test.lynix
+	var emailBuf [6]byte
+	if _, err = io.ReadFull(r.randSource, emailBuf[:]); err != nil {
+		return "", "", "", "", &OpError{Op: "vars.builtins.random", Kind: KindExecution, Err: err}
+	}
+	var eb strings.Builder
+	eb.Grow(22)
+	eb.WriteString("user_")
+	for _, b := range emailBuf {
+		eb.WriteByte(alphanumeric[int(b)%len(alphanumeric)])
+	}
+	eb.WriteString("@test.lynix")
+	rEmail = eb.String()
+
+	// $randomBool: "true" or "false"
+	var boolBuf [1]byte
+	if _, err = io.ReadFull(r.randSource, boolBuf[:]); err != nil {
+		return "", "", "", "", &OpError{Op: "vars.builtins.random", Kind: KindExecution, Err: err}
+	}
+	rBool = "false"
+	if boolBuf[0]%2 == 1 {
+		rBool = "true"
+	}
+
+	return rInt, rStr, rEmail, rBool, nil
 }
 
 // ResolveString resolves placeholders in a string.
