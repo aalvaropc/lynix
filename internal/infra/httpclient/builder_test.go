@@ -83,12 +83,12 @@ func TestBuildRequestRaw(t *testing.T) {
 	}
 
 	runRequest(t, domain.RequestSpec{
-		Method: domain.MethodPut,
-		URL:    "",
+		Method:  domain.MethodPut,
+		URL:     "",
+		Headers: domain.Headers{"Content-Type": "text/plain"},
 		Body: domain.BodySpec{
-			Type:        domain.BodyRaw,
-			Raw:         "raw-body",
-			ContentType: "text/plain",
+			Type: domain.BodyRaw,
+			Raw:  "raw-body",
 		},
 	}, "/raw", assert)
 }

@@ -36,11 +36,10 @@ type Headers map[string]string
 // BodySpec describes an HTTP request body.
 // Only one of JSON/Form/Raw is typically used depending on Type.
 type BodySpec struct {
-	Type        BodyType
-	JSON        map[string]any
-	Form        map[string]string
-	Raw         string
-	ContentType string // Optional override (useful for raw payloads).
+	Type BodyType
+	JSON map[string]any
+	Form map[string]string
+	Raw  string
 }
 
 // Validate checks that a BodySpec has at most one body type populated.

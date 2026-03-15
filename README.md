@@ -420,7 +420,6 @@ requests:
 | `json` | | JSON request body (object or array) |
 | `form` | | Form URL-encoded body (string key-value map) |
 | `raw` | | Raw text body |
-| `content_type` | | Overrides `Content-Type` header (mainly for `raw` bodies) |
 | `tags` | | List of tags for selective execution with `--tags` |
 | `assert` | | Assertions on the response |
 | `extract` | | Variables to extract from the response body |

@@ -56,7 +56,6 @@ func BuildRequest(ctx context.Context, spec domain.RequestSpec) (*http.Request, 
 	case domain.BodyRaw:
 		if strings.TrimSpace(spec.Body.Raw) != "" {
 			bodyReader = bytes.NewReader([]byte(spec.Body.Raw))
-			contentType = spec.Body.ContentType
 		} else {
 			bodyReader = bytes.NewReader(nil)
 		}

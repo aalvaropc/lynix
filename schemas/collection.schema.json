@@ -62,9 +62,6 @@
         "raw": {
           "type": "string"
         },
-        "content_type": {
-          "type": "string"
-        },
         "tags": {
           "type": "array",
           "items": { "type": "string" }
