@@ -123,12 +123,14 @@ type yamlRequest struct {
 	URL     string            `yaml:"url"`
 	Headers map[string]string `yaml:"headers"`
 
-	JSON    map[string]any    `yaml:"json"`
-	Form    map[string]string `yaml:"form"`
-	Raw     string            `yaml:"raw"`
-	Assert  yamlAssertions    `yaml:"assert"`
-	Extract map[string]string `yaml:"extract"`
-	Tags    []string          `yaml:"tags"`
+	JSON      map[string]any    `yaml:"json"`
+	Form      map[string]string `yaml:"form"`
+	Raw       string            `yaml:"raw"`
+	DelayMS   *int              `yaml:"delay_ms"`
+	TimeoutMS *int              `yaml:"timeout_ms"`
+	Assert    yamlAssertions    `yaml:"assert"`
+	Extract   map[string]string `yaml:"extract"`
+	Tags      []string          `yaml:"tags"`
 }
 
 type yamlAssertions struct {
@@ -252,6 +254,16 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 		if err := req.Body.Validate(); err != nil {
 			return domain.Collection{}, invalidField(path, fieldPrefix+".body", err.Error())
 		}
+
+		if r.DelayMS != nil && *r.DelayMS < 0 {
+			return domain.Collection{}, invalidField(path, fieldPrefix+".delay_ms", "must be >= 0")
+		}
+		req.DelayMS = r.DelayMS
+
+		if r.TimeoutMS != nil && *r.TimeoutMS <= 0 {
+			return domain.Collection{}, invalidField(path, fieldPrefix+".timeout_ms", "must be > 0")
+		}
+		req.TimeoutMS = r.TimeoutMS
 
 		col.Requests = append(col.Requests, req)
 	}

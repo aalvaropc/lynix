@@ -113,6 +113,9 @@ type RequestSpec struct {
 	Body    BodySpec
 	Tags    []string
 
+	DelayMS   *int // delay in ms before executing this request (nil = no delay)
+	TimeoutMS *int // per-request timeout in ms (nil = use global client timeout)
+
 	Assert  AssertionsSpec
 	Extract ExtractSpec
 }

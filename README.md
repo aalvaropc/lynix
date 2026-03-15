@@ -458,6 +458,8 @@ requests:
 | `form` | | Form URL-encoded body (string key-value map) |
 | `raw` | | Raw text body |
 | `tags` | | List of tags for selective execution with `--tags` |
+| `delay_ms` | | Delay in milliseconds before executing this request |
+| `timeout_ms` | | Per-request timeout in ms — aborts the request if exceeded (distinct from `max_ms` which is an assertion) |
 | `assert` | | Assertions on the response |
 | `extract` | | Variables to extract from the response body |
 

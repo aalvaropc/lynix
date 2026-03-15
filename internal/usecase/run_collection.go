@@ -108,6 +108,15 @@ func (uc *RunCollection) Execute(
 			return run, "", err
 		}
 
+		if req.DelayMS != nil && *req.DelayMS > 0 {
+			select {
+			case <-ctx.Done():
+				run.EndedAt = time.Now()
+				return run, "", ctx.Err()
+			case <-time.After(time.Duration(*req.DelayMS) * time.Millisecond):
+			}
+		}
+
 		rr, runErr := uc.runWithRetries(ctx, req, vars)
 		if runErr != nil {
 			// Runner error (config-level): continue but mark the request as failed.
