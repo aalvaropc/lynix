@@ -88,8 +88,8 @@ type AssertionsSpec struct {
 	// MaxLatencyMS is a maximum allowed latency in milliseconds (optional).
 	MaxLatencyMS *int
 
-	// JSONPath contains JSONPath assertions keyed by an identifier (optional).
-	// Example key could be "$.data" or a friendly label.
+	// JSONPath contains JSONPath assertions keyed by a JSONPath expression (optional).
+	// The key is passed directly to jsonpath.Get(), e.g. "$.data", "$.users[0].id".
 	JSONPath map[string]JSONPathAssertion
 
 	// Schema is a file path to a JSON Schema file (relative to collection dir).

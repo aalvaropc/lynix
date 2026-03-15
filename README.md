@@ -387,9 +387,8 @@ requests:
       status: 200
       max_ms: "{{timeout_ms}}"
       jsonpath:
-        token_present:
+        "$.token":
           exists: true
-        token_format:
           matches: "^[A-Za-z0-9._-]+$"
     extract:
       auth_token: "$.token"          # available in all subsequent requests
@@ -402,11 +401,11 @@ requests:
     assert:
       status: 200
       jsonpath:
-        has_users:
+        "$.data":
           exists: true
-        first_user_active:
+        "$.data[0].active":
           eq: "true"
-        user_count_gt_0:
+        "$.total":
           gt: 0
 ```
 
@@ -466,12 +465,12 @@ Checks that the response latency is at or below the threshold.
 
 ### JSONPath assertions
 
-Keyed by a unique label of your choice. Each label can combine multiple operators against the same path.
+Keyed by a JSONPath expression. Each key can combine multiple operators against the same path.
 
 ```yaml
 assert:
   jsonpath:
-    my_label:
+    "$.data.field":
       exists: true          # path exists and value is non-empty
       eq: "expected"        # string equality
       contains: "partial"   # substring match
@@ -499,11 +498,11 @@ assert:
 ```yaml
 assert:
   jsonpath:
-    token_exists:
+    "$.token":
       exists: true
-    user_id_format:
+    "$.user_id":
       matches: "^user-[0-9]+$"
-    item_count:
+    "$.count":
       gt: 0
       lt: 100
 ```
@@ -553,7 +552,7 @@ assert:
   max_ms: 1000
   schema: "schemas/user.json"
   jsonpath:
-    has_email:
+    "$.email":
       exists: true
 ```
 
