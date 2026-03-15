@@ -123,11 +123,9 @@ type yamlRequest struct {
 	URL     string            `yaml:"url"`
 	Headers map[string]string `yaml:"headers"`
 
-	JSON        map[string]any    `yaml:"json"`
-	Form        map[string]string `yaml:"form"`
-	Raw         string            `yaml:"raw"`
-	ContentType string            `yaml:"content_type"`
-
+	JSON    map[string]any    `yaml:"json"`
+	Form    map[string]string `yaml:"form"`
+	Raw     string            `yaml:"raw"`
 	Assert  yamlAssertions    `yaml:"assert"`
 	Extract map[string]string `yaml:"extract"`
 	Tags    []string          `yaml:"tags"`
@@ -251,8 +249,6 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 		} else if strings.TrimSpace(r.Raw) != "" {
 			req.Body = domain.BodySpec{Type: domain.BodyRaw, Raw: r.Raw}
 		}
-		req.Body.ContentType = strings.TrimSpace(r.ContentType)
-
 		if err := req.Body.Validate(); err != nil {
 			return domain.Collection{}, invalidField(path, fieldPrefix+".body", err.Error())
 		}

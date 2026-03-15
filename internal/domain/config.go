@@ -49,9 +49,9 @@ type MaskingConfig struct {
 	MaskResponseBody    bool
 	MaskQueryParams     bool
 
-	// ApplyToOutput controls whether masking also applies to CLI stdout output.
+	// MaskCLIOutput controls whether masking also applies to CLI stdout output.
 	// Default false: only artifacts in runs/ are masked.
-	ApplyToOutput bool
+	MaskCLIOutput bool
 
 	// FailOnDetectedSecret causes artifact save and CLI output to fail if an
 	// unmasked secret is detected after redaction. Default false.
@@ -87,7 +87,7 @@ func DefaultConfig() Config {
 			MaskResponseHeaders:  true,
 			MaskResponseBody:     true,
 			MaskQueryParams:      true,
-			ApplyToOutput:        false,
+			MaskCLIOutput:        false,
 			FailOnDetectedSecret: false,
 		},
 		Defaults: DefaultsConfig{

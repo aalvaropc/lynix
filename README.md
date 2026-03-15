@@ -424,9 +424,8 @@ requests:
       status: 200
       max_ms: "{{timeout_ms}}"
       jsonpath:
-        token_present:
+        "$.token":
           exists: true
-        token_format:
           matches: "^[A-Za-z0-9._-]+$"
     extract:
       auth_token: "$.token"          # available in all subsequent requests
@@ -439,11 +438,11 @@ requests:
     assert:
       status: 200
       jsonpath:
-        has_users:
+        "$.data":
           exists: true
-        first_user_active:
+        "$.data[0].active":
           eq: "true"
-        user_count_gt_0:
+        "$.total":
           gt: 0
 ```
 
@@ -458,7 +457,6 @@ requests:
 | `json` | | JSON request body (object or array) |
 | `form` | | Form URL-encoded body (string key-value map) |
 | `raw` | | Raw text body |
-| `content_type` | | Overrides `Content-Type` header (mainly for `raw` bodies) |
 | `tags` | | List of tags for selective execution with `--tags` |
 | `assert` | | Assertions on the response |
 | `extract` | | Variables to extract from the response body |
@@ -503,12 +501,12 @@ Checks that the response latency is at or below the threshold.
 
 ### JSONPath assertions
 
-Keyed by a unique label of your choice. Each label can combine multiple operators against the same path.
+Keyed by a JSONPath expression. Each key can combine multiple operators against the same path.
 
 ```yaml
 assert:
   jsonpath:
-    my_label:
+    "$.data.field":
       exists: true          # path exists and value is non-empty
       eq: "expected"        # string equality
       contains: "partial"   # substring match
@@ -536,11 +534,11 @@ assert:
 ```yaml
 assert:
   jsonpath:
-    token_exists:
+    "$.token":
       exists: true
-    user_id_format:
+    "$.user_id":
       matches: "^user-[0-9]+$"
-    item_count:
+    "$.count":
       gt: 0
       lt: 100
 ```
@@ -590,7 +588,7 @@ assert:
   max_ms: 1000
   schema: "schemas/user.json"
   jsonpath:
-    has_email:
+    "$.email":
       exists: true
 ```
 
@@ -649,7 +647,6 @@ Variables extracted from responses are merged into the running set and available
 
 ```yaml
 # env/dev.yaml
-schema_version: 1
 vars:
   base_url: "http://localhost:8080"
   username: "dev-user"
@@ -658,7 +655,6 @@ vars:
 
 ```yaml
 # env/stg.yaml
-schema_version: 1
 vars:
   base_url: "https://staging-api.example.com"
   username: "stg-user"
@@ -691,7 +687,7 @@ lynix:
     # mask_response_headers: true     # Toggle response header masking
     # mask_response_body: true
     # mask_query_params: true
-    # apply_to_output: false
+    # mask_cli_output: false
     # fail_on_detected_secret: false  # Fail if unmasked secrets detected in artifacts
 
   # Default environment when -e / --env is not specified

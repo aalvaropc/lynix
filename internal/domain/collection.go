@@ -36,11 +36,10 @@ type Headers map[string]string
 // BodySpec describes an HTTP request body.
 // Only one of JSON/Form/Raw is typically used depending on Type.
 type BodySpec struct {
-	Type        BodyType
-	JSON        map[string]any
-	Form        map[string]string
-	Raw         string
-	ContentType string // Optional override (useful for raw payloads).
+	Type BodyType
+	JSON map[string]any
+	Form map[string]string
+	Raw  string
 }
 
 // Validate checks that a BodySpec has at most one body type populated.
@@ -88,8 +87,8 @@ type AssertionsSpec struct {
 	// MaxLatencyMS is a maximum allowed latency in milliseconds (optional).
 	MaxLatencyMS *int
 
-	// JSONPath contains JSONPath assertions keyed by an identifier (optional).
-	// Example key could be "$.data" or a friendly label.
+	// JSONPath contains JSONPath assertions keyed by a JSONPath expression (optional).
+	// The key is passed directly to jsonpath.Get(), e.g. "$.data", "$.users[0].id".
 	JSONPath map[string]JSONPathAssertion
 
 	// Schema is a file path to a JSON Schema file (relative to collection dir).

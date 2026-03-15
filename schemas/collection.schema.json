@@ -62,9 +62,6 @@
         "raw": {
           "type": "string"
         },
-        "content_type": {
-          "type": "string"
-        },
         "tags": {
           "type": "array",
           "items": { "type": "string" }
@@ -90,6 +87,7 @@
         },
         "jsonpath": {
           "type": "object",
+          "description": "JSONPath assertions. Each key must be a valid JSONPath expression (e.g. \"$.data\", \"$.users[0].id\") evaluated against the response body.",
           "additionalProperties": { "$ref": "#/$defs/jsonpath_assertion" }
         },
         "schema": { "type": "string" },
