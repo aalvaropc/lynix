@@ -143,12 +143,14 @@ type yamlAssertions struct {
 }
 
 type yamlJSONPathAssertion struct {
-	Exists   bool     `yaml:"exists"`
-	Eq       *string  `yaml:"eq"`
-	Contains *string  `yaml:"contains"`
-	Matches  *string  `yaml:"matches"`
-	Gt       *float64 `yaml:"gt"`
-	Lt       *float64 `yaml:"lt"`
+	Exists      bool     `yaml:"exists"`
+	Eq          *string  `yaml:"eq"`
+	Contains    *string  `yaml:"contains"`
+	Matches     *string  `yaml:"matches"`
+	Gt          *float64 `yaml:"gt"`
+	Lt          *float64 `yaml:"lt"`
+	NotEq       *string  `yaml:"not_eq"`
+	NotContains *string  `yaml:"not_contains"`
 }
 
 func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
@@ -278,12 +280,14 @@ func mapJSONPath(in map[string]yamlJSONPathAssertion) map[string]domain.JSONPath
 	out := make(map[string]domain.JSONPathAssertion, len(in))
 	for k, v := range in {
 		out[k] = domain.JSONPathAssertion{
-			Exists:   v.Exists,
-			Eq:       v.Eq,
-			Contains: v.Contains,
-			Matches:  v.Matches,
-			Gt:       v.Gt,
-			Lt:       v.Lt,
+			Exists:      v.Exists,
+			Eq:          v.Eq,
+			Contains:    v.Contains,
+			Matches:     v.Matches,
+			Gt:          v.Gt,
+			Lt:          v.Lt,
+			NotEq:       v.NotEq,
+			NotContains: v.NotContains,
 		}
 	}
 	return out

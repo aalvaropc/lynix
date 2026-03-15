@@ -113,7 +113,9 @@
         "contains": { "type": "string" },
         "matches": { "type": "string" },
         "gt": { "type": "number" },
-        "lt": { "type": "number" }
+        "lt": { "type": "number" },
+        "not_eq": { "type": "string" },
+        "not_contains": { "type": "string" }
       }
     }
   }

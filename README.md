@@ -520,6 +520,8 @@ assert:
       matches: "^regex$"    # Go stdlib regexp
       gt: 10                # numeric greater-than
       lt: 1000              # numeric less-than
+      not_eq: "forbidden"   # string inequality
+      not_contains: "error" # substring absence
 ```
 
 | Operator | Type | Description |
@@ -530,6 +532,8 @@ assert:
 | `matches` | string | Value matches the given regular expression |
 | `gt` | number | Numeric value is greater than threshold |
 | `lt` | number | Numeric value is less than threshold |
+| `not_eq` | string | Value does NOT equal the given string |
+| `not_contains` | string | Value does NOT contain the given substring |
 
 **JSONPath syntax** follows [PaesslerAG/jsonpath](https://github.com/PaesslerAG/jsonpath):
 - `$.field` — top-level field

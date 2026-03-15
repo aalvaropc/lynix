@@ -71,12 +71,14 @@ func (b BodySpec) Validate() error {
 
 // JSONPathAssertion defines a JSONPath-based check.
 type JSONPathAssertion struct {
-	Exists   bool     // value exists and is non-empty
-	Eq       *string  // toStr(value) == *Eq
-	Contains *string  // toStr(value) contains substring
-	Matches  *string  // toStr(value) matches regex pattern (stdlib regexp)
-	Gt       *float64 // numeric value > threshold
-	Lt       *float64 // numeric value < threshold
+	Exists      bool     // value exists and is non-empty
+	Eq          *string  // toStr(value) == *Eq
+	Contains    *string  // toStr(value) contains substring
+	Matches     *string  // toStr(value) matches regex pattern (stdlib regexp)
+	Gt          *float64 // numeric value > threshold
+	Lt          *float64 // numeric value < threshold
+	NotEq       *string  // toStr(value) != *NotEq
+	NotContains *string  // toStr(value) does not contain substring
 }
 
 // AssertionsSpec defines functional assertions for a request.
