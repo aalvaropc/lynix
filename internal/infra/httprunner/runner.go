@@ -71,7 +71,7 @@ func (r *Runner) Run(ctx context.Context, req domain.RequestSpec, vars domain.Va
 		URL:            resolved.URL,
 		ResolvedURL:    resolved.URL,
 		RequestHeaders: copyHeaders(resolved.Headers),
-		RequestBody:    serializeBody(resolved.Body),
+		RequestBody:    SerializeBody(resolved.Body),
 		Extracted:      domain.Vars{},
 		Extracts:       []domain.ExtractResult{},
 		Assertions:     []domain.AssertionResult{},
@@ -154,7 +154,7 @@ func readBounded(r io.Reader, maxBytes int64) ([]byte, bool, error) {
 	return b, false, nil
 }
 
-func serializeBody(body domain.BodySpec) []byte {
+func SerializeBody(body domain.BodySpec) []byte {
 	switch body.Type {
 	case domain.BodyJSON:
 		if body.JSON != nil {
