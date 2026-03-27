@@ -135,14 +135,22 @@ func listenRunner(ch <-chan runnerDoneMsg) tea.Cmd {
 	}
 }
 
-func startRunAsync(
-	workspaceRoot, collectionPath, envName string,
-	save bool,
-	log *slog.Logger,
-	debug bool,
-) (chan runnerDoneMsg, context.CancelFunc, tea.Cmd) {
+// runParams groups all parameters needed to start a collection run.
+type runParams struct {
+	workspaceRoot  string
+	collectionPath string
+	envName        string
+	save           bool
+	runOpts        usecase.RunOpts
+	wiringOpts     wiring.Opts
+	log            *slog.Logger
+	debug          bool
+}
+
+func startRunAsync(p runParams) (chan runnerDoneMsg, context.CancelFunc, tea.Cmd) {
 	ch := make(chan runnerDoneMsg, 1)
 
+	log := p.log
 	if log == nil {
 		log = slog.Default()
 	}
@@ -154,13 +162,13 @@ func startRunAsync(
 		defer close(ch)
 
 		log.Info("run.start",
-			"workspace", workspaceRoot,
-			"collection_path", collectionPath,
-			"env", envName,
-			"debug", debug,
+			"workspace", p.workspaceRoot,
+			"collection_path", p.collectionPath,
+			"env", p.envName,
+			"debug", p.debug,
 		)
 
-		cfg, err := workspacefinder.LoadConfig(workspaceRoot)
+		cfg, err := workspacefinder.LoadConfig(p.workspaceRoot)
 		if err != nil {
 			log.Error("run.load_config.failed", "err", err)
 			ch <- runnerDoneMsg{err: err}
@@ -174,10 +182,19 @@ func startRunAsync(
 		ctx, cancel := context.WithTimeout(baseCtx, timeout)
 		defer cancel()
 
-		adapters := wiring.NewAdapters(workspaceRoot, cfg, save, wiring.Opts{})
-		uc := usecase.NewRunCollection(adapters.Collections, adapters.Envs, adapters.Runner, adapters.Store, usecase.RunOpts{})
+		adapters := wiring.NewAdapters(p.workspaceRoot, cfg, p.save, p.wiringOpts)
 
-		run, id, execErr := uc.Execute(ctx, collectionPath, envName)
+		// Merge workspace config defaults with user-selected opts.
+		opts := p.runOpts
+		if opts.Retries == 0 {
+			opts.Retries = cfg.Run.Retries
+		}
+		if opts.RetryDelay == 0 {
+			opts.RetryDelay = cfg.Run.RetryDelay
+		}
+		uc := usecase.NewRunCollection(adapters.Collections, adapters.Envs, adapters.Runner, adapters.Store, opts)
+
+		run, id, execErr := uc.Execute(ctx, p.collectionPath, p.envName)
 
 		if execErr != nil {
 			log.Error("run.failed", "err", execErr, "saved_id", id)
@@ -196,7 +213,7 @@ func startRunAsync(
 					"status", rr.StatusCode,
 					"latency_ms", rr.LatencyMS,
 				)
-			} else if debug {
+			} else if p.debug {
 				log.Debug("request.ok",
 					"name", rr.Name,
 					"method", string(rr.Method),
