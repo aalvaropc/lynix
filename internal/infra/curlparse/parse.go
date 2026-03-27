@@ -14,6 +14,7 @@ import (
 type Result struct {
 	Collection domain.Collection
 	Warnings   []string
+	Insecure   bool // curl -k/--insecure was present
 }
 
 // Parse converts a curl command string into a domain.Collection.
@@ -45,12 +46,12 @@ func Parse(input string) (Result, error) {
 		warnings []string
 	)
 
+	var insecureFlag, locationFlag bool
+
 	// Flags that are known but unsupported — consume their value if needed.
 	unsupportedNoArg := map[string]bool{
 		"--compressed": true,
-		"-k":           true, "--insecure": true,
-		"-L": true, "--location": true,
-		"-v": true, "--verbose": true,
+		"-v":           true, "--verbose": true,
 		"-s": true, "--silent": true,
 		"-S": true, "--show-error": true,
 		"-i": true, "--include": true,
@@ -136,6 +137,18 @@ func Parse(input string) (Result, error) {
 			continue
 		}
 
+		// -k / --insecure (skip TLS verification)
+		if tok == "-k" || tok == "--insecure" {
+			insecureFlag = true
+			continue
+		}
+
+		// -L / --location (follow redirects)
+		if tok == "-L" || tok == "--location" {
+			locationFlag = true
+			continue
+		}
+
 		// Known unsupported flags without arguments.
 		if unsupportedNoArg[tok] {
 			warnings = append(warnings, fmt.Sprintf("flag %s is not supported and was ignored", tok))
@@ -218,22 +231,26 @@ func Parse(input string) (Result, error) {
 	// Derive collection name from host.
 	colName := "Imported from " + parsedURL.Host
 
+	req := domain.RequestSpec{
+		Name:    reqName,
+		Method:  domain.HTTPMethod(method),
+		URL:     reqURL,
+		Headers: domain.Headers(headers),
+		Body:    body,
+	}
+	if locationFlag {
+		t := true
+		req.FollowRedirects = &t
+	}
+
 	col := domain.Collection{
 		SchemaVersion: 1,
 		Name:          colName,
 		Vars:          domain.Vars{"base_url": baseURL},
-		Requests: []domain.RequestSpec{
-			{
-				Name:    reqName,
-				Method:  domain.HTTPMethod(method),
-				URL:     reqURL,
-				Headers: domain.Headers(headers),
-				Body:    body,
-			},
-		},
+		Requests:      []domain.RequestSpec{req},
 	}
 
-	return Result{Collection: col, Warnings: warnings}, nil
+	return Result{Collection: col, Warnings: warnings, Insecure: insecureFlag}, nil
 }
 
 // tokenize splits a shell command into tokens, handling quoting and backslash escapes.

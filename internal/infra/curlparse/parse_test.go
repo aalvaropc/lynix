@@ -844,35 +844,83 @@ func TestParse_NoCurlPrefix(t *testing.T) {
 // ========================
 
 func TestParse_UnsupportedFlags_ProduceWarnings(t *testing.T) {
-	input := `curl --compressed -k -L -v -s https://api.example.com/`
+	input := `curl --compressed -v -s https://api.example.com/`
 	r, err := Parse(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.Warnings) != 5 {
-		t.Errorf("expected 5 warnings, got %d: %v", len(r.Warnings), r.Warnings)
+	if len(r.Warnings) != 3 {
+		t.Errorf("expected 3 warnings, got %d: %v", len(r.Warnings), r.Warnings)
 	}
 }
 
-func TestParse_UnsupportedInsecureLongForm(t *testing.T) {
+func TestParse_InsecureFlag(t *testing.T) {
 	input := `curl --insecure https://api.example.com/`
 	r, err := Parse(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.Warnings) != 1 {
-		t.Errorf("expected 1 warning, got %d", len(r.Warnings))
+	if !r.Insecure {
+		t.Error("expected Insecure=true")
+	}
+	if len(r.Warnings) != 0 {
+		t.Errorf("expected 0 warnings, got %d: %v", len(r.Warnings), r.Warnings)
 	}
 }
 
-func TestParse_UnsupportedLocationLongForm(t *testing.T) {
+func TestParse_InsecureShortFlag(t *testing.T) {
+	input := `curl -k https://api.example.com/`
+	r, err := Parse(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Insecure {
+		t.Error("expected Insecure=true")
+	}
+}
+
+func TestParse_LocationFlag_SetsFollowRedirects(t *testing.T) {
 	input := `curl --location https://api.example.com/`
 	r, err := Parse(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.Warnings) != 1 {
-		t.Errorf("expected 1 warning, got %d", len(r.Warnings))
+	req := r.Collection.Requests[0]
+	if req.FollowRedirects == nil || !*req.FollowRedirects {
+		t.Error("expected FollowRedirects=true")
+	}
+	if len(r.Warnings) != 0 {
+		t.Errorf("expected 0 warnings, got %d: %v", len(r.Warnings), r.Warnings)
+	}
+}
+
+func TestParse_LocationShortFlag(t *testing.T) {
+	input := `curl -L https://api.example.com/`
+	r, err := Parse(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := r.Collection.Requests[0]
+	if req.FollowRedirects == nil || !*req.FollowRedirects {
+		t.Error("expected FollowRedirects=true")
+	}
+}
+
+func TestParse_InsecureAndLocation_Combined(t *testing.T) {
+	input := `curl -k -L https://api.example.com/data`
+	r, err := Parse(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Insecure {
+		t.Error("expected Insecure=true")
+	}
+	req := r.Collection.Requests[0]
+	if req.FollowRedirects == nil || !*req.FollowRedirects {
+		t.Error("expected FollowRedirects=true")
+	}
+	if len(r.Warnings) != 0 {
+		t.Errorf("expected 0 warnings, got %d", len(r.Warnings))
 	}
 }
 
@@ -1035,13 +1083,13 @@ func TestParse_UnknownFlag_Warning(t *testing.T) {
 }
 
 func TestParse_MultipleUnsupportedAndUnknown(t *testing.T) {
-	input := `curl --compressed --insecure --unknown -v https://api.example.com/`
+	input := `curl --compressed --unknown -v https://api.example.com/`
 	r, err := Parse(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.Warnings) != 4 {
-		t.Errorf("expected 4 warnings, got %d: %v", len(r.Warnings), r.Warnings)
+	if len(r.Warnings) != 3 {
+		t.Errorf("expected 3 warnings, got %d: %v", len(r.Warnings), r.Warnings)
 	}
 }
 
