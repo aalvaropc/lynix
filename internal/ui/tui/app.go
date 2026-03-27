@@ -9,9 +9,12 @@ import (
 	"strings"
 
 	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/infra/wiring"
+	"github.com/aalvaropc/lynix/internal/usecase"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -76,15 +79,26 @@ type model struct {
 	selectedCollectionPath string
 	selectedEnvName        string
 	saveRun                bool
-	running                bool
-	spin                   spinner.Model
-	runCh                  chan runnerDoneMsg
-	runCancel              context.CancelFunc
-	runResult              domain.RunResult
-	runID                  string
-	runErr                 error
-	resultsTable           table.Model
-	resultTab              int // 0=details, 1=response
+	failFast               bool
+	dryRun                 bool
+	insecure               bool
+	noRedirects            bool
+	retry5xx               bool
+	retries                int
+	tagsInput              textinput.Model
+	onlyInput              textinput.Model
+	editingTags            bool
+	editingOnly            bool
+
+	running      bool
+	spin         spinner.Model
+	runCh        chan runnerDoneMsg
+	runCancel    context.CancelFunc
+	runResult    domain.RunResult
+	runID        string
+	runErr       error
+	resultsTable table.Model
+	resultTab    int // 0=details, 1=response
 }
 
 func Run(deps Deps) error {
@@ -138,6 +152,16 @@ func newModel(deps Deps) model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
+	ti := textinput.New()
+	ti.Placeholder = "tag1,tag2"
+	ti.CharLimit = 120
+	ti.Width = 30
+
+	oi := textinput.New()
+	oi.Placeholder = "req1,req2"
+	oi.CharLimit = 120
+	oi.Width = 30
+
 	return model{
 		theme:           t,
 		deps:            deps,
@@ -149,6 +173,8 @@ func newModel(deps Deps) model {
 		runEnvList:      runEnv,
 		wizardStep:      0,
 		saveRun:         true,
+		tagsInput:       ti,
+		onlyInput:       oi,
 		spin:            sp,
 		resultTab:       0,
 	}
@@ -266,6 +292,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Forward to active textinput when editing tags or only.
+		if m.editingTags {
+			if msg.String() == "esc" || msg.String() == "enter" {
+				m.editingTags = false
+				m.tagsInput.Blur()
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.tagsInput, cmd = m.tagsInput.Update(msg)
+			return m, cmd
+		}
+		if m.editingOnly {
+			if msg.String() == "esc" || msg.String() == "enter" {
+				m.editingOnly = false
+				m.onlyInput.Blur()
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.onlyInput, cmd = m.onlyInput.Update(msg)
+			return m, cmd
+		}
+
 		key := msg.String()
 
 		if key == "ctrl+c" {
@@ -308,6 +356,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.scr = screenRunWizard
 					m.wizardStep = 1
 					m.toast = ""
+					m.failFast = false
+					m.dryRun = false
+					m.insecure = false
+					m.noRedirects = false
+					m.retry5xx = false
+					m.retries = 0
+					m.tagsInput.SetValue("")
+					m.onlyInput.SetValue("")
 					return m, m.maybePreviewSelectedCollection(m.runColList)
 				}
 			}
@@ -358,12 +414,68 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 			case "s", "S":
-				if m.wizardStep == 3 && !m.running {
+				if m.wizardStep == 3 && !m.running && !m.editingTags && !m.editingOnly {
 					m.saveRun = !m.saveRun
 					return m, nil
 				}
 
+			case "f":
+				if m.wizardStep == 3 && !m.running && !m.editingTags && !m.editingOnly {
+					m.failFast = !m.failFast
+					return m, nil
+				}
+			case "d":
+				if m.wizardStep == 3 && !m.running && !m.editingTags && !m.editingOnly {
+					m.dryRun = !m.dryRun
+					return m, nil
+				}
+			case "i":
+				if m.wizardStep == 3 && !m.running && !m.editingTags && !m.editingOnly {
+					m.insecure = !m.insecure
+					return m, nil
+				}
+			case "r":
+				if m.wizardStep == 3 && !m.running && !m.editingTags && !m.editingOnly {
+					m.noRedirects = !m.noRedirects
+					return m, nil
+				}
+			case "5":
+				if m.wizardStep == 3 && !m.running && !m.editingTags && !m.editingOnly {
+					m.retry5xx = !m.retry5xx
+					return m, nil
+				}
+			case "+", "=":
+				if m.wizardStep == 3 && !m.running && !m.editingTags && !m.editingOnly {
+					m.retries++
+					return m, nil
+				}
+			case "-":
+				if m.wizardStep == 3 && !m.running && !m.editingTags && !m.editingOnly && m.retries > 0 {
+					m.retries--
+					return m, nil
+				}
+			case "t":
+				if m.wizardStep == 3 && !m.running && !m.editingTags && !m.editingOnly {
+					m.editingTags = true
+					m.tagsInput.Focus()
+					return m, textinput.Blink
+				}
+			case "o":
+				if m.wizardStep == 3 && !m.running && !m.editingTags && !m.editingOnly {
+					m.editingOnly = true
+					m.onlyInput.Focus()
+					return m, textinput.Blink
+				}
+
 			case "enter":
+				if m.wizardStep == 3 && (m.editingTags || m.editingOnly) {
+					m.editingTags = false
+					m.editingOnly = false
+					m.tagsInput.Blur()
+					m.onlyInput.Blur()
+					return m, nil
+				}
+
 				if !m.workspaceFound {
 					m.toast = "Workspace not found"
 					return m, nil
@@ -398,14 +510,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.running = true
 					m.toast = ""
 
-					ch, cancel, listenCmd := startRunAsync(
-						m.workspaceRoot,
-						m.selectedCollectionPath,
-						m.selectedEnvName,
-						m.saveRun,
-						m.log,
-						m.deps.Debug,
-					)
+					ch, cancel, listenCmd := startRunAsync(runParams{
+						workspaceRoot:  m.workspaceRoot,
+						collectionPath: m.selectedCollectionPath,
+						envName:        m.selectedEnvName,
+						save:           m.saveRun,
+						runOpts: usecase.RunOpts{
+							FailFast: m.failFast,
+							DryRun:   m.dryRun,
+							Tags:     splitCSV(m.tagsInput.Value()),
+							Only:     splitCSV(m.onlyInput.Value()),
+							Retries:  m.retries,
+							Retry5xx: m.retry5xx,
+						},
+						wiringOpts: wiring.Opts{
+							Insecure:          m.insecure,
+							NoFollowRedirects: m.noRedirects,
+						},
+						log:   m.log,
+						debug: m.deps.Debug,
+					})
 					m.runCh = ch
 					m.runCancel = cancel
 
@@ -665,9 +789,43 @@ func (m model) viewRunWizard() string {
 		if !m.saveRun {
 			saveText = "no"
 		}
+
+		tagsVal := m.tagsInput.Value()
+		if tagsVal == "" {
+			tagsVal = "(none)"
+		}
+		if m.editingTags {
+			tagsVal = m.tagsInput.View()
+		}
+
+		onlyVal := m.onlyInput.Value()
+		if onlyVal == "" {
+			onlyVal = "(none)"
+		}
+		if m.editingOnly {
+			onlyVal = m.onlyInput.View()
+		}
+
+		opts := fmt.Sprintf(
+			"Options:\n"+
+				"  [f] Fail fast:     %s\n"+
+				"  [d] Dry run:       %s\n"+
+				"  [i] Insecure TLS:  %s\n"+
+				"  [r] No redirects:  %s\n"+
+				"  [5] Retry 5xx:     %s\n"+
+				"  [+/-] Retries:     %d\n"+
+				"  [t] Tags:          %s\n"+
+				"  [o] Only:          %s\n",
+			boolLabel(m.failFast), boolLabel(m.dryRun),
+			boolLabel(m.insecure), boolLabel(m.noRedirects),
+			boolLabel(m.retry5xx), m.retries,
+			tagsVal, onlyVal,
+		)
+
 		card := m.theme.Card.Render(
-			m.theme.Title.Render("Step 3/4 — Confirm") + "\n\n" +
+			m.theme.Title.Render("Step 3/4 — Confirm & Options") + "\n\n" +
 				fmt.Sprintf("Collection:\n  %s\n\nEnvironment:\n  %s\n\nSave artifact:\n  %s\n\n", m.selectedCollectionPath, m.selectedEnvName, saveText) +
+				opts + "\n" +
 				m.theme.Help.Render("enter run • s toggle save • esc/b back • q home"),
 		)
 		return card
@@ -733,6 +891,28 @@ func (m model) selectedResult() *domain.RequestResult {
 		return nil
 	}
 	return &m.runResult.Results[i]
+}
+
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	var out []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func boolLabel(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
 }
 
 var _ tea.Model = (*model)(nil)
