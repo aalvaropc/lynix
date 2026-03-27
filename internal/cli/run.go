@@ -31,6 +31,7 @@ func runCmd() *cobra.Command {
 	var retry5xx bool
 	var insecure bool
 	var noRedirects bool
+	var dryRun bool
 
 	c := &cobra.Command{
 		Use:   "run",
@@ -59,7 +60,7 @@ func runCmd() *cobra.Command {
 			}
 
 			var store = ws.store
-			if noSave {
+			if noSave || dryRun {
 				store = nil
 			}
 
@@ -71,6 +72,7 @@ func runCmd() *cobra.Command {
 				Retries:    ws.cfg.Run.Retries,
 				RetryDelay: ws.cfg.Run.RetryDelay,
 				Retry5xx:   ws.cfg.Run.Retry5xx,
+				DryRun:     dryRun,
 			}
 			if cmd.Flags().Changed("retries") {
 				retryOpts.Retries = retries
@@ -86,8 +88,16 @@ func runCmd() *cobra.Command {
 
 			run, runID, err := uc.Execute(cmd.Context(), collectionPath, envArg)
 			if err != nil {
-				_ = printRun(os.Stdout, run, runID, format)
+				if dryRun {
+					_ = printDryRun(os.Stdout, run)
+				} else {
+					_ = printRun(os.Stdout, run, runID, format)
+				}
 				return err
+			}
+
+			if dryRun {
+				return printDryRun(os.Stdout, run)
 			}
 
 			if ws.cfg.Masking.MaskCLIOutput && ws.redactor != nil {
@@ -133,11 +143,75 @@ func runCmd() *cobra.Command {
 	c.Flags().BoolVar(&retry5xx, "retry-5xx", false, "Retry on HTTP 5xx responses")
 	c.Flags().BoolVar(&insecure, "insecure", false, "Skip TLS certificate verification")
 	c.Flags().BoolVar(&noRedirects, "no-redirects", false, "Do not follow HTTP redirects")
+	c.Flags().BoolVar(&dryRun, "dry-run", false, "Resolve variables and show requests without executing")
 
 	if err := c.MarkFlagRequired("collection"); err != nil {
 		panic(fmt.Sprintf("MarkFlagRequired: %v", err))
 	}
 	return c
+}
+
+func printDryRun(w io.Writer, run domain.RunResult) error {
+	fmt.Fprintf(w, "Collection: %s\n", run.CollectionName)
+	fmt.Fprintf(w, "Env:        %s\n", run.EnvironmentName)
+	fmt.Fprintln(w)
+
+	for _, r := range run.Results {
+		fmt.Fprintf(w, "--- %s ---\n", r.Name)
+
+		if r.Error != nil {
+			fmt.Fprintf(w, "  error: %s\n\n", r.Error.Message)
+			continue
+		}
+
+		fmt.Fprintf(w, "%s %s\n", r.Method, r.ResolvedURL)
+
+		if len(r.RequestHeaders) > 0 {
+			fmt.Fprintln(w, "Headers:")
+			keys := make([]string, 0, len(r.RequestHeaders))
+			for k := range r.RequestHeaders {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				fmt.Fprintf(w, "  %s: %s\n", k, r.RequestHeaders[k])
+			}
+		}
+
+		if len(r.RequestBody) > 0 {
+			fmt.Fprintln(w, "Body:")
+			// Pretty-print JSON if possible.
+			var buf json.RawMessage
+			if json.Unmarshal(r.RequestBody, &buf) == nil {
+				var pretty []byte
+				if p, err := json.MarshalIndent(buf, "  ", "  "); err == nil {
+					pretty = p
+				} else {
+					pretty = r.RequestBody
+				}
+				fmt.Fprintf(w, "  %s\n", pretty)
+			} else {
+				fmt.Fprintf(w, "  %s\n", r.RequestBody)
+			}
+		}
+
+		fmt.Fprintln(w)
+	}
+
+	resolved := 0
+	for _, r := range run.Results {
+		if r.Error == nil {
+			resolved++
+		}
+	}
+	fmt.Fprintln(w, "───────────────────────────────────")
+	fmt.Fprintf(w, "Dry run: %d request(s) resolved", resolved)
+	if errs := len(run.Results) - resolved; errs > 0 {
+		fmt.Fprintf(w, ", %d error(s)", errs)
+	}
+	fmt.Fprintln(w)
+
+	return nil
 }
 
 func printRun(w io.Writer, run domain.RunResult, runID string, format string) error {
