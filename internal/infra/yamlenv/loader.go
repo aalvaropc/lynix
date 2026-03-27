@@ -45,7 +45,12 @@ var _ ports.EnvironmentLoader = (*Loader)(nil)
 var _ ports.EnvironmentCatalog = (*Loader)(nil)
 
 // LoadEnvironment accepts either an env name (e.g., "dev") or a full path to a YAML file.
+// An empty string returns an empty environment (standalone mode).
 func (l *Loader) LoadEnvironment(nameOrPath string) (domain.Environment, error) {
+	if strings.TrimSpace(nameOrPath) == "" {
+		return domain.Environment{Name: "(none)"}, nil
+	}
+
 	var envPath string
 	var envName string
 
