@@ -98,3 +98,28 @@ func TestLoadEnvironment_SupportsYML(t *testing.T) {
 		t.Fatalf("expected base_url, got=%s", env.Vars["base_url"])
 	}
 }
+
+func TestLoadEnvironment_EmptyName_ReturnsEmptyEnv(t *testing.T) {
+	l := NewLoader(t.TempDir())
+	env, err := l.LoadEnvironment("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if env.Name != "(none)" {
+		t.Errorf("expected name=(none), got=%q", env.Name)
+	}
+	if len(env.Vars) != 0 {
+		t.Errorf("expected empty vars, got=%v", env.Vars)
+	}
+}
+
+func TestLoadEnvironment_WhitespaceOnly_ReturnsEmptyEnv(t *testing.T) {
+	l := NewLoader(t.TempDir())
+	env, err := l.LoadEnvironment("   ")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if env.Name != "(none)" {
+		t.Errorf("expected name=(none), got=%q", env.Name)
+	}
+}

@@ -15,8 +15,9 @@ import (
 )
 
 type workspaceCtx struct {
-	root string
-	cfg  domain.Config
+	root       string
+	cfg        domain.Config
+	standalone bool // true when running without a workspace
 
 	collections ports.CollectionLoader
 
@@ -53,6 +54,27 @@ func loadWorkspace(workspaceFlag string, opts wiring.Opts) (*workspaceCtx, error
 	}, nil
 }
 
+// loadStandalone creates a minimal context for running without a workspace.
+// Uses DefaultConfig, CWD for relative path resolution, and no artifact storage.
+func loadStandalone(opts wiring.Opts) (*workspaceCtx, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("get working directory: %w", err)
+	}
+
+	cfg := domain.DefaultConfig()
+	adapters := wiring.NewAdapters(cwd, cfg, false, opts)
+
+	return &workspaceCtx{
+		root:        cwd,
+		cfg:         cfg,
+		standalone:  true,
+		collections: adapters.Collections,
+		envs:        adapters.Envs,
+		runner:      adapters.Runner,
+	}, nil
+}
+
 func resolveWorkspaceRoot(workspaceFlag string) (string, error) {
 	w := strings.TrimSpace(workspaceFlag)
 	if w != "" {
@@ -82,8 +104,8 @@ func resolveCollectionPath(ws *workspaceCtx, arg string) (string, error) {
 		return "", fmt.Errorf("collection is required (use --collection or -c)")
 	}
 
-	// If arg looks like a path (contains separators), resolve relative to workspace root.
-	if looksLikePath(in) {
+	// If arg looks like a path (contains separators) or has YAML extension, resolve from CWD/root.
+	if looksLikePath(in) || hasYAMLExt(in) {
 		p := in
 		if !filepath.IsAbs(p) {
 			p = filepath.Join(ws.root, p)
@@ -91,17 +113,14 @@ func resolveCollectionPath(ws *workspaceCtx, arg string) (string, error) {
 		return filepath.Clean(p), nil
 	}
 
-	collectionsDir := filepath.Join(ws.root, ws.cfg.Paths.CollectionsDir)
-
-	// If user provided "demo.yaml", treat it as file under collections dir.
-	if hasYAMLExt(in) {
-		p := filepath.Join(collectionsDir, in)
-		if fileExists(p) {
-			return p, nil
-		}
+	// Bare name resolution requires a workspace.
+	if ws.standalone {
+		return "", fmt.Errorf("collection %q: bare names require a workspace (use a file path or run `lynix init`)", in)
 	}
 
-	// If user provided "demo", try demo.yaml / demo.yml in collections dir.
+	collectionsDir := filepath.Join(ws.root, ws.cfg.Paths.CollectionsDir)
+
+	// Try name.yaml / name.yml in collections dir.
 	p1 := filepath.Join(collectionsDir, in+".yaml")
 	if fileExists(p1) {
 		return p1, nil
@@ -111,7 +130,7 @@ func resolveCollectionPath(ws *workspaceCtx, arg string) (string, error) {
 		return p2, nil
 	}
 
-	// As a last resort: match by collection "name" field.
+	// Match by collection "name" field.
 	refs, err := ws.collections.ListCollections(ws.root)
 	if err == nil {
 		for _, r := range refs {
@@ -127,10 +146,13 @@ func resolveCollectionPath(ws *workspaceCtx, arg string) (string, error) {
 func resolveEnvironmentArg(ws *workspaceCtx, arg string) (string, error) {
 	in := strings.TrimSpace(arg)
 	if in == "" {
+		if ws.standalone {
+			return "", nil // empty env in standalone mode
+		}
 		return ws.cfg.Defaults.Environment, nil
 	}
 
-	// If arg is a path, resolve relative to workspace root.
+	// If arg is a path, resolve relative to root.
 	if looksLikePath(in) {
 		p := in
 		if !filepath.IsAbs(p) {
