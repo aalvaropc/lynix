@@ -40,3 +40,31 @@ func TestCompileDomain(t *testing.T) {
 		t.Fatalf("expected status %d", status)
 	}
 }
+
+func TestValidateJSONBody_Object(t *testing.T) {
+	err := ValidateJSONBody(map[string]any{"key": "val"})
+	if err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+func TestValidateJSONBody_Array(t *testing.T) {
+	err := ValidateJSONBody([]any{1, 2, 3})
+	if err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+func TestValidateJSONBody_Nil(t *testing.T) {
+	err := ValidateJSONBody(nil)
+	if err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+}
+
+func TestValidateJSONBody_InvalidType(t *testing.T) {
+	err := ValidateJSONBody("just a string")
+	if err == nil {
+		t.Fatal("expected error for string body")
+	}
+}

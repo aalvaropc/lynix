@@ -178,11 +178,38 @@ func TestResolveBodySpec_BodyJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got.JSON["user"] != "alice" {
-		t.Fatalf("expected user=alice, got %v", got.JSON["user"])
+	jsonMap := got.JSON.(map[string]any)
+	if jsonMap["user"] != "alice" {
+		t.Fatalf("expected user=alice, got %v", jsonMap["user"])
 	}
-	if got.JSON["count"] != 42.0 {
-		t.Fatalf("expected count=42.0, got %v", got.JSON["count"])
+	if jsonMap["count"] != 42.0 {
+		t.Fatalf("expected count=42.0, got %v", jsonMap["count"])
+	}
+}
+
+func TestResolveBodySpec_BodyJSON_Array(t *testing.T) {
+	rt := testRuntime(t, Vars{"host": "example.com"}, nil, nil)
+	b := BodySpec{
+		Type: BodyJSON,
+		JSON: []any{
+			map[string]any{"url": "{{host}}/a"},
+			map[string]any{"url": "{{host}}/b"},
+		},
+	}
+	got, err := rt.ResolveBodySpec(b)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	arr, ok := got.JSON.([]any)
+	if !ok {
+		t.Fatal("expected []any after resolution")
+	}
+	if len(arr) != 2 {
+		t.Fatalf("expected 2 elements, got %d", len(arr))
+	}
+	first := arr[0].(map[string]any)
+	if first["url"] != "example.com/a" {
+		t.Errorf("expected example.com/a, got %v", first["url"])
 	}
 }
 

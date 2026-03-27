@@ -375,8 +375,8 @@ func TestParse_POSTWithJSON(t *testing.T) {
 	if req.Body.Type != domain.BodyJSON {
 		t.Errorf("body type: got %q, want json", req.Body.Type)
 	}
-	if req.Body.JSON["name"] != "test" {
-		t.Errorf("body json[name]: got %v", req.Body.JSON["name"])
+	if req.Body.JSON.(map[string]any)["name"] != "test" {
+		t.Errorf("body json[name]: got %v", req.Body.JSON.(map[string]any)["name"])
 	}
 	if req.Headers["Content-Type"] != "application/json" {
 		t.Errorf("content-type: got %q", req.Headers["Content-Type"])
@@ -706,7 +706,8 @@ func TestParse_JSONBodyWithNestedObjects(t *testing.T) {
 	if req.Body.Type != domain.BodyJSON {
 		t.Errorf("body type: got %q", req.Body.Type)
 	}
-	userMap, ok := req.Body.JSON["user"].(map[string]any)
+	jsonMap := req.Body.JSON.(map[string]any)
+	userMap, ok := jsonMap["user"].(map[string]any)
 	if !ok {
 		t.Fatal("expected nested user object")
 	}
@@ -715,15 +716,48 @@ func TestParse_JSONBodyWithNestedObjects(t *testing.T) {
 	}
 }
 
-func TestParse_JSONArrayBody_TreatedAsRaw(t *testing.T) {
-	// Top-level JSON array can't be unmarshaled to map[string]any → fallback to raw
+func TestParse_JSONArrayBody(t *testing.T) {
 	input := `curl -d '[1,2,3]' https://api.example.com/data`
 	r, err := Parse(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Collection.Requests[0].Body.Type != domain.BodyRaw {
-		t.Errorf("expected raw body for JSON array, got %q", r.Collection.Requests[0].Body.Type)
+	req := r.Collection.Requests[0]
+	if req.Body.Type != domain.BodyJSON {
+		t.Errorf("expected json body for JSON array, got %q", req.Body.Type)
+	}
+	arr, ok := req.Body.JSON.([]any)
+	if !ok {
+		t.Fatal("expected []any body")
+	}
+	if len(arr) != 3 {
+		t.Errorf("expected 3 elements, got %d", len(arr))
+	}
+}
+
+func TestParse_JSONArrayOfObjects(t *testing.T) {
+	input := `curl -d '[{"id":1},{"id":2}]' -H 'Content-Type: application/json' https://api.example.com/batch`
+	r, err := Parse(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := r.Collection.Requests[0]
+	if req.Body.Type != domain.BodyJSON {
+		t.Errorf("body type: got %q, want json", req.Body.Type)
+	}
+	arr, ok := req.Body.JSON.([]any)
+	if !ok {
+		t.Fatal("expected []any body")
+	}
+	if len(arr) != 2 {
+		t.Errorf("expected 2 elements, got %d", len(arr))
+	}
+	first, ok := arr[0].(map[string]any)
+	if !ok {
+		t.Fatal("expected first element to be object")
+	}
+	if first["id"] != 1.0 {
+		t.Errorf("first.id: got %v", first["id"])
 	}
 }
 
@@ -1224,7 +1258,7 @@ func TestParse_MultipleDataFlags_LastWins(t *testing.T) {
 	if req.Body.Type != domain.BodyJSON {
 		t.Fatalf("body type: got %q", req.Body.Type)
 	}
-	if _, ok := req.Body.JSON["second"]; !ok {
+	if _, ok := req.Body.JSON.(map[string]any)["second"]; !ok {
 		t.Error("expected last -d value to win")
 	}
 }
