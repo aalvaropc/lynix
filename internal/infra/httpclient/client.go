@@ -1,6 +1,9 @@
 package httpclient
 
 import (
+	"context"
+	"crypto/tls"
+	"errors"
 	"net"
 	"net/http"
 	"time"
@@ -21,6 +24,12 @@ type Config struct {
 
 	MaxIdleConns        int
 	MaxIdleConnsPerHost int
+
+	// Insecure skips TLS certificate verification (for self-signed certs).
+	Insecure bool
+
+	// NoFollowRedirects disables HTTP redirect following globally.
+	NoFollowRedirects bool
 }
 
 func DefaultConfig() Config {
@@ -35,6 +44,22 @@ func DefaultConfig() Config {
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 20,
 	}
+}
+
+// contextKey is an unexported type for context keys in this package.
+type contextKey struct{ name string }
+
+var noRedirectKey = &contextKey{"no-redirect"}
+
+// ContextWithNoRedirect returns a context that instructs the HTTP client
+// to not follow redirects for the request using this context.
+func ContextWithNoRedirect(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noRedirectKey, true)
+}
+
+func noRedirectFromContext(ctx context.Context) bool {
+	v, _ := ctx.Value(noRedirectKey).(bool)
+	return v
 }
 
 func New(cfg Config) *http.Client {
@@ -58,8 +83,22 @@ func New(cfg Config) *http.Client {
 		ExpectContinueTimeout: cfg.ExpectContinue,
 	}
 
+	if cfg.Insecure {
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // user-requested via --insecure
+	}
+
+	noFollow := cfg.NoFollowRedirects
 	return &http.Client{
 		Transport: tr,
 		Timeout:   cfg.Timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if noFollow || noRedirectFromContext(req.Context()) {
+				return http.ErrUseLastResponse
+			}
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
+			return nil
+		},
 	}
 }
