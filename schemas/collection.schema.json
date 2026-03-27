@@ -76,6 +76,10 @@
           "minimum": 1,
           "description": "Per-request timeout in milliseconds. Overrides the global HTTP client timeout."
         },
+        "follow_redirects": {
+          "type": "boolean",
+          "description": "Whether to follow HTTP redirects. Default true. Set false to stop at the redirect response."
+        },
         "assert": { "$ref": "#/$defs/assertions" },
         "extract": {
           "type": "object",

@@ -18,6 +18,7 @@ type RunConfig struct {
 	Retries    int
 	RetryDelay time.Duration
 	Retry5xx   bool
+	Insecure   bool // skip TLS certificate verification
 }
 
 // RedactionScope controls which surface a redaction rule applies to.

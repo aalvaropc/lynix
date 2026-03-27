@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/aalvaropc/lynix/internal/infra/wiring"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +25,7 @@ func envsListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List environments",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			ws, err := loadWorkspace(workspace)
+			ws, err := loadWorkspace(workspace, wiring.Opts{})
 			if err != nil {
 				return err
 			}

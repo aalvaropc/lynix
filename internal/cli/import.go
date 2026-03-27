@@ -76,6 +76,9 @@ func importCurlCmd() *cobra.Command {
 			for _, w := range result.Warnings {
 				fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 			}
+			if result.Insecure {
+				fmt.Fprintln(os.Stderr, "note: -k/--insecure detected; use `lynix run --insecure` when targeting self-signed certs")
+			}
 
 			return nil
 		},

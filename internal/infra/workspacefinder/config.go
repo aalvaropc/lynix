@@ -115,6 +115,9 @@ func LoadConfig(root string) (domain.Config, error) {
 	if y.Lynix.Run.Retry5xx != nil {
 		cfg.Run.Retry5xx = *y.Lynix.Run.Retry5xx
 	}
+	if y.Lynix.Run.Insecure != nil {
+		cfg.Run.Insecure = *y.Lynix.Run.Insecure
+	}
 
 	return cfg, nil
 }
@@ -159,6 +162,7 @@ type yamlConfig struct {
 			Retries        *int  `yaml:"retries"`
 			RetryDelayMS   *int  `yaml:"retry_delay_ms"`
 			Retry5xx       *bool `yaml:"retry_5xx"`
+			Insecure       *bool `yaml:"insecure"`
 		} `yaml:"run"`
 	} `yaml:"lynix"`
 }

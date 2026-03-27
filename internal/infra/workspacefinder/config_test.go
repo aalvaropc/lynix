@@ -269,3 +269,53 @@ func TestLoadConfig_RetrySettings(t *testing.T) {
 		t.Fatal("expected retry_5xx=true")
 	}
 }
+
+func TestLoadConfig_InsecureSetting(t *testing.T) {
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "ws")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	content := []byte(`lynix:
+  run:
+    insecure: true
+`)
+	if err := os.WriteFile(filepath.Join(root, "lynix.yaml"), content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cfg, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if !cfg.Run.Insecure {
+		t.Fatal("expected insecure=true")
+	}
+}
+
+func TestLoadConfig_InsecureDefault_False(t *testing.T) {
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "ws")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	content := []byte(`lynix:
+  run:
+    timeout_seconds: 60
+`)
+	if err := os.WriteFile(filepath.Join(root, "lynix.yaml"), content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cfg, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if cfg.Run.Insecure {
+		t.Fatal("expected insecure=false by default")
+	}
+}

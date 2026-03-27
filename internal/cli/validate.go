@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"github.com/aalvaropc/lynix/internal/infra/wiring"
 	"github.com/aalvaropc/lynix/internal/usecase"
 	"github.com/spf13/cobra"
 )
@@ -16,7 +17,7 @@ func validateCmd() *cobra.Command {
 		Use:   "validate",
 		Short: "Validate a collection and environment (no HTTP)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			ws, err := loadWorkspace(workspace)
+			ws, err := loadWorkspace(workspace, wiring.Opts{})
 			if err != nil {
 				return err
 			}

@@ -21,9 +21,16 @@ type Adapters struct {
 	Config      domain.Config
 }
 
+// Opts carries runtime flags that affect adapter construction
+// but are not part of the persisted workspace config.
+type Opts struct {
+	Insecure          bool // skip TLS certificate verification
+	NoFollowRedirects bool // disable HTTP redirect following globally
+}
+
 // NewAdapters creates all adapters for a workspace root and config.
 // If enableStore is false, Store will be nil.
-func NewAdapters(root string, cfg domain.Config, enableStore bool) Adapters {
+func NewAdapters(root string, cfg domain.Config, enableStore bool, opts Opts) Adapters {
 	colLoader := yamlcollection.NewLoader(
 		yamlcollection.WithCollectionsDir(cfg.Paths.CollectionsDir),
 	)
@@ -33,7 +40,10 @@ func NewAdapters(root string, cfg domain.Config, enableStore bool) Adapters {
 		yamlenv.WithEnvDir(cfg.Paths.EnvironmentsDir),
 	)
 
-	client := httpclient.New(httpclient.DefaultConfig())
+	hcfg := httpclient.DefaultConfig()
+	hcfg.Insecure = cfg.Run.Insecure || opts.Insecure
+	hcfg.NoFollowRedirects = opts.NoFollowRedirects
+	client := httpclient.New(hcfg)
 	runner := httprunner.New(client)
 
 	redactor := redaction.New(cfg.Masking)
