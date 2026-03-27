@@ -287,12 +287,59 @@ func TestMarshalCollection_JSONBody_NestedObjects(t *testing.T) {
 	if loaded.Requests[0].Body.Type != domain.BodyJSON {
 		t.Errorf("body type: got %q", loaded.Requests[0].Body.Type)
 	}
-	userMap, ok := loaded.Requests[0].Body.JSON["user"].(map[string]any)
+	userMap, ok := loaded.Requests[0].Body.JSON.(map[string]any)["user"].(map[string]any)
 	if !ok {
 		t.Fatal("expected nested user object")
 	}
 	if userMap["name"] != "alice" {
 		t.Errorf("user.name: got %v", userMap["name"])
+	}
+}
+
+func TestMarshalCollection_JSONArrayBody_RoundTrip(t *testing.T) {
+	col := domain.Collection{
+		Name: "array-body",
+		Requests: []domain.RequestSpec{
+			{
+				Name:   "batch",
+				Method: domain.MethodPost,
+				URL:    "https://example.com/batch",
+				Body: domain.BodySpec{
+					Type: domain.BodyJSON,
+					JSON: []any{
+						map[string]any{"id": 1, "action": "create"},
+						map[string]any{"id": 2, "action": "update"},
+					},
+				},
+			},
+		},
+	}
+
+	b, err := MarshalCollection(col)
+	if err != nil {
+		t.Fatalf("MarshalCollection failed: %v", err)
+	}
+
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "array.yaml")
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := NewLoader()
+	loaded, err := loader.LoadCollection(path)
+	if err != nil {
+		t.Fatalf("LoadCollection: %v\nYAML:\n%s", err, string(b))
+	}
+	if loaded.Requests[0].Body.Type != domain.BodyJSON {
+		t.Errorf("body type: got %q", loaded.Requests[0].Body.Type)
+	}
+	arr, ok := loaded.Requests[0].Body.JSON.([]any)
+	if !ok {
+		t.Fatal("expected []any body after round-trip")
+	}
+	if len(arr) != 2 {
+		t.Errorf("expected 2 elements, got %d", len(arr))
 	}
 }
 

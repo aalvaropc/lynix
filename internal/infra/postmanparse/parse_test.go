@@ -185,8 +185,8 @@ func TestParse_MultipleRequestsWithHeaders(t *testing.T) {
 	if r.Collection.Requests[1].Body.Type != domain.BodyJSON {
 		t.Errorf("r1 body type: got %q, want json", r.Collection.Requests[1].Body.Type)
 	}
-	if r.Collection.Requests[1].Body.JSON["name"] != "test" {
-		t.Errorf("r1 body json[name]: got %v", r.Collection.Requests[1].Body.JSON["name"])
+	if r.Collection.Requests[1].Body.JSON.(map[string]any)["name"] != "test" {
+		t.Errorf("r1 body json[name]: got %v", r.Collection.Requests[1].Body.JSON.(map[string]any)["name"])
 	}
 }
 
@@ -427,8 +427,8 @@ func TestParse_RawBodyJSON(t *testing.T) {
 	if req.Body.Type != domain.BodyJSON {
 		t.Errorf("body type: got %q", req.Body.Type)
 	}
-	if req.Body.JSON["name"] != "test" {
-		t.Errorf("json[name]: got %v", req.Body.JSON["name"])
+	if req.Body.JSON.(map[string]any)["name"] != "test" {
+		t.Errorf("json[name]: got %v", req.Body.JSON.(map[string]any)["name"])
 	}
 }
 
@@ -461,6 +461,42 @@ func TestParse_RawBodyJSON_InvalidJSON_FallbackToRaw(t *testing.T) {
 	}
 	if req.Body.Raw != "not valid json {" {
 		t.Errorf("raw: got %q", req.Body.Raw)
+	}
+}
+
+func TestParse_RawBodyJSON_Array(t *testing.T) {
+	input := `{
+		"info": {"name": "ArrayBody", "schema": ""},
+		"item": [
+			{
+				"name": "Batch",
+				"request": {
+					"method": "POST",
+					"url": "https://e.com/batch",
+					"body": {
+						"mode": "raw",
+						"raw": "[{\"id\":1},{\"id\":2}]",
+						"options": {"raw": {"language": "json"}}
+					}
+				}
+			}
+		]
+	}`
+
+	r, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := r.Collection.Requests[0]
+	if req.Body.Type != domain.BodyJSON {
+		t.Errorf("body type: got %q, want json", req.Body.Type)
+	}
+	arr, ok := req.Body.JSON.([]any)
+	if !ok {
+		t.Fatal("expected []any body")
+	}
+	if len(arr) != 2 {
+		t.Errorf("expected 2 elements, got %d", len(arr))
 	}
 }
 

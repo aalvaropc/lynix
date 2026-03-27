@@ -123,7 +123,7 @@ type yamlRequest struct {
 	URL     string            `yaml:"url"`
 	Headers map[string]string `yaml:"headers"`
 
-	JSON      map[string]any    `yaml:"json"`
+	JSON      any               `yaml:"json"`
 	Form      map[string]string `yaml:"form"`
 	Raw       string            `yaml:"raw"`
 	DelayMS   *int              `yaml:"delay_ms"`
@@ -252,6 +252,9 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 
 		req.Body = domain.BodySpec{Type: domain.BodyNone}
 		if r.JSON != nil {
+			if err := domain.ValidateJSONBody(r.JSON); err != nil {
+				return domain.Collection{}, invalidField(path, fieldPrefix+".json", err.Error())
+			}
 			req.Body = domain.BodySpec{Type: domain.BodyJSON, JSON: r.JSON}
 		} else if r.Form != nil {
 			req.Body = domain.BodySpec{Type: domain.BodyForm, Form: r.Form}

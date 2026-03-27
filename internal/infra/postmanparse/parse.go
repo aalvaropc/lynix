@@ -124,9 +124,14 @@ func mapRequest(item PostmanItem, prefix string) (domain.RequestSpec, []string) 
 				isJSON = true
 			}
 			if isJSON {
-				var jsonBody map[string]any
+				var jsonBody any
 				if err := json.Unmarshal([]byte(pr.Body.Raw), &jsonBody); err == nil {
-					body = domain.BodySpec{Type: domain.BodyJSON, JSON: jsonBody}
+					switch jsonBody.(type) {
+					case map[string]any, []any:
+						body = domain.BodySpec{Type: domain.BodyJSON, JSON: jsonBody}
+					default:
+						body = domain.BodySpec{Type: domain.BodyRaw, Raw: pr.Body.Raw}
+					}
 				} else {
 					body = domain.BodySpec{Type: domain.BodyRaw, Raw: pr.Body.Raw}
 				}

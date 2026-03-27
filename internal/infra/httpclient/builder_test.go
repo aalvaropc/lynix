@@ -48,6 +48,31 @@ func TestBuildRequestJSON(t *testing.T) {
 	}, "/json", assert)
 }
 
+func TestBuildRequestJSON_Array(t *testing.T) {
+	payload := []any{map[string]any{"id": 1}, map[string]any{"id": 2}}
+	assert := func(r *http.Request, body []byte) {
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Fatalf("expected content-type json, got %s", ct)
+		}
+		var decoded []any
+		if err := json.Unmarshal(body, &decoded); err != nil {
+			t.Fatalf("expected valid json array body: %v", err)
+		}
+		if len(decoded) != 2 {
+			t.Fatalf("expected 2 elements, got %d", len(decoded))
+		}
+	}
+
+	runRequest(t, domain.RequestSpec{
+		Method: domain.MethodPost,
+		URL:    "",
+		Body: domain.BodySpec{
+			Type: domain.BodyJSON,
+			JSON: payload,
+		},
+	}, "/batch", assert)
+}
+
 func TestBuildRequestForm(t *testing.T) {
 	assert := func(r *http.Request, body []byte) {
 		if ct := r.Header.Get("Content-Type"); ct != "application/x-www-form-urlencoded" {

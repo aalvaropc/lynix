@@ -197,9 +197,14 @@ func Parse(input string) (Result, error) {
 	// Build body.
 	var body domain.BodySpec
 	if hasBody && bodyData != "" {
-		var jsonBody map[string]any
+		var jsonBody any
 		if err := json.Unmarshal([]byte(bodyData), &jsonBody); err == nil {
-			body = domain.BodySpec{Type: domain.BodyJSON, JSON: jsonBody}
+			switch jsonBody.(type) {
+			case map[string]any, []any:
+				body = domain.BodySpec{Type: domain.BodyJSON, JSON: jsonBody}
+			default:
+				body = domain.BodySpec{Type: domain.BodyRaw, Raw: bodyData}
+			}
 		} else {
 			body = domain.BodySpec{Type: domain.BodyRaw, Raw: bodyData}
 		}

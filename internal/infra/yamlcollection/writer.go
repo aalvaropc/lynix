@@ -17,7 +17,7 @@ type writeRequest struct {
 	Method    string            `yaml:"method"`
 	URL       string            `yaml:"url"`
 	Headers   map[string]string `yaml:"headers,omitempty"`
-	JSON      map[string]any    `yaml:"json,omitempty"`
+	JSON      any               `yaml:"json,omitempty"`
 	Form      map[string]string `yaml:"form,omitempty"`
 	Raw       string            `yaml:"raw,omitempty"`
 	DelayMS   *int              `yaml:"delay_ms,omitempty"`
