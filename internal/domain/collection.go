@@ -37,7 +37,7 @@ type Headers map[string]string
 // Only one of JSON/Form/Raw is typically used depending on Type.
 type BodySpec struct {
 	Type BodyType
-	JSON map[string]any
+	JSON any
 	Form map[string]string
 	Raw  string
 }
@@ -67,6 +67,22 @@ func (b BodySpec) Validate() error {
 		}
 	}
 	return nil
+}
+
+// ValidateJSONBody checks that v is a valid JSON body: object or array.
+func ValidateJSONBody(v any) error {
+	if v == nil {
+		return nil
+	}
+	switch v.(type) {
+	case map[string]any, []any:
+		return nil
+	default:
+		return &Error{
+			Kind: KindInvalidConfig,
+			Msg:  "json body must be an object or array",
+		}
+	}
 }
 
 // ValueAssertion defines a value-based check (used for JSONPath and header assertions).

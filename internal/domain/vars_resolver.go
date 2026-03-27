@@ -181,16 +181,7 @@ func (rr *RuntimeResolver) ResolveBodySpec(b BodySpec) (BodySpec, error) {
 		if err != nil {
 			return BodySpec{}, err
 		}
-		m, ok := clone.(map[string]any)
-		if !ok {
-			// Should never happen given input type, but guard anyway.
-			return BodySpec{}, &OpError{
-				Op:   "vars.resolve.json",
-				Kind: KindInvalidConfig,
-				Err:  errors.New("json body must be an object"),
-			}
-		}
-		out.JSON = m
+		out.JSON = clone
 		return out, nil
 
 	case BodyForm:
