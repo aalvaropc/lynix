@@ -75,6 +75,7 @@ type PathsConfig struct {
 type ArtifactsConfig struct {
 	SaveResponseHeaders bool
 	SaveResponseBody    bool
+	MaxRuns             int // 0 = unlimited; when set, oldest runs are pruned after each save
 }
 
 // DefaultConfig provides sane defaults if lynix.yaml is partially missing.

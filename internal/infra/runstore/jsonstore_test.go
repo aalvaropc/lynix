@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -384,5 +385,123 @@ func TestSaveRun_UsesUniqueFilenameOnCollision(t *testing.T) {
 	}
 	if id2 != id1+"_2" {
 		t.Fatalf("expected second id %q, got %q", id1+"_2", id2)
+	}
+}
+
+func TestSaveRun_RotatesOldestWhenMaxRunsExceeded(t *testing.T) {
+	tmp := t.TempDir()
+
+	cfg := domain.DefaultConfig()
+	cfg.Paths.RunsDir = "runs"
+	cfg.Masking.Enabled = false
+	cfg.Artifacts.MaxRuns = 2
+
+	callNum := 0
+	store := NewJSONStore(tmp, cfg, WithIndex(true), WithNow(func() time.Time {
+		callNum++
+		return time.Date(2026, 1, 1, 0, 0, callNum, 0, time.UTC)
+	}))
+
+	makeRun := func(name string) domain.RunArtifact {
+		return domain.RunArtifact{
+			CollectionName: name,
+			StartedAt:      time.Time{},
+			Results:        []domain.RequestResult{},
+		}
+	}
+
+	id1, _ := store.SaveRun(makeRun("first"))
+	id2, _ := store.SaveRun(makeRun("second"))
+	id3, _ := store.SaveRun(makeRun("third"))
+
+	runsDir := filepath.Join(tmp, "runs")
+
+	// First run should have been rotated out.
+	if _, err := os.Stat(filepath.Join(runsDir, id1+".json")); !os.IsNotExist(err) {
+		t.Errorf("expected first run %q to be deleted", id1)
+	}
+
+	// Second and third should survive.
+	if _, err := os.Stat(filepath.Join(runsDir, id2+".json")); err != nil {
+		t.Errorf("expected second run %q to exist: %v", id2, err)
+	}
+	if _, err := os.Stat(filepath.Join(runsDir, id3+".json")); err != nil {
+		t.Errorf("expected third run %q to exist: %v", id3, err)
+	}
+}
+
+func TestSaveRun_RotatePrunesIndex(t *testing.T) {
+	tmp := t.TempDir()
+
+	cfg := domain.DefaultConfig()
+	cfg.Paths.RunsDir = "runs"
+	cfg.Masking.Enabled = false
+	cfg.Artifacts.MaxRuns = 1
+
+	callNum := 0
+	store := NewJSONStore(tmp, cfg, WithIndex(true), WithNow(func() time.Time {
+		callNum++
+		return time.Date(2026, 1, 1, 0, 0, callNum, 0, time.UTC)
+	}))
+
+	makeRun := func(name string) domain.RunArtifact {
+		return domain.RunArtifact{
+			CollectionName: name,
+			Results:        []domain.RequestResult{},
+		}
+	}
+
+	store.SaveRun(makeRun("old"))
+	store.SaveRun(makeRun("new"))
+
+	indexPath := filepath.Join(tmp, "runs", "index.jsonl")
+	b, err := os.ReadFile(indexPath)
+	if err != nil {
+		t.Fatalf("read index: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(lines) != 1 {
+		t.Errorf("expected 1 index line after rotation, got %d: %v", len(lines), lines)
+	}
+	if !strings.Contains(lines[0], "new") {
+		t.Errorf("expected index to contain 'new', got: %s", lines[0])
+	}
+}
+
+func TestSaveRun_MaxRunsZero_NoRotation(t *testing.T) {
+	tmp := t.TempDir()
+
+	cfg := domain.DefaultConfig()
+	cfg.Paths.RunsDir = "runs"
+	cfg.Masking.Enabled = false
+	// MaxRuns defaults to 0 (unlimited).
+
+	callNum := 0
+	store := NewJSONStore(tmp, cfg, WithNow(func() time.Time {
+		callNum++
+		return time.Date(2026, 1, 1, 0, 0, callNum, 0, time.UTC)
+	}))
+
+	makeRun := func(name string) domain.RunArtifact {
+		return domain.RunArtifact{
+			CollectionName: name,
+			Results:        []domain.RequestResult{},
+		}
+	}
+
+	store.SaveRun(makeRun("a"))
+	store.SaveRun(makeRun("b"))
+	store.SaveRun(makeRun("c"))
+
+	entries, _ := os.ReadDir(filepath.Join(tmp, "runs"))
+	count := 0
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".json") {
+			count++
+		}
+	}
+	if count != 3 {
+		t.Errorf("expected 3 files with unlimited rotation, got %d", count)
 	}
 }

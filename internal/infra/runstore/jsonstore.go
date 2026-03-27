@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -35,6 +36,7 @@ type JSONStore struct {
 	saveHeaders    bool
 	saveBody       bool
 	writeIndex     bool
+	maxRuns        int // 0 = unlimited
 	redacter       Redacter
 	now            func() time.Time
 	log            *slog.Logger
@@ -75,6 +77,7 @@ func NewJSONStore(root string, cfg domain.Config, opts ...Option) *JSONStore {
 		failOnSecret:   cfg.Masking.FailOnDetectedSecret,
 		saveHeaders:    cfg.Artifacts.SaveResponseHeaders,
 		saveBody:       cfg.Artifacts.SaveResponseBody,
+		maxRuns:        cfg.Artifacts.MaxRuns,
 		writeIndex:     false,
 		now:            time.Now,
 		log:            slog.New(slog.NewJSONHandler(io.Discard, nil)),
@@ -185,6 +188,12 @@ func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
 		}
 	}
 
+	if s.maxRuns > 0 {
+		if err := s.rotate(dir); err != nil {
+			s.log.Error("runstore.rotate.failed", "err", err, "path", dir)
+		}
+	}
+
 	return id, nil
 }
 
@@ -265,6 +274,73 @@ func (s *JSONStore) appendIndex(dir, id, filename string, run domain.RunArtifact
 		return err
 	}
 	return nil
+}
+
+// rotate removes the oldest run artifacts when the count exceeds maxRuns.
+// Files are sorted lexicographically (timestamp-prefixed → chronological order).
+// The index.jsonl is rewritten to match the surviving files.
+func (s *JSONStore) rotate(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+
+	var jsonFiles []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+			jsonFiles = append(jsonFiles, e.Name())
+		}
+	}
+
+	if len(jsonFiles) <= s.maxRuns {
+		return nil
+	}
+
+	sort.Strings(jsonFiles) // timestamp prefix → oldest first
+
+	toDelete := jsonFiles[:len(jsonFiles)-s.maxRuns]
+	deleteSet := make(map[string]bool, len(toDelete))
+	for _, f := range toDelete {
+		deleteSet[f] = true
+		if err := os.Remove(filepath.Join(dir, f)); err != nil && !os.IsNotExist(err) {
+			s.log.Error("runstore.rotate.remove", "file", f, "err", err)
+		}
+	}
+
+	if s.writeIndex {
+		s.pruneIndex(dir, deleteSet)
+	}
+
+	return nil
+}
+
+// pruneIndex rewrites index.jsonl to remove entries for deleted files.
+func (s *JSONStore) pruneIndex(dir string, deleted map[string]bool) {
+	indexPath := filepath.Join(dir, "index.jsonl")
+	b, err := os.ReadFile(indexPath)
+	if err != nil {
+		return // no index to prune
+	}
+
+	var kept [][]byte
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if line == "" {
+			continue
+		}
+		var entry struct {
+			File string `json:"file"`
+		}
+		if json.Unmarshal([]byte(line), &entry) == nil && !deleted[entry.File] {
+			kept = append(kept, []byte(line))
+		}
+	}
+
+	var out []byte
+	for _, line := range kept {
+		out = append(out, line...)
+		out = append(out, '\n')
+	}
+	_ = os.WriteFile(indexPath, out, 0o600)
 }
 
 // maskArtifact returns a masked copy (does NOT mutate the input).
