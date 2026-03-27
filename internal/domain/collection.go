@@ -125,6 +125,10 @@ type AssertionsSpec struct {
 // Map: variableName -> jsonpathExpression
 type ExtractSpec map[string]string
 
+// ExtractHeaderSpec defines variable extraction from response headers.
+// Map: variableName -> headerName
+type ExtractHeaderSpec map[string]string
+
 // RequestSpec describes a single API request and its validation/extraction rules.
 type RequestSpec struct {
 	Name    string
@@ -138,8 +142,9 @@ type RequestSpec struct {
 	TimeoutMS       *int  // per-request timeout in ms (nil = use global client timeout)
 	FollowRedirects *bool // nil = follow (Go default), false = stop at redirect
 
-	Assert  AssertionsSpec
-	Extract ExtractSpec
+	Assert         AssertionsSpec
+	Extract        ExtractSpec
+	ExtractHeaders ExtractHeaderSpec
 }
 
 // Collection groups multiple requests under one logical unit (Git-friendly).

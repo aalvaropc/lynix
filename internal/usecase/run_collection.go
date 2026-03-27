@@ -144,11 +144,17 @@ func (uc *RunCollection) Execute(
 		rr.Assertions = ucassert.Evaluate(req.Assert, rr.StatusCode, rr.LatencyMS, rr.Response.Body, schemaCache[i], rr.Response.Headers)
 
 		extracted, extractResults := ucextract.Apply(rr.Response.Body, req.Extract)
-		rr.Extracts = extractResults
+		headerExtracted, headerExtractResults := ucextract.ApplyHeaders(rr.Response.Headers, req.ExtractHeaders)
+		rr.Extracts = append(extractResults, headerExtractResults...)
 		rr.Extracted = extracted
 
+		// Merge header-extracted vars into extracted map.
+		for k, v := range headerExtracted {
+			rr.Extracted[k] = v
+		}
+
 		// Update runtime vars for next request (even if extract had failures, extracted map may be partial).
-		for k, v := range extracted {
+		for k, v := range rr.Extracted {
 			vars[k] = v
 		}
 

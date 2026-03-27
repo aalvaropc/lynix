@@ -95,6 +95,65 @@ func Apply(body []byte, rules domain.ExtractSpec) (domain.Vars, []domain.Extract
 	return extracted, results
 }
 
+// ApplyHeaders extracts variables from response headers.
+// rules: map[varName]headerName
+func ApplyHeaders(headers map[string][]string, rules domain.ExtractHeaderSpec) (domain.Vars, []domain.ExtractResult) {
+	if len(rules) == 0 {
+		return domain.Vars{}, []domain.ExtractResult{}
+	}
+
+	keys := make([]string, 0, len(rules))
+	for k := range rules {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	extracted := domain.Vars{}
+	results := make([]domain.ExtractResult, 0, len(keys))
+
+	for _, name := range keys {
+		headerName := strings.TrimSpace(rules[name])
+		if headerName == "" {
+			results = append(results, domain.ExtractResult{
+				Name:    name,
+				Success: false,
+				Message: fmt.Sprintf("extract_header %q: empty header name", name),
+			})
+			continue
+		}
+
+		val := lookupHeader(headers, headerName)
+		if val == "" {
+			results = append(results, domain.ExtractResult{
+				Name:    name,
+				Success: false,
+				Message: fmt.Sprintf("extract_header %q (%s): header not found or empty", name, headerName),
+			})
+			continue
+		}
+
+		extracted[name] = val
+		results = append(results, domain.ExtractResult{
+			Name:    name,
+			Success: true,
+			Message: fmt.Sprintf("extracted %q from header %s", name, headerName),
+		})
+	}
+
+	return extracted, results
+}
+
+// lookupHeader finds a header value case-insensitively, returning the first value.
+func lookupHeader(headers map[string][]string, name string) string {
+	lower := strings.ToLower(name)
+	for k, vals := range headers {
+		if strings.ToLower(k) == lower && len(vals) > 0 {
+			return vals[0]
+		}
+	}
+	return ""
+}
+
 func parseJSON(body []byte) (any, error) {
 	var doc any
 	if err := json.Unmarshal(body, &doc); err != nil {
