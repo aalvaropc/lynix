@@ -41,12 +41,19 @@ func runCmd() *cobra.Command {
 				return err
 			}
 
-			ws, err := loadWorkspace(workspace, wiring.Opts{
+			wiringOpts := wiring.Opts{
 				Insecure:          insecure,
 				NoFollowRedirects: noRedirects,
-			})
+			}
+			ws, err := loadWorkspace(workspace, wiringOpts)
 			if err != nil {
-				return err
+				if cmd.Flags().Changed("workspace") {
+					return err
+				}
+				ws, err = loadStandalone(wiringOpts)
+				if err != nil {
+					return err
+				}
 			}
 
 			collectionPath, err := resolveCollectionPath(ws, collection)
