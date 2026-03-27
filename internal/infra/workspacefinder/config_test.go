@@ -319,3 +319,53 @@ func TestLoadConfig_InsecureDefault_False(t *testing.T) {
 		t.Fatal("expected insecure=false by default")
 	}
 }
+
+func TestLoadConfig_MaxRuns(t *testing.T) {
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "ws")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	content := []byte(`lynix:
+  artifacts:
+    max_runs: 50
+`)
+	if err := os.WriteFile(filepath.Join(root, "lynix.yaml"), content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cfg, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if cfg.Artifacts.MaxRuns != 50 {
+		t.Fatalf("expected max_runs=50, got=%d", cfg.Artifacts.MaxRuns)
+	}
+}
+
+func TestLoadConfig_MaxRunsDefault_Zero(t *testing.T) {
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "ws")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	content := []byte(`lynix:
+  artifacts:
+    save_response_body: true
+`)
+	if err := os.WriteFile(filepath.Join(root, "lynix.yaml"), content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cfg, err := LoadConfig(root)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if cfg.Artifacts.MaxRuns != 0 {
+		t.Fatalf("expected max_runs=0 (unlimited) by default, got=%d", cfg.Artifacts.MaxRuns)
+	}
+}

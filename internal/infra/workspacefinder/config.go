@@ -103,6 +103,9 @@ func LoadConfig(root string) (domain.Config, error) {
 	if y.Lynix.Artifacts.SaveResponseBody != nil {
 		cfg.Artifacts.SaveResponseBody = *y.Lynix.Artifacts.SaveResponseBody
 	}
+	if y.Lynix.Artifacts.MaxRuns != nil && *y.Lynix.Artifacts.MaxRuns > 0 {
+		cfg.Artifacts.MaxRuns = *y.Lynix.Artifacts.MaxRuns
+	}
 	if y.Lynix.Run.TimeoutSeconds > 0 {
 		cfg.Run.Timeout = time.Duration(y.Lynix.Run.TimeoutSeconds) * time.Second
 	}
@@ -155,6 +158,7 @@ type yamlConfig struct {
 		Artifacts struct {
 			SaveResponseHeaders *bool `yaml:"save_response_headers"`
 			SaveResponseBody    *bool `yaml:"save_response_body"`
+			MaxRuns             *int  `yaml:"max_runs"`
 		} `yaml:"artifacts"`
 
 		Run struct {
