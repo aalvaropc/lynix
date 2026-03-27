@@ -131,6 +131,7 @@ type yamlRequest struct {
 	FollowRedirects *bool             `yaml:"follow_redirects"`
 	Assert          yamlAssertions    `yaml:"assert"`
 	Extract         map[string]string `yaml:"extract"`
+	ExtractHeaders  map[string]string `yaml:"extract_headers"`
 	Tags            []string          `yaml:"tags"`
 }
 
@@ -219,7 +220,8 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 				Schema:       schemaPtr,
 				SchemaInline: r.Assert.SchemaInline,
 			},
-			Extract: domain.ExtractSpec(r.Extract),
+			Extract:        domain.ExtractSpec(r.Extract),
+			ExtractHeaders: domain.ExtractHeaderSpec(r.ExtractHeaders),
 		}
 
 		if req.Headers == nil {
@@ -233,6 +235,9 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 		}
 		if req.Extract == nil {
 			req.Extract = domain.ExtractSpec{}
+		}
+		if req.ExtractHeaders == nil {
+			req.ExtractHeaders = domain.ExtractHeaderSpec{}
 		}
 
 		// Body selection — reject multiple body types.

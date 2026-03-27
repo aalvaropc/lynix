@@ -26,6 +26,7 @@ type writeRequest struct {
 	Tags            []string          `yaml:"tags,omitempty"`
 	Assert          *writeAssertions  `yaml:"assert,omitempty"`
 	Extract         map[string]string `yaml:"extract,omitempty"`
+	ExtractHeaders  map[string]string `yaml:"extract_headers,omitempty"`
 }
 
 type writeAssertions struct {
@@ -95,6 +96,9 @@ func MarshalCollection(col domain.Collection) ([]byte, error) {
 
 		if len(r.Extract) > 0 {
 			wr.Extract = map[string]string(r.Extract)
+		}
+		if len(r.ExtractHeaders) > 0 {
+			wr.ExtractHeaders = map[string]string(r.ExtractHeaders)
 		}
 
 		wc.Requests = append(wc.Requests, wr)

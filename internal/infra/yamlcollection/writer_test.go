@@ -394,6 +394,51 @@ func TestMarshalCollection_FollowRedirects_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestMarshalCollection_ExtractHeaders_RoundTrip(t *testing.T) {
+	col := domain.Collection{
+		Name: "header-extract",
+		Requests: []domain.RequestSpec{
+			{
+				Name:   "login",
+				Method: domain.MethodPost,
+				URL:    "https://example.com/login",
+				ExtractHeaders: domain.ExtractHeaderSpec{
+					"session": "Set-Cookie",
+					"req_id":  "X-Request-Id",
+				},
+			},
+		},
+	}
+
+	b, err := MarshalCollection(col)
+	if err != nil {
+		t.Fatalf("MarshalCollection failed: %v", err)
+	}
+
+	if !strings.Contains(string(b), "extract_headers:") {
+		t.Errorf("expected extract_headers in YAML, got:\n%s", string(b))
+	}
+
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "extract.yaml")
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := NewLoader()
+	loaded, err := loader.LoadCollection(path)
+	if err != nil {
+		t.Fatalf("LoadCollection: %v\nYAML:\n%s", err, string(b))
+	}
+
+	if loaded.Requests[0].ExtractHeaders["session"] != "Set-Cookie" {
+		t.Errorf("expected session=Set-Cookie, got %q", loaded.Requests[0].ExtractHeaders["session"])
+	}
+	if loaded.Requests[0].ExtractHeaders["req_id"] != "X-Request-Id" {
+		t.Errorf("expected req_id=X-Request-Id, got %q", loaded.Requests[0].ExtractHeaders["req_id"])
+	}
+}
+
 func TestMarshalCollection_BodyNone_NoBodyKeysInYAML(t *testing.T) {
 	col := domain.Collection{
 		Name: "no-body",
