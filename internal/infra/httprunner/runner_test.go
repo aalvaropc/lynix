@@ -63,6 +63,68 @@ func TestRunner_TruncatesBody(t *testing.T) {
 	}
 }
 
+func TestRunner_FollowRedirects_Nil_FollowsByDefault(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/redirect" {
+			http.Redirect(w, r, "/target", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := httpclient.New(httpclient.DefaultConfig())
+	r := New(c)
+
+	req := domain.RequestSpec{
+		Name:    "follow",
+		Method:  domain.MethodGet,
+		URL:     srv.URL + "/redirect",
+		Body:    domain.BodySpec{Type: domain.BodyNone},
+		Headers: domain.Headers{},
+	}
+
+	res, err := r.Run(context.Background(), req, domain.Vars{})
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 (followed redirect), got %d", res.StatusCode)
+	}
+}
+
+func TestRunner_FollowRedirects_False_StopsAtRedirect(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/redirect" {
+			http.Redirect(w, r, "/target", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := httpclient.New(httpclient.DefaultConfig())
+	r := New(c)
+
+	noFollow := false
+	req := domain.RequestSpec{
+		Name:            "no-follow",
+		Method:          domain.MethodGet,
+		URL:             srv.URL + "/redirect",
+		Body:            domain.BodySpec{Type: domain.BodyNone},
+		Headers:         domain.Headers{},
+		FollowRedirects: &noFollow,
+	}
+
+	res, err := r.Run(context.Background(), req, domain.Vars{})
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if res.StatusCode != http.StatusFound {
+		t.Errorf("expected 302 (stopped at redirect), got %d", res.StatusCode)
+	}
+}
+
 func TestRunner_ClassifiesTimeout(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(200 * time.Millisecond)

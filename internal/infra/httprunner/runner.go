@@ -87,6 +87,11 @@ func (r *Runner) Run(ctx context.Context, req domain.RequestSpec, vars domain.Va
 		defer cancel()
 	}
 
+	// Per-request redirect control via context key.
+	if req.FollowRedirects != nil && !*req.FollowRedirects {
+		ctx = httpclient.ContextWithNoRedirect(ctx)
+	}
+
 	httpReq, err := httpclient.BuildRequest(ctx, resolved)
 	if err != nil {
 		return domain.RequestResult{}, err
