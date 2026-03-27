@@ -7,6 +7,8 @@ import (
 	"os"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/aalvaropc/lynix/internal/domain"
 	"github.com/aalvaropc/lynix/internal/infra/httprunner"
 	"github.com/aalvaropc/lynix/internal/ports"
@@ -23,6 +25,7 @@ type RunOpts struct {
 	RetryDelay time.Duration
 	Retry5xx   bool
 	DryRun     bool
+	Parallel   bool
 }
 
 type RunCollection struct {
@@ -37,6 +40,7 @@ type RunCollection struct {
 	retryDelay  time.Duration
 	retry5xx    bool
 	dryRun      bool
+	parallel    bool
 }
 
 func NewRunCollection(
@@ -58,6 +62,7 @@ func NewRunCollection(
 		retryDelay:  opts.RetryDelay,
 		retry5xx:    opts.Retry5xx,
 		dryRun:      opts.DryRun,
+		parallel:    opts.Parallel,
 	}
 }
 
@@ -104,6 +109,24 @@ func (uc *RunCollection) Execute(
 		EnvironmentName: env.Name,
 		StartedAt:       time.Now(),
 		Results:         make([]domain.RequestResult, 0, len(col.Requests)),
+	}
+
+	if uc.parallel && !uc.dryRun {
+		if err := uc.executeParallel(ctx, col.Requests, vars, schemaCache, &run); err != nil {
+			run.EndedAt = time.Now()
+			return run, "", err
+		}
+		run.EndedAt = time.Now()
+
+		// Persist artifact (optional; skip in dry-run mode).
+		if uc.store == nil || uc.dryRun {
+			return run, "", nil
+		}
+		id, err := uc.store.SaveRun(run)
+		if err != nil {
+			return run, "", err
+		}
+		return run, id, nil
 	}
 
 	for i, req := range col.Requests {
@@ -341,6 +364,117 @@ func (uc *RunCollection) resolveOnly(vars domain.Vars, req domain.RequestSpec) (
 		Extracted:      domain.Vars{},
 		Response:       domain.ResponseSnapshot{Headers: map[string][]string{}},
 	}, nil
+}
+
+// executeParallel runs requests grouped by dependency levels.
+// Independent requests within each level run concurrently.
+func (uc *RunCollection) executeParallel(
+	ctx context.Context,
+	requests []domain.RequestSpec,
+	vars domain.Vars,
+	schemaCache map[int][]byte,
+	run *domain.RunResult,
+) error {
+	graph := domain.BuildDepGraph(requests, vars)
+	results := make([]domain.RequestResult, len(requests))
+
+	for _, level := range graph.Levels {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		// Snapshot vars for this level — goroutines only read from this.
+		levelVars := cloneVars(vars)
+
+		var g *errgroup.Group
+		var gctx context.Context
+		if uc.failFast {
+			g, gctx = errgroup.WithContext(ctx)
+		} else {
+			g, gctx = errgroup.WithContext(ctx)
+		}
+
+		for _, idx := range level {
+			idx := idx // capture for goroutine
+			req := requests[idx]
+
+			g.Go(func() error {
+				if req.DelayMS != nil && *req.DelayMS > 0 {
+					select {
+					case <-gctx.Done():
+						return gctx.Err()
+					case <-time.After(time.Duration(*req.DelayMS) * time.Millisecond):
+					}
+				}
+
+				rr, runErr := uc.runWithRetries(gctx, req, levelVars)
+				if runErr != nil {
+					results[idx] = domain.RequestResult{
+						Name:           req.Name,
+						Method:         req.Method,
+						URL:            req.URL,
+						RequestHeaders: map[string]string{},
+						Assertions:     []domain.AssertionResult{},
+						Extracts:       []domain.ExtractResult{},
+						Extracted:      domain.Vars{},
+						Response:       domain.ResponseSnapshot{Headers: map[string][]string{}},
+						Error:          domain.NewRunError(runErr),
+						Attempts:       1,
+					}
+					if uc.failFast {
+						return fmt.Errorf("request %q failed: %w", req.Name, runErr)
+					}
+					return nil
+				}
+
+				rr.Assertions = ucassert.Evaluate(req.Assert, rr.StatusCode, rr.LatencyMS, rr.Response.Body, schemaCache[idx], rr.Response.Headers)
+
+				extracted, extractResults := ucextract.Apply(rr.Response.Body, req.Extract)
+				headerExtracted, headerExtractResults := ucextract.ApplyHeaders(rr.Response.Headers, req.ExtractHeaders)
+				rr.Extracts = append(extractResults, headerExtractResults...)
+				rr.Extracted = extracted
+				for k, v := range headerExtracted {
+					rr.Extracted[k] = v
+				}
+
+				results[idx] = rr
+
+				if uc.failFast && rr.Failed() {
+					return fmt.Errorf("request %q failed assertions", req.Name)
+				}
+				return nil
+			})
+		}
+
+		if err := g.Wait(); err != nil && uc.failFast {
+			// Merge what we have and stop.
+			break
+		}
+
+		// Single-threaded merge of extracted vars for the next level.
+		for _, idx := range level {
+			for k, v := range results[idx].Extracted {
+				vars[k] = v
+			}
+		}
+	}
+
+	// Copy results in original order, skipping zero-value entries.
+	for i := range results {
+		if results[i].Name != "" {
+			run.Results = append(run.Results, results[i])
+		}
+	}
+
+	return nil
+}
+
+func cloneVars(v domain.Vars) domain.Vars {
+	out := make(domain.Vars, len(v))
+	for k, val := range v {
+		out[k] = val
+	}
+	return out
 }
 
 func copyHeaders(h domain.Headers) map[string]string {
