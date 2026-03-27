@@ -123,14 +123,15 @@ type yamlRequest struct {
 	URL     string            `yaml:"url"`
 	Headers map[string]string `yaml:"headers"`
 
-	JSON      any               `yaml:"json"`
-	Form      map[string]string `yaml:"form"`
-	Raw       string            `yaml:"raw"`
-	DelayMS   *int              `yaml:"delay_ms"`
-	TimeoutMS *int              `yaml:"timeout_ms"`
-	Assert    yamlAssertions    `yaml:"assert"`
-	Extract   map[string]string `yaml:"extract"`
-	Tags      []string          `yaml:"tags"`
+	JSON            any               `yaml:"json"`
+	Form            map[string]string `yaml:"form"`
+	Raw             string            `yaml:"raw"`
+	DelayMS         *int              `yaml:"delay_ms"`
+	TimeoutMS       *int              `yaml:"timeout_ms"`
+	FollowRedirects *bool             `yaml:"follow_redirects"`
+	Assert          yamlAssertions    `yaml:"assert"`
+	Extract         map[string]string `yaml:"extract"`
+	Tags            []string          `yaml:"tags"`
 }
 
 type yamlAssertions struct {
@@ -274,6 +275,7 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 			return domain.Collection{}, invalidField(path, fieldPrefix+".timeout_ms", "must be > 0")
 		}
 		req.TimeoutMS = r.TimeoutMS
+		req.FollowRedirects = r.FollowRedirects
 
 		col.Requests = append(col.Requests, req)
 	}

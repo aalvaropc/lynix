@@ -343,6 +343,57 @@ func TestMarshalCollection_JSONArrayBody_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestMarshalCollection_FollowRedirects_RoundTrip(t *testing.T) {
+	noFollow := false
+	col := domain.Collection{
+		Name: "redirect-test",
+		Requests: []domain.RequestSpec{
+			{
+				Name:            "check-redirect",
+				Method:          domain.MethodGet,
+				URL:             "https://example.com/old",
+				FollowRedirects: &noFollow,
+			},
+			{
+				Name:   "normal",
+				Method: domain.MethodGet,
+				URL:    "https://example.com/new",
+			},
+		},
+	}
+
+	b, err := MarshalCollection(col)
+	if err != nil {
+		t.Fatalf("MarshalCollection failed: %v", err)
+	}
+
+	if !strings.Contains(string(b), "follow_redirects: false") {
+		t.Errorf("expected follow_redirects: false in YAML, got:\n%s", string(b))
+	}
+
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "redirect.yaml")
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := NewLoader()
+	loaded, err := loader.LoadCollection(path)
+	if err != nil {
+		t.Fatalf("LoadCollection: %v\nYAML:\n%s", err, string(b))
+	}
+
+	// First request: follow_redirects = false
+	if loaded.Requests[0].FollowRedirects == nil || *loaded.Requests[0].FollowRedirects {
+		t.Error("expected FollowRedirects=false after round-trip")
+	}
+
+	// Second request: follow_redirects = nil (omitted)
+	if loaded.Requests[1].FollowRedirects != nil {
+		t.Errorf("expected FollowRedirects=nil for request without the field, got %v", *loaded.Requests[1].FollowRedirects)
+	}
+}
+
 func TestMarshalCollection_BodyNone_NoBodyKeysInYAML(t *testing.T) {
 	col := domain.Collection{
 		Name: "no-body",

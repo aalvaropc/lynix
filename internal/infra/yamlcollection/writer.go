@@ -13,18 +13,19 @@ type writeCollection struct {
 }
 
 type writeRequest struct {
-	Name      string            `yaml:"name"`
-	Method    string            `yaml:"method"`
-	URL       string            `yaml:"url"`
-	Headers   map[string]string `yaml:"headers,omitempty"`
-	JSON      any               `yaml:"json,omitempty"`
-	Form      map[string]string `yaml:"form,omitempty"`
-	Raw       string            `yaml:"raw,omitempty"`
-	DelayMS   *int              `yaml:"delay_ms,omitempty"`
-	TimeoutMS *int              `yaml:"timeout_ms,omitempty"`
-	Tags      []string          `yaml:"tags,omitempty"`
-	Assert    *writeAssertions  `yaml:"assert,omitempty"`
-	Extract   map[string]string `yaml:"extract,omitempty"`
+	Name            string            `yaml:"name"`
+	Method          string            `yaml:"method"`
+	URL             string            `yaml:"url"`
+	Headers         map[string]string `yaml:"headers,omitempty"`
+	JSON            any               `yaml:"json,omitempty"`
+	Form            map[string]string `yaml:"form,omitempty"`
+	Raw             string            `yaml:"raw,omitempty"`
+	DelayMS         *int              `yaml:"delay_ms,omitempty"`
+	TimeoutMS       *int              `yaml:"timeout_ms,omitempty"`
+	FollowRedirects *bool             `yaml:"follow_redirects,omitempty"`
+	Tags            []string          `yaml:"tags,omitempty"`
+	Assert          *writeAssertions  `yaml:"assert,omitempty"`
+	Extract         map[string]string `yaml:"extract,omitempty"`
 }
 
 type writeAssertions struct {
@@ -66,6 +67,7 @@ func MarshalCollection(col domain.Collection) ([]byte, error) {
 
 		wr.DelayMS = r.DelayMS
 		wr.TimeoutMS = r.TimeoutMS
+		wr.FollowRedirects = r.FollowRedirects
 
 		if len(r.Tags) > 0 {
 			wr.Tags = r.Tags
