@@ -172,6 +172,120 @@ func TestApply_MixedResults_StableOrder(t *testing.T) {
 	}
 }
 
+// --- ApplyHeaders tests ---
+
+func TestApplyHeaders_EmptyRules(t *testing.T) {
+	vars, results := ApplyHeaders(map[string][]string{"X-Test": {"val"}}, domain.ExtractHeaderSpec{})
+	if len(vars) != 0 || len(results) != 0 {
+		t.Fatalf("expected empty, got vars=%v results=%v", vars, results)
+	}
+}
+
+func TestApplyHeaders_Success(t *testing.T) {
+	headers := map[string][]string{
+		"X-Request-Id":          {"abc-123"},
+		"Content-Type":          {"application/json"},
+		"X-Ratelimit-Remaining": {"42"},
+	}
+	rules := domain.ExtractHeaderSpec{
+		"req_id":     "X-Request-Id",
+		"rate_limit": "X-Ratelimit-Remaining",
+	}
+
+	vars, results := ApplyHeaders(headers, rules)
+	if vars["req_id"] != "abc-123" {
+		t.Errorf("expected req_id=abc-123, got %q", vars["req_id"])
+	}
+	if vars["rate_limit"] != "42" {
+		t.Errorf("expected rate_limit=42, got %q", vars["rate_limit"])
+	}
+	for _, r := range results {
+		if !r.Success {
+			t.Errorf("expected all success, got fail: %+v", r)
+		}
+	}
+}
+
+func TestApplyHeaders_CaseInsensitive(t *testing.T) {
+	headers := map[string][]string{
+		"Content-Type": {"text/html"},
+	}
+	rules := domain.ExtractHeaderSpec{
+		"ct": "content-type",
+	}
+
+	vars, results := ApplyHeaders(headers, rules)
+	if vars["ct"] != "text/html" {
+		t.Errorf("expected ct=text/html, got %q", vars["ct"])
+	}
+	if !results[0].Success {
+		t.Errorf("expected success, got: %s", results[0].Message)
+	}
+}
+
+func TestApplyHeaders_MissingHeader(t *testing.T) {
+	headers := map[string][]string{
+		"Content-Type": {"application/json"},
+	}
+	rules := domain.ExtractHeaderSpec{
+		"token": "X-Auth-Token",
+	}
+
+	vars, results := ApplyHeaders(headers, rules)
+	if len(vars) != 0 {
+		t.Errorf("expected no vars, got %v", vars)
+	}
+	if results[0].Success {
+		t.Error("expected failure for missing header")
+	}
+}
+
+func TestApplyHeaders_EmptyHeaderName(t *testing.T) {
+	headers := map[string][]string{"X-Test": {"val"}}
+	rules := domain.ExtractHeaderSpec{"token": ""}
+
+	_, results := ApplyHeaders(headers, rules)
+	if results[0].Success {
+		t.Error("expected failure for empty header name")
+	}
+}
+
+func TestApplyHeaders_MultipleValues_TakesFirst(t *testing.T) {
+	headers := map[string][]string{
+		"Set-Cookie": {"session=abc; Path=/", "lang=en; Path=/"},
+	}
+	rules := domain.ExtractHeaderSpec{
+		"cookie": "Set-Cookie",
+	}
+
+	vars, results := ApplyHeaders(headers, rules)
+	if vars["cookie"] != "session=abc; Path=/" {
+		t.Errorf("expected first cookie value, got %q", vars["cookie"])
+	}
+	if !results[0].Success {
+		t.Errorf("expected success: %s", results[0].Message)
+	}
+}
+
+func TestApplyHeaders_StableOrder(t *testing.T) {
+	headers := map[string][]string{
+		"X-A": {"1"},
+		"X-B": {"2"},
+	}
+	rules := domain.ExtractHeaderSpec{
+		"bbb": "X-B",
+		"aaa": "X-A",
+	}
+
+	_, results := ApplyHeaders(headers, rules)
+	if results[0].Name != "aaa" {
+		t.Errorf("expected sorted order, got %q first", results[0].Name)
+	}
+	if results[1].Name != "bbb" {
+		t.Errorf("expected sorted order, got %q second", results[1].Name)
+	}
+}
+
 func TestApply_SingleElementArrayUnwrapped(t *testing.T) {
 	// jsonpath returns a slice for index access; single-element arrays are unwrapped.
 	vars, results := Apply([]byte(`{"items":["single"]}`), domain.ExtractSpec{"item": "$.items[0]"})
