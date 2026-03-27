@@ -134,8 +134,9 @@ type RequestSpec struct {
 	Body    BodySpec
 	Tags    []string
 
-	DelayMS   *int // delay in ms before executing this request (nil = no delay)
-	TimeoutMS *int // per-request timeout in ms (nil = use global client timeout)
+	DelayMS         *int  // delay in ms before executing this request (nil = no delay)
+	TimeoutMS       *int  // per-request timeout in ms (nil = use global client timeout)
+	FollowRedirects *bool // nil = follow (Go default), false = stop at redirect
 
 	Assert  AssertionsSpec
 	Extract ExtractSpec
