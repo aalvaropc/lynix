@@ -85,6 +85,11 @@
           "type": "object",
           "additionalProperties": { "type": "string" },
           "description": "Variable extraction: name -> JSONPath expression."
+        },
+        "extract_headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Variable extraction from response headers: name -> header name."
         }
       }
     },
