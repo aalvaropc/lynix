@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/infra/wiring"
 	"github.com/aalvaropc/lynix/internal/usecase"
 	"github.com/spf13/cobra"
 )
@@ -28,6 +29,8 @@ func runCmd() *cobra.Command {
 	var retries int
 	var retryDelayMS int
 	var retry5xx bool
+	var insecure bool
+	var noRedirects bool
 
 	c := &cobra.Command{
 		Use:   "run",
@@ -37,7 +40,10 @@ func runCmd() *cobra.Command {
 				return err
 			}
 
-			ws, err := loadWorkspace(workspace)
+			ws, err := loadWorkspace(workspace, wiring.Opts{
+				Insecure:          insecure,
+				NoFollowRedirects: noRedirects,
+			})
 			if err != nil {
 				return err
 			}
@@ -125,6 +131,8 @@ func runCmd() *cobra.Command {
 	c.Flags().IntVar(&retries, "retries", 0, "Number of retries for transient errors (default 0)")
 	c.Flags().IntVar(&retryDelayMS, "retry-delay", 0, "Delay between retries in milliseconds (default 0)")
 	c.Flags().BoolVar(&retry5xx, "retry-5xx", false, "Retry on HTTP 5xx responses")
+	c.Flags().BoolVar(&insecure, "insecure", false, "Skip TLS certificate verification")
+	c.Flags().BoolVar(&noRedirects, "no-redirects", false, "Do not follow HTTP redirects")
 
 	if err := c.MarkFlagRequired("collection"); err != nil {
 		panic(fmt.Sprintf("MarkFlagRequired: %v", err))

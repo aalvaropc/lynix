@@ -28,7 +28,7 @@ type workspaceCtx struct {
 	redactor *redaction.Redactor
 }
 
-func loadWorkspace(workspaceFlag string) (*workspaceCtx, error) {
+func loadWorkspace(workspaceFlag string, opts wiring.Opts) (*workspaceCtx, error) {
 	root, err := resolveWorkspaceRoot(workspaceFlag)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func loadWorkspace(workspaceFlag string) (*workspaceCtx, error) {
 		return nil, err
 	}
 
-	adapters := wiring.NewAdapters(root, cfg, true)
+	adapters := wiring.NewAdapters(root, cfg, true, opts)
 
 	return &workspaceCtx{
 		root:        root,
