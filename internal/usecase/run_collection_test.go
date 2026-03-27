@@ -991,6 +991,197 @@ func TestRunCollection_Execute_Retry_ZeroRetries_SingleAttempt(t *testing.T) {
 
 func ptrInt(v int) *int { return &v }
 
+// --- Dry-run tests ---
+
+func TestDryRun_ResolvesVariables(t *testing.T) {
+	col := domain.Collection{
+		Name: "dry",
+		Vars: domain.Vars{"base_url": "https://api.test"},
+		Requests: []domain.RequestSpec{
+			{
+				Name:   "get-user",
+				Method: domain.MethodGet,
+				URL:    "{{base_url}}/users/1",
+				Headers: domain.Headers{
+					"Authorization": "Bearer {{token}}",
+				},
+				Body: domain.BodySpec{Type: domain.BodyNone},
+			},
+		},
+	}
+	env := domain.Environment{
+		Name: "dev",
+		Vars: domain.Vars{"token": "xyz"},
+	}
+
+	runner := &stubRunner{}
+	uc := NewRunCollection(
+		fakeCollectionLoader{col: col},
+		fakeEnvLoader{env: env},
+		runner,
+		nil,
+		RunOpts{DryRun: true},
+	)
+
+	run, id, err := uc.Execute(context.Background(), "col.yaml", "dev")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "" {
+		t.Errorf("expected empty run ID in dry-run, got %q", id)
+	}
+	if len(run.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(run.Results))
+	}
+	rr := run.Results[0]
+	if rr.ResolvedURL != "https://api.test/users/1" {
+		t.Errorf("ResolvedURL: got %q", rr.ResolvedURL)
+	}
+	if rr.RequestHeaders["Authorization"] != "Bearer xyz" {
+		t.Errorf("Authorization header: got %q", rr.RequestHeaders["Authorization"])
+	}
+}
+
+func TestDryRun_SkipsExecution(t *testing.T) {
+	col := domain.Collection{
+		Name: "dry",
+		Requests: []domain.RequestSpec{
+			{Name: "r1", Method: domain.MethodGet, URL: "http://example.com"},
+			{Name: "r2", Method: domain.MethodPost, URL: "http://example.com"},
+		},
+	}
+
+	callCount := 0
+	runner := &stubRunner{}
+	// Wrap to count calls — if dry-run works, runner should never be called.
+	countingRunner := &countingRunnerStub{inner: runner}
+
+	uc := NewRunCollection(
+		fakeCollectionLoader{col: col},
+		fakeEnvLoader{},
+		countingRunner,
+		nil,
+		RunOpts{DryRun: true},
+	)
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_ = callCount
+	if countingRunner.calls != 0 {
+		t.Errorf("expected 0 runner calls in dry-run, got %d", countingRunner.calls)
+	}
+	if len(run.Results) != 2 {
+		t.Errorf("expected 2 results, got %d", len(run.Results))
+	}
+}
+
+func TestDryRun_SkipsAssertionsAndExtraction(t *testing.T) {
+	status := 200
+	col := domain.Collection{
+		Name: "dry",
+		Requests: []domain.RequestSpec{
+			{
+				Name:   "r1",
+				Method: domain.MethodGet,
+				URL:    "http://example.com",
+				Assert: domain.AssertionsSpec{Status: &status},
+				Extract: domain.ExtractSpec{
+					"token": "$.token",
+				},
+			},
+		},
+	}
+
+	uc := NewRunCollection(
+		fakeCollectionLoader{col: col},
+		fakeEnvLoader{},
+		&stubRunner{},
+		nil,
+		RunOpts{DryRun: true},
+	)
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rr := run.Results[0]
+	if len(rr.Assertions) != 0 {
+		t.Errorf("expected 0 assertions in dry-run, got %d", len(rr.Assertions))
+	}
+	if len(rr.Extracts) != 0 {
+		t.Errorf("expected 0 extracts in dry-run, got %d", len(rr.Extracts))
+	}
+}
+
+func TestDryRun_MissingVar_ReportsError(t *testing.T) {
+	col := domain.Collection{
+		Name: "dry",
+		Requests: []domain.RequestSpec{
+			{
+				Name:   "r1",
+				Method: domain.MethodGet,
+				URL:    "{{missing_var}}/path",
+			},
+		},
+	}
+
+	uc := NewRunCollection(
+		fakeCollectionLoader{col: col},
+		fakeEnvLoader{},
+		&stubRunner{},
+		nil,
+		RunOpts{DryRun: true},
+	)
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rr := run.Results[0]
+	if rr.Error == nil {
+		t.Fatal("expected error for missing variable")
+	}
+}
+
+func TestDryRun_DoesNotSaveArtifact(t *testing.T) {
+	col := domain.Collection{
+		Name: "dry",
+		Requests: []domain.RequestSpec{
+			{Name: "r1", Method: domain.MethodGet, URL: "http://example.com"},
+		},
+	}
+
+	store := &fakeStore{}
+	uc := NewRunCollection(
+		fakeCollectionLoader{col: col},
+		fakeEnvLoader{},
+		&stubRunner{},
+		store,
+		RunOpts{DryRun: true},
+	)
+
+	_, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if store.saved {
+		t.Error("expected no artifact saved in dry-run")
+	}
+}
+
+// countingRunnerStub wraps a runner and counts calls.
+type countingRunnerStub struct {
+	inner ports.RequestRunner
+	calls int
+}
+
+func (c *countingRunnerStub) Run(ctx context.Context, req domain.RequestSpec, vars domain.Vars) (domain.RequestResult, error) {
+	c.calls++
+	return c.inner.Run(ctx, req, vars)
+}
+
 // compile-time checks
 var _ ports.CollectionLoader = (*fakeCollectionLoader)(nil)
 var _ ports.EnvironmentLoader = (*fakeEnvLoader)(nil)

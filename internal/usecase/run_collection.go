@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/infra/httprunner"
 	"github.com/aalvaropc/lynix/internal/ports"
 	ucassert "github.com/aalvaropc/lynix/internal/usecase/assert"
 	ucextract "github.com/aalvaropc/lynix/internal/usecase/extract"
@@ -21,6 +22,7 @@ type RunOpts struct {
 	Retries    int
 	RetryDelay time.Duration
 	Retry5xx   bool
+	DryRun     bool
 }
 
 type RunCollection struct {
@@ -34,6 +36,7 @@ type RunCollection struct {
 	retries     int
 	retryDelay  time.Duration
 	retry5xx    bool
+	dryRun      bool
 }
 
 func NewRunCollection(
@@ -54,6 +57,7 @@ func NewRunCollection(
 		retries:     opts.Retries,
 		retryDelay:  opts.RetryDelay,
 		retry5xx:    opts.Retry5xx,
+		dryRun:      opts.DryRun,
 	}
 }
 
@@ -106,6 +110,15 @@ func (uc *RunCollection) Execute(
 		if err := ctx.Err(); err != nil {
 			run.EndedAt = time.Now()
 			return run, "", err
+		}
+
+		if uc.dryRun {
+			rr, resolveErr := uc.resolveOnly(vars, req)
+			if resolveErr != nil {
+				rr.Error = domain.NewRunError(resolveErr)
+			}
+			run.Results = append(run.Results, rr)
+			continue
 		}
 
 		if req.DelayMS != nil && *req.DelayMS > 0 {
@@ -171,8 +184,8 @@ func (uc *RunCollection) Execute(
 		return run, "", err
 	}
 
-	// Persist artifact (optional).
-	if uc.store == nil {
+	// Persist artifact (optional; skip in dry-run mode).
+	if uc.store == nil || uc.dryRun {
 		return run, "", nil
 	}
 
@@ -301,4 +314,42 @@ func loadSchemaBytes(spec domain.AssertionsSpec) ([]byte, error) {
 		return b, nil
 	}
 	return nil, nil
+}
+
+// resolveOnly resolves variables in a request without executing it (dry-run mode).
+func (uc *RunCollection) resolveOnly(vars domain.Vars, req domain.RequestSpec) (domain.RequestResult, error) {
+	resolver := domain.NewVarResolver()
+	rt, err := resolver.NewRuntime(vars)
+	if err != nil {
+		return domain.RequestResult{Name: req.Name, Method: req.Method, URL: req.URL}, err
+	}
+
+	resolved, err := rt.ResolveRequest(req)
+	if err != nil {
+		return domain.RequestResult{Name: req.Name, Method: req.Method, URL: req.URL}, err
+	}
+
+	return domain.RequestResult{
+		Name:           resolved.Name,
+		Method:         resolved.Method,
+		URL:            resolved.URL,
+		ResolvedURL:    resolved.URL,
+		RequestHeaders: copyHeaders(resolved.Headers),
+		RequestBody:    httprunner.SerializeBody(resolved.Body),
+		Assertions:     []domain.AssertionResult{},
+		Extracts:       []domain.ExtractResult{},
+		Extracted:      domain.Vars{},
+		Response:       domain.ResponseSnapshot{Headers: map[string][]string{}},
+	}, nil
+}
+
+func copyHeaders(h domain.Headers) map[string]string {
+	if h == nil {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(h))
+	for k, v := range h {
+		out[k] = v
+	}
+	return out
 }
