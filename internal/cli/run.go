@@ -32,6 +32,7 @@ func runCmd() *cobra.Command {
 	var insecure bool
 	var noRedirects bool
 	var dryRun bool
+	var parallel bool
 
 	c := &cobra.Command{
 		Use:   "run",
@@ -80,6 +81,7 @@ func runCmd() *cobra.Command {
 				RetryDelay: ws.cfg.Run.RetryDelay,
 				Retry5xx:   ws.cfg.Run.Retry5xx,
 				DryRun:     dryRun,
+				Parallel:   parallel,
 			}
 			if cmd.Flags().Changed("retries") {
 				retryOpts.Retries = retries
@@ -151,6 +153,7 @@ func runCmd() *cobra.Command {
 	c.Flags().BoolVar(&insecure, "insecure", false, "Skip TLS certificate verification")
 	c.Flags().BoolVar(&noRedirects, "no-redirects", false, "Do not follow HTTP redirects")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "Resolve variables and show requests without executing")
+	c.Flags().BoolVar(&parallel, "parallel", false, "Execute independent requests in parallel")
 
 	if err := c.MarkFlagRequired("collection"); err != nil {
 		panic(fmt.Sprintf("MarkFlagRequired: %v", err))

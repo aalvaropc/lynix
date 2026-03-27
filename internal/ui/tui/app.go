@@ -83,6 +83,7 @@ type model struct {
 	dryRun                 bool
 	insecure               bool
 	noRedirects            bool
+	parallel               bool
 	retry5xx               bool
 	retries                int
 	tagsInput              textinput.Model
@@ -360,6 +361,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.dryRun = false
 					m.insecure = false
 					m.noRedirects = false
+					m.parallel = false
 					m.retry5xx = false
 					m.retries = 0
 					m.tagsInput.SetValue("")
@@ -437,6 +439,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "r":
 				if m.wizardStep == 3 && !m.running && !m.editingTags && !m.editingOnly {
 					m.noRedirects = !m.noRedirects
+					return m, nil
+				}
+			case "p":
+				if m.wizardStep == 3 && !m.running && !m.editingTags && !m.editingOnly {
+					m.parallel = !m.parallel
 					return m, nil
 				}
 			case "5":
@@ -522,6 +529,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							Only:     splitCSV(m.onlyInput.Value()),
 							Retries:  m.retries,
 							Retry5xx: m.retry5xx,
+							Parallel: m.parallel,
 						},
 						wiringOpts: wiring.Opts{
 							Insecure:          m.insecure,
@@ -812,13 +820,14 @@ func (m model) viewRunWizard() string {
 				"  [d] Dry run:       %s\n"+
 				"  [i] Insecure TLS:  %s\n"+
 				"  [r] No redirects:  %s\n"+
+				"  [p] Parallel:      %s\n"+
 				"  [5] Retry 5xx:     %s\n"+
 				"  [+/-] Retries:     %d\n"+
 				"  [t] Tags:          %s\n"+
 				"  [o] Only:          %s\n",
 			boolLabel(m.failFast), boolLabel(m.dryRun),
 			boolLabel(m.insecure), boolLabel(m.noRedirects),
-			boolLabel(m.retry5xx), m.retries,
+			boolLabel(m.parallel), boolLabel(m.retry5xx), m.retries,
 			tagsVal, onlyVal,
 		)
 
