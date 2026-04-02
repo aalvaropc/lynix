@@ -145,6 +145,57 @@ func TestApply_NullValue_FailsRule(t *testing.T) {
 	}
 }
 
+func TestApply_EmptyString_Succeeds(t *testing.T) {
+	vars, results := Apply([]byte(`{"msg":""}`), domain.ExtractSpec{"msg": "$.msg"})
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].Success {
+		t.Fatalf("expected success for empty string, got: %s", results[0].Message)
+	}
+	if vars["msg"] != "" {
+		t.Fatalf("expected empty string, got %q", vars["msg"])
+	}
+}
+
+func TestApply_EmptyArray_Succeeds(t *testing.T) {
+	vars, results := Apply([]byte(`{"items":[]}`), domain.ExtractSpec{"items": "$.items"})
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].Success {
+		t.Fatalf("expected success for empty array, got: %s", results[0].Message)
+	}
+	if vars["items"] != "[]" {
+		t.Fatalf("expected '[]', got %q", vars["items"])
+	}
+}
+
+func TestApplyHeaders_EmptyValue_Succeeds(t *testing.T) {
+	headers := map[string][]string{"X-Empty": {""}}
+	vars, results := ApplyHeaders(headers, domain.ExtractHeaderSpec{"empty": "X-Empty"})
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].Success {
+		t.Fatalf("expected success for empty header value, got: %s", results[0].Message)
+	}
+	if vars["empty"] != "" {
+		t.Fatalf("expected empty string, got %q", vars["empty"])
+	}
+}
+
+func TestApplyHeaders_NotFound_Fails(t *testing.T) {
+	headers := map[string][]string{"X-Other": {"val"}}
+	_, results := ApplyHeaders(headers, domain.ExtractHeaderSpec{"missing": "X-Gone"})
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Success {
+		t.Fatalf("expected failure for missing header")
+	}
+}
+
 func TestApply_MixedResults_StableOrder(t *testing.T) {
 	rules := domain.ExtractSpec{
 		"aaa": "$.name",

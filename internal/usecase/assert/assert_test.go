@@ -133,6 +133,86 @@ func TestEvaluate_JSONPathExists_False(t *testing.T) {
 	}
 }
 
+func TestEvaluate_JSONPathExists_EmptyString_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.msg": {Exists: true},
+		},
+	}
+	body := []byte(`{"msg":""}`)
+	out := Evaluate(spec, 200, 10, body, nil, nil)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got=%d", len(out))
+	}
+	if !out[0].Passed {
+		t.Fatalf("empty string should exist, got: %s", out[0].Message)
+	}
+}
+
+func TestEvaluate_JSONPathExists_Null_Fail(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.field": {Exists: true},
+		},
+	}
+	body := []byte(`{"field":null}`)
+	out := Evaluate(spec, 200, 10, body, nil, nil)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got=%d", len(out))
+	}
+	if out[0].Passed {
+		t.Fatalf("null value should not pass exists check")
+	}
+}
+
+func TestEvaluate_JSONPathExists_EmptyArray_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.items": {Exists: true},
+		},
+	}
+	body := []byte(`{"items":[]}`)
+	out := Evaluate(spec, 200, 10, body, nil, nil)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got=%d", len(out))
+	}
+	if !out[0].Passed {
+		t.Fatalf("empty array should exist, got: %s", out[0].Message)
+	}
+}
+
+func TestEvaluate_JSONPathExists_EmptyObject_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.meta": {Exists: true},
+		},
+	}
+	body := []byte(`{"meta":{}}`)
+	out := Evaluate(spec, 200, 10, body, nil, nil)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got=%d", len(out))
+	}
+	if !out[0].Passed {
+		t.Fatalf("empty object should exist, got: %s", out[0].Message)
+	}
+}
+
+func TestEvaluate_HeaderExists_EmptyValue_Pass(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"X-Empty": {Exists: true},
+		},
+	}
+	headers := map[string][]string{"X-Empty": {""}}
+	out := Evaluate(spec, 200, 10, nil, nil, headers)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 result, got=%d", len(out))
+	}
+	if !out[0].Passed {
+		t.Fatalf("header with empty value should exist, got: %s", out[0].Message)
+	}
+}
+
 func TestEvaluate_JSONPath_NonJSONBody(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		JSONPath: map[string]domain.ValueAssertion{
