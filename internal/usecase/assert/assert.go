@@ -55,7 +55,8 @@ func MaxLatency(maxMs int, latencyMs int64) domain.AssertionResult {
 // Evaluate applies the assertions spec against the observed response data.
 // It parses JSON only if JSONPath assertions are present.
 // schemaBytes is the pre-loaded JSON Schema content (nil if no schema assertion).
-func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []byte, schemaBytes []byte, headers map[string][]string) []domain.AssertionResult {
+// truncated indicates the response body was cut off (>256KB) and may not be valid JSON.
+func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []byte, schemaBytes []byte, headers map[string][]string, truncated bool) []domain.AssertionResult {
 	var out []domain.AssertionResult
 
 	if spec.Status != nil {
@@ -66,16 +67,20 @@ func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []by
 	}
 
 	if len(schemaBytes) > 0 {
-		out = append(out, SchemaValidate(schemaBytes, body))
+		out = append(out, SchemaValidate(schemaBytes, body, truncated))
 	}
 
 	if len(spec.JSONPath) > 0 {
 		doc, err := parseJSON(body)
 		if err != nil {
+			jsonErrMsg := "response body is not valid JSON"
+			if truncated {
+				jsonErrMsg = "response body was truncated (>256KB) and is not valid JSON"
+			}
 			for expr, a := range spec.JSONPath {
 				ctx := checkContext{kind: "jsonpath", key: expr}
 				out = append(out, valueChecks(ctx, a, nil,
-					fmt.Errorf("response body is not valid JSON"))...)
+					fmt.Errorf("%s", jsonErrMsg))...)
 			}
 		} else {
 			for expr, a := range spec.JSONPath {

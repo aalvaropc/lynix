@@ -14,13 +14,21 @@ import (
 
 // SchemaValidate validates a response body against a JSON Schema.
 // schemaBytes must be a valid JSON Schema document.
-// Returns a single AssertionResult with pass/fail and descriptive messages.
-func SchemaValidate(schemaBytes []byte, body []byte) domain.AssertionResult {
+// truncated indicates the body was cut off and may not be valid JSON.
+func SchemaValidate(schemaBytes []byte, body []byte, truncated bool) domain.AssertionResult {
 	if len(schemaBytes) == 0 {
 		return domain.AssertionResult{
 			Name:    "schema",
 			Passed:  false,
 			Message: "schema is empty",
+		}
+	}
+
+	if len(body) == 0 {
+		return domain.AssertionResult{
+			Name:    "schema",
+			Passed:  false,
+			Message: "cannot validate schema: response has no body",
 		}
 	}
 
@@ -53,10 +61,14 @@ func SchemaValidate(schemaBytes []byte, body []byte) domain.AssertionResult {
 
 	var doc any
 	if err := json.Unmarshal(body, &doc); err != nil {
+		msg := fmt.Sprintf("response body is not valid JSON: %v", err)
+		if truncated {
+			msg = fmt.Sprintf("response body was truncated (>256KB) and is not valid JSON: %v", err)
+		}
 		return domain.AssertionResult{
 			Name:    "schema",
 			Passed:  false,
-			Message: fmt.Sprintf("response body is not valid JSON: %v", err),
+			Message: msg,
 		}
 	}
 

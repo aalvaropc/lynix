@@ -177,9 +177,9 @@ func (uc *RunCollection) Execute(
 		}
 
 		// Assertions (always evaluated, even if rr.Error != nil)
-		rr.Assertions = ucassert.Evaluate(req.Assert, rr.StatusCode, rr.LatencyMS, rr.Response.Body, schemaCache[i], rr.Response.Headers)
+		rr.Assertions = ucassert.Evaluate(req.Assert, rr.StatusCode, rr.LatencyMS, rr.Response.Body, schemaCache[i], rr.Response.Headers, rr.Response.Truncated)
 
-		extracted, extractResults := ucextract.Apply(rr.Response.Body, req.Extract)
+		extracted, extractResults := ucextract.Apply(rr.Response.Body, req.Extract, rr.Response.Truncated)
 		headerExtracted, headerExtractResults := ucextract.ApplyHeaders(rr.Response.Headers, req.ExtractHeaders)
 		rr.Extracts = append(extractResults, headerExtractResults...)
 		rr.Extracted = extracted
@@ -427,9 +427,9 @@ func (uc *RunCollection) executeParallel(
 					return nil
 				}
 
-				rr.Assertions = ucassert.Evaluate(req.Assert, rr.StatusCode, rr.LatencyMS, rr.Response.Body, schemaCache[idx], rr.Response.Headers)
+				rr.Assertions = ucassert.Evaluate(req.Assert, rr.StatusCode, rr.LatencyMS, rr.Response.Body, schemaCache[idx], rr.Response.Headers, rr.Response.Truncated)
 
-				extracted, extractResults := ucextract.Apply(rr.Response.Body, req.Extract)
+				extracted, extractResults := ucextract.Apply(rr.Response.Body, req.Extract, rr.Response.Truncated)
 				headerExtracted, headerExtractResults := ucextract.ApplyHeaders(rr.Response.Headers, req.ExtractHeaders)
 				rr.Extracts = append(extractResults, headerExtractResults...)
 				rr.Extracted = extracted

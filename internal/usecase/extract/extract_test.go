@@ -7,7 +7,7 @@ import (
 )
 
 func TestApply_EmptyRules(t *testing.T) {
-	vars, results := Apply([]byte(`{"name":"alice"}`), domain.ExtractSpec{})
+	vars, results := Apply([]byte(`{"name":"alice"}`), domain.ExtractSpec{}, false)
 	if len(vars) != 0 {
 		t.Fatalf("expected empty vars, got %v", vars)
 	}
@@ -23,7 +23,7 @@ func TestApply_Success(t *testing.T) {
 		"user.id":    "$.user.id",
 	}
 
-	vars, res := Apply(body, rules)
+	vars, res := Apply(body, rules, false)
 
 	if vars["auth.token"] != "abc123" {
 		t.Fatalf("expected token=abc123, got=%q", vars["auth.token"])
@@ -48,7 +48,7 @@ func TestApply_NonJSONBody_FailsAll(t *testing.T) {
 		"auth.token": "$.token",
 	}
 
-	vars, res := Apply(body, rules)
+	vars, res := Apply(body, rules, false)
 	if len(vars) != 0 {
 		t.Fatalf("expected no vars, got=%v", vars)
 	}
@@ -61,7 +61,7 @@ func TestApply_NonJSONBody_FailsAll(t *testing.T) {
 }
 
 func TestApply_ExtractBool(t *testing.T) {
-	vars, results := Apply([]byte(`{"active":true}`), domain.ExtractSpec{"active": "$.active"})
+	vars, results := Apply([]byte(`{"active":true}`), domain.ExtractSpec{"active": "$.active"}, false)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -74,7 +74,7 @@ func TestApply_ExtractBool(t *testing.T) {
 }
 
 func TestApply_ExtractObject(t *testing.T) {
-	vars, results := Apply([]byte(`{"meta":{"key":"val"}}`), domain.ExtractSpec{"meta": "$.meta"})
+	vars, results := Apply([]byte(`{"meta":{"key":"val"}}`), domain.ExtractSpec{"meta": "$.meta"}, false)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -92,7 +92,7 @@ func TestApply_InvalidJSONPath_FailsRule(t *testing.T) {
 		"auth.token": "$.token[",
 	}
 
-	vars, res := Apply(body, rules)
+	vars, res := Apply(body, rules, false)
 
 	if len(vars) != 0 {
 		t.Fatalf("expected no vars, got=%v", vars)
@@ -106,7 +106,7 @@ func TestApply_InvalidJSONPath_FailsRule(t *testing.T) {
 }
 
 func TestApply_EmptyExpression(t *testing.T) {
-	_, results := Apply([]byte(`{"name":"alice"}`), domain.ExtractSpec{"username": ""})
+	_, results := Apply([]byte(`{"name":"alice"}`), domain.ExtractSpec{"username": ""}, false)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -121,7 +121,7 @@ func TestApply_MissingValue_FailsRule(t *testing.T) {
 		"auth.token": "$.token",
 	}
 
-	vars, res := Apply(body, rules)
+	vars, res := Apply(body, rules, false)
 
 	if len(vars) != 0 {
 		t.Fatalf("expected no vars, got=%v", vars)
@@ -136,7 +136,7 @@ func TestApply_MissingValue_FailsRule(t *testing.T) {
 
 func TestApply_NullValue_FailsRule(t *testing.T) {
 	// null is considered empty by isEmptyValue, triggering "no value found".
-	_, results := Apply([]byte(`{"name":null}`), domain.ExtractSpec{"username": "$.name"})
+	_, results := Apply([]byte(`{"name":null}`), domain.ExtractSpec{"username": "$.name"}, false)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -146,7 +146,7 @@ func TestApply_NullValue_FailsRule(t *testing.T) {
 }
 
 func TestApply_EmptyString_Succeeds(t *testing.T) {
-	vars, results := Apply([]byte(`{"msg":""}`), domain.ExtractSpec{"msg": "$.msg"})
+	vars, results := Apply([]byte(`{"msg":""}`), domain.ExtractSpec{"msg": "$.msg"}, false)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -159,7 +159,7 @@ func TestApply_EmptyString_Succeeds(t *testing.T) {
 }
 
 func TestApply_EmptyArray_Succeeds(t *testing.T) {
-	vars, results := Apply([]byte(`{"items":[]}`), domain.ExtractSpec{"items": "$.items"})
+	vars, results := Apply([]byte(`{"items":[]}`), domain.ExtractSpec{"items": "$.items"}, false)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
@@ -201,7 +201,7 @@ func TestApply_MixedResults_StableOrder(t *testing.T) {
 		"aaa": "$.name",
 		"bbb": "",
 	}
-	vars, results := Apply([]byte(`{"name":"alice"}`), rules)
+	vars, results := Apply([]byte(`{"name":"alice"}`), rules, false)
 	if len(results) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
@@ -339,7 +339,7 @@ func TestApplyHeaders_StableOrder(t *testing.T) {
 
 func TestApply_SingleElementArrayUnwrapped(t *testing.T) {
 	// jsonpath returns a slice for index access; single-element arrays are unwrapped.
-	vars, results := Apply([]byte(`{"items":["single"]}`), domain.ExtractSpec{"item": "$.items[0]"})
+	vars, results := Apply([]byte(`{"items":["single"]}`), domain.ExtractSpec{"item": "$.items[0]"}, false)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
