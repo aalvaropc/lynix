@@ -54,7 +54,7 @@ func TestSchemaValidate(t *testing.T) {
 			schema:     simpleSchema,
 			body:       ``,
 			wantPass:   false,
-			wantSubstr: "not valid JSON",
+			wantSubstr: "no body",
 		},
 		{
 			name:       "non-JSON body",
@@ -156,7 +156,7 @@ func TestSchemaValidate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := SchemaValidate([]byte(tt.schema), []byte(tt.body))
+			result := SchemaValidate([]byte(tt.schema), []byte(tt.body), false)
 
 			if result.Name != "schema" {
 				t.Errorf("expected name 'schema', got %q", result.Name)

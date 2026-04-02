@@ -12,11 +12,12 @@ import (
 
 // Apply extracts variables from a JSON response body using JSONPath rules.
 // rules: map[varName]jsonPathExpr
+// truncated indicates the response body was cut off (>256KB) and may not be valid JSON.
 //
 // Policy (MVP):
 // - If body is not JSON -> every extract rule fails (no vars extracted).
 // - If a rule fails -> it's reported in ExtractResult; other rules still run.
-func Apply(body []byte, rules domain.ExtractSpec) (domain.Vars, []domain.ExtractResult) {
+func Apply(body []byte, rules domain.ExtractSpec, truncated bool) (domain.Vars, []domain.ExtractResult) {
 	if len(rules) == 0 {
 		return domain.Vars{}, []domain.ExtractResult{}
 	}
@@ -29,13 +30,17 @@ func Apply(body []byte, rules domain.ExtractSpec) (domain.Vars, []domain.Extract
 
 	doc, err := parseJSON(body)
 	if err != nil {
+		jsonErrMsg := "response body is not valid JSON"
+		if truncated {
+			jsonErrMsg = "response body was truncated (>256KB) and is not valid JSON"
+		}
 		out := make([]domain.ExtractResult, 0, len(keys))
 		for _, name := range keys {
 			expr := strings.TrimSpace(rules[name])
 			out = append(out, domain.ExtractResult{
 				Name:    name,
 				Success: false,
-				Message: fmt.Sprintf("extract %q (%s): response body is not valid JSON", name, expr),
+				Message: fmt.Sprintf("extract %q (%s): %s", name, expr, jsonErrMsg),
 			})
 		}
 		return domain.Vars{}, out
