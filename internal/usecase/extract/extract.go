@@ -122,12 +122,12 @@ func ApplyHeaders(headers map[string][]string, rules domain.ExtractHeaderSpec) (
 			continue
 		}
 
-		val := lookupHeader(headers, headerName)
-		if val == "" {
+		val, found := lookupHeader(headers, headerName)
+		if !found {
 			results = append(results, domain.ExtractResult{
 				Name:    name,
 				Success: false,
-				Message: fmt.Sprintf("extract_header %q (%s): header not found or empty", name, headerName),
+				Message: fmt.Sprintf("extract_header %q (%s): header not found", name, headerName),
 			})
 			continue
 		}
@@ -144,14 +144,14 @@ func ApplyHeaders(headers map[string][]string, rules domain.ExtractHeaderSpec) (
 }
 
 // lookupHeader finds a header value case-insensitively, returning the first value.
-func lookupHeader(headers map[string][]string, name string) string {
+func lookupHeader(headers map[string][]string, name string) (string, bool) {
 	lower := strings.ToLower(name)
 	for k, vals := range headers {
 		if strings.ToLower(k) == lower && len(vals) > 0 {
-			return vals[0]
+			return vals[0], true
 		}
 	}
-	return ""
+	return "", false
 }
 
 func parseJSON(body []byte) (any, error) {
@@ -163,26 +163,14 @@ func parseJSON(body []byte) (any, error) {
 }
 
 func isEmptyValue(v any) bool {
-	if v == nil {
-		return true
-	}
-	switch t := v.(type) {
-	case string:
-		return t == ""
-	case []any:
-		return len(t) == 0
-	case map[string]any:
-		return len(t) == 0
-	default:
-		return false
-	}
+	return v == nil
 }
 
 func toString(v any) (string, error) {
 	// Common case: jsonpath returns a slice with 1 element
 	if arr, ok := v.([]any); ok {
 		if len(arr) == 0 {
-			return "", fmt.Errorf("empty array")
+			return "[]", nil
 		}
 		if len(arr) == 1 {
 			return toString(arr[0])

@@ -426,18 +426,5 @@ func parseJSON(body []byte) (any, error) {
 }
 
 func isEmptyValue(v any) bool {
-	if v == nil {
-		return true
-	}
-
-	switch t := v.(type) {
-	case string:
-		return t == ""
-	case []any:
-		return len(t) == 0
-	case map[string]any:
-		return len(t) == 0
-	default:
-		return false
-	}
+	return v == nil
 }
