@@ -44,3 +44,6 @@ runs/
 lynix.lock
 env/secrets.local.yaml
 .lynix/
+
+# Internal docs (not for public repo)
+docs/internal/
