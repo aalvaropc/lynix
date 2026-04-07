@@ -3,15 +3,11 @@ package cli
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/aalvaropc/lynix/internal/buildinfo"
 	"github.com/aalvaropc/lynix/internal/infra/fsworkspace"
-	"github.com/aalvaropc/lynix/internal/infra/logger"
-	"github.com/aalvaropc/lynix/internal/infra/workspacefinder"
-	"github.com/aalvaropc/lynix/internal/ui/tui"
 	"github.com/aalvaropc/lynix/internal/usecase"
 )
 
@@ -27,39 +23,8 @@ func newRootCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:          "lynix",
-		Short:        "Lynix — TUI-first API tool",
+		Short:        "Lynix — API testing for CI/CD pipelines",
 		SilenceUsage: true,
-		RunE: func(c *cobra.Command, _ []string) error {
-			wd, err := os.Getwd()
-			if err != nil {
-				wd = "."
-			}
-			wd, _ = filepath.Abs(wd)
-
-			finder := workspacefinder.NewFinder()
-
-			logRoot := wd
-			if root, ferr := finder.FindRoot(c.Context(), wd); ferr == nil && root != "" {
-				logRoot = root
-			}
-
-			cleanup, _ := logger.Setup(logger.Config{
-				Root:  logRoot,
-				Debug: debug,
-			})
-			if cleanup != nil {
-				defer func() { _ = cleanup() }()
-			}
-
-			deps := tui.Deps{
-				WorkspaceLocator:     finder,
-				WorkspaceInitializer: fsworkspace.NewInitializer(),
-				Logger:               logger.L(),
-				Debug:                debug,
-			}
-
-			return tui.Run(deps)
-		},
 	}
 
 	cmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable verbose logging to .lynix/logs/lynix.log")
