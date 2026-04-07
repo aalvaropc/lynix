@@ -1,0 +1,139 @@
+name: 'Lynix API Testing'
+description: 'Run API tests with Lynix — declarative HTTP testing for CI/CD pipelines'
+branding:
+  icon: 'check-circle'
+  color: 'green'
+
+inputs:
+  collection:
+    description: 'Collection name or path'
+    required: true
+  environment:
+    description: 'Environment name or path'
+    required: false
+  workspace:
+    description: 'Workspace root directory'
+    required: false
+    default: '.'
+  format:
+    description: 'Output format (pretty or json)'
+    required: false
+    default: 'pretty'
+  report:
+    description: 'Report type (e.g., junit)'
+    required: false
+  report-path:
+    description: 'Path to write the report file'
+    required: false
+  fail-fast:
+    description: 'Stop on first failure'
+    required: false
+    default: 'false'
+  tags:
+    description: 'Run only requests with matching tags'
+    required: false
+  only:
+    description: 'Run only named requests'
+    required: false
+  no-save:
+    description: 'Skip saving run artifacts'
+    required: false
+    default: 'true'
+  version:
+    description: 'Lynix version to install'
+    required: false
+    default: 'latest'
+  retries:
+    description: 'Number of retries for transient errors'
+    required: false
+  retry-delay:
+    description: 'Delay between retries in ms'
+    required: false
+  retry-5xx:
+    description: 'Also retry on 5xx responses'
+    required: false
+    default: 'false'
+  parallel:
+    description: 'Run independent requests in parallel'
+    required: false
+    default: 'false'
+  insecure:
+    description: 'Skip TLS verification'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Lynix
+      shell: bash
+      run: |
+        if [ "${{ inputs.version }}" != "latest" ]; then
+          export LYNIX_VERSION="${{ inputs.version }}"
+        fi
+        curl -sSfL https://raw.githubusercontent.com/aalvaropc/lynix/main/install.sh | sh
+        echo "/usr/local/bin" >> "$GITHUB_PATH"
+
+    - name: Run API tests
+      shell: bash
+      run: |
+        CMD="lynix run -c ${{ inputs.collection }}"
+
+        if [ -n "${{ inputs.environment }}" ]; then
+          CMD="$CMD -e ${{ inputs.environment }}"
+        fi
+
+        if [ "${{ inputs.workspace }}" != "." ]; then
+          CMD="$CMD -w ${{ inputs.workspace }}"
+        fi
+
+        if [ "${{ inputs.format }}" != "pretty" ]; then
+          CMD="$CMD --format ${{ inputs.format }}"
+        fi
+
+        if [ -n "${{ inputs.report }}" ]; then
+          CMD="$CMD --report ${{ inputs.report }}"
+        fi
+
+        if [ -n "${{ inputs.report-path }}" ]; then
+          CMD="$CMD --report-path ${{ inputs.report-path }}"
+        fi
+
+        if [ "${{ inputs.fail-fast }}" = "true" ]; then
+          CMD="$CMD --fail-fast"
+        fi
+
+        if [ -n "${{ inputs.tags }}" ]; then
+          CMD="$CMD --tags ${{ inputs.tags }}"
+        fi
+
+        if [ -n "${{ inputs.only }}" ]; then
+          CMD="$CMD --only ${{ inputs.only }}"
+        fi
+
+        if [ "${{ inputs.no-save }}" = "true" ]; then
+          CMD="$CMD --no-save"
+        fi
+
+        if [ -n "${{ inputs.retries }}" ]; then
+          CMD="$CMD --retries ${{ inputs.retries }}"
+        fi
+
+        if [ -n "${{ inputs.retry-delay }}" ]; then
+          CMD="$CMD --retry-delay ${{ inputs.retry-delay }}"
+        fi
+
+        if [ "${{ inputs.retry-5xx }}" = "true" ]; then
+          CMD="$CMD --retry-5xx"
+        fi
+
+        if [ "${{ inputs.parallel }}" = "true" ]; then
+          CMD="$CMD --parallel"
+        fi
+
+        if [ "${{ inputs.insecure }}" = "true" ]; then
+          CMD="$CMD --insecure"
+        fi
+
+        echo "Running: $CMD"
+        eval $CMD
