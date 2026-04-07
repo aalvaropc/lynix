@@ -11,12 +11,8 @@ import (
 )
 
 // Apply extracts variables from a JSON response body using JSONPath rules.
-// rules: map[varName]jsonPathExpr
 // truncated indicates the response body was cut off (>256KB) and may not be valid JSON.
-//
-// Policy (MVP):
-// - If body is not JSON -> every extract rule fails (no vars extracted).
-// - If a rule fails -> it's reported in ExtractResult; other rules still run.
+// If body is not JSON, every extract rule fails. If a single rule fails, others still run.
 func Apply(body []byte, rules domain.ExtractSpec, truncated bool) (domain.Vars, []domain.ExtractResult) {
 	if len(rules) == 0 {
 		return domain.Vars{}, []domain.ExtractResult{}
@@ -199,7 +195,7 @@ func toString(v any) (string, error) {
 		}
 		return string(b), nil
 	default:
-		// fallback: do not fail silently, but still allow MVP use
+		// fallback: use fmt.Sprint for unknown types
 		return fmt.Sprint(t), nil
 	}
 }

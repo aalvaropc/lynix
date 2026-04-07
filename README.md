@@ -4,8 +4,6 @@
 
 No accounts. No dashboards. No proprietary formats. Just a single binary and a folder of YAML files.
 
-<!-- TODO: Add asciinema/GIF demo recording here -->
-<!-- asciinema rec: lynix init, edit collection, lynix run -c demo -e dev -->
 
 ---
 

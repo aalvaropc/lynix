@@ -381,8 +381,6 @@ func contains(s, sub string) bool {
 }
 
 func stringIndex(s, sub string) int {
-	// Avoid importing strings in this test file unnecessarily; keep it minimal.
-	// (strings.Index would also be fine.)
 outer:
 	for i := 0; i+len(sub) <= len(s); i++ {
 		for j := 0; j < len(sub); j++ {

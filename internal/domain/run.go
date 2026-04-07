@@ -109,7 +109,7 @@ type RunResult struct {
 	Results []RequestResult
 }
 
-// RunArtifact is the persisted representation for a run (MVP: same as RunResult).
+// RunArtifact is the persisted representation for a run.
 type RunArtifact = RunResult
 
 // IsRetryable reports whether a run error kind is transient and worth retrying.

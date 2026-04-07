@@ -72,7 +72,6 @@ func runCmd() *cobra.Command {
 				store = nil
 			}
 
-			// Build retry options: CLI flags override workspace config when explicitly set.
 			retryOpts := usecase.RunOpts{
 				FailFast:   failFast,
 				Only:       splitCSV(only),
@@ -190,7 +189,6 @@ func printDryRun(w io.Writer, run domain.RunResult) error {
 
 		if len(r.RequestBody) > 0 {
 			fmt.Fprintln(w, "Body:")
-			// Pretty-print JSON if possible.
 			var buf json.RawMessage
 			if json.Unmarshal(r.RequestBody, &buf) == nil {
 				var pretty []byte

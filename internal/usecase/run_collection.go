@@ -118,7 +118,6 @@ func (uc *RunCollection) Execute(
 		}
 		run.EndedAt = time.Now()
 
-		// Persist artifact (optional; skip in dry-run mode).
 		if uc.store == nil || uc.dryRun {
 			return run, "", nil
 		}

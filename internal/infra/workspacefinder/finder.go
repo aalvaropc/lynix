@@ -51,7 +51,6 @@ func (f *Finder) FindRoot(_ context.Context, startDir string) (string, error) {
 
 		parent := filepath.Dir(cur)
 		if parent == cur {
-			// Reached filesystem root.
 			return "", &domain.OpError{
 				Op:   "workspacefinder.findroot",
 				Kind: domain.KindNotFound,

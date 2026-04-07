@@ -48,7 +48,6 @@ func LoadConfig(root string) (domain.Config, error) {
 		cfg.SchemaVersion = *y.Lynix.SchemaVersion
 	}
 
-	// Apply parsed values on top of defaults.
 	if y.Lynix.Masking.Enabled != nil {
 		cfg.Masking.Enabled = *y.Lynix.Masking.Enabled
 	}

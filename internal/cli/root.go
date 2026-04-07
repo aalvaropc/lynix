@@ -64,7 +64,6 @@ func newRootCmd() *cobra.Command {
 
 	cmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable verbose logging to .lynix/logs/lynix.log")
 
-	// Add CLI subcommands for headless usage
 	cmd.AddCommand(versionCmd())
 	cmd.AddCommand(initCmd())
 	cmd.AddCommand(runCmd())

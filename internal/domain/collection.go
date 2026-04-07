@@ -87,7 +87,7 @@ func ValidateJSONBody(v any) error {
 
 // ValueAssertion defines a value-based check (used for JSONPath and header assertions).
 type ValueAssertion struct {
-	Exists      bool     // value exists and is non-empty
+	Exists      bool     // value exists (not null)
 	Eq          *string  // toStr(value) == *Eq
 	Contains    *string  // toStr(value) contains substring
 	Matches     *string  // toStr(value) matches regex pattern (stdlib regexp)

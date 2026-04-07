@@ -162,7 +162,6 @@ func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
 		}
 	}
 
-	// Atomic-ish write: tmp then rename.
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return "", &domain.OpError{

@@ -135,7 +135,7 @@ func TestApply_MissingValue_FailsRule(t *testing.T) {
 }
 
 func TestApply_NullValue_FailsRule(t *testing.T) {
-	// null is considered empty by isEmptyValue, triggering "no value found".
+	// null values cannot be extracted (nil is treated as "no value found").
 	_, results := Apply([]byte(`{"name":null}`), domain.ExtractSpec{"username": "$.name"}, false)
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))

@@ -15,8 +15,6 @@ import (
 // VarResolver resolves {{var}} placeholders in strings and JSON-like payloads.
 // Built-ins: {{$timestamp}}, {{$uuid}}, {{$isoTimestamp}}, {{$randomInt}},
 // {{$randomString}}, {{$randomEmail}}, {{$randomBool}}.
-//
-// This lives in domain because it does not depend on YAML/FS/HTTP. Only stdlib.
 type VarResolver struct {
 	now        func() time.Time
 	uuidV4     func() (string, error)
@@ -146,7 +144,6 @@ func (r *VarResolver) generateRandomBuiltins() (rInt, rStr, rEmail, rBool string
 }
 
 // ResolveString resolves placeholders in a string.
-// Supported tokens: {{base_url}}, {{token}}, {{$timestamp}}, {{$uuid}}.
 func (rr *RuntimeResolver) ResolveString(s string) (string, error) {
 	return rr.inner.resolveStringWith(rr.base, rr.builtins, s)
 }

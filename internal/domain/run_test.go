@@ -24,7 +24,7 @@ func TestClassifyRunError_Timeout_NetError(t *testing.T) {
 	// net.OpError wrapping ETIMEDOUT
 	err := &net.OpError{Op: "read", Net: "tcp", Err: syscall.ETIMEDOUT}
 	if got := ClassifyRunError(err); got != RunErrorConn && got != RunErrorTimeout {
-		// ETIMEDOUT might be classified as connection; both are acceptable for MVP.
+		// ETIMEDOUT might be classified as connection; both are acceptable.
 		t.Fatalf("expected conn/timeout, got=%s", got)
 	}
 }

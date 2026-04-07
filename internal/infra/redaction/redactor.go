@@ -329,7 +329,7 @@ func (r *Redactor) checkQuerySecrets(rawURL, reqName string) error {
 	return nil
 }
 
-// --- deep copy helpers (migrated from runstore) ---
+// --- deep copy helpers ---
 
 func cloneVars(in domain.Vars) domain.Vars {
 	if in == nil {
