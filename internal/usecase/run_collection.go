@@ -147,6 +147,9 @@ func (uc *RunCollection) Execute(
 		if req.DelayMS != nil && *req.DelayMS > 0 {
 			select {
 			case <-ctx.Done():
+				// Record the interrupted request (parity with parallel mode)
+				// so it never vanishes from the report.
+				run.Results = append(run.Results, erroredResult(req, ctx.Err()))
 				run.EndedAt = time.Now()
 				return run, "", ctx.Err()
 			case <-time.After(time.Duration(*req.DelayMS) * time.Millisecond):
