@@ -1,7 +1,10 @@
 package yamlcollection
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -43,8 +46,12 @@ func (l *Loader) LoadCollection(path string) (domain.Collection, error) {
 		}
 	}
 
+	// KnownFields rejects unknown keys so typos (e.g. "assrt:") fail loudly
+	// instead of silently dropping assertions.
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	dec.KnownFields(true)
 	var yc yamlCollection
-	if err := yaml.Unmarshal(b, &yc); err != nil {
+	if err := dec.Decode(&yc); err != nil && !errors.Is(err, io.EOF) {
 		return domain.Collection{}, &domain.OpError{
 			Op:   "yamlcollection.load",
 			Kind: domain.KindInvalidConfig,
@@ -176,12 +183,19 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 		Requests:      make([]domain.RequestSpec, 0, len(yc.Requests)),
 	}
 
+	seenNames := make(map[string]struct{}, len(yc.Requests))
+
 	for i, r := range yc.Requests {
 		fieldPrefix := fmt.Sprintf("requests[%d]", i)
 
 		if strings.TrimSpace(r.Name) == "" {
 			return domain.Collection{}, invalidField(path, fieldPrefix+".name", "request name is required")
 		}
+		if _, dup := seenNames[r.Name]; dup {
+			return domain.Collection{}, invalidField(path, fieldPrefix+".name",
+				fmt.Sprintf("duplicate request name %q", r.Name))
+		}
+		seenNames[r.Name] = struct{}{}
 		if strings.TrimSpace(r.URL) == "" {
 			return domain.Collection{}, invalidField(path, fieldPrefix+".url", "request url is required")
 		}

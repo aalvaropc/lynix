@@ -1,7 +1,10 @@
 package workspacefinder
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -25,8 +28,12 @@ func LoadConfig(root string) (domain.Config, error) {
 		}
 	}
 
+	// KnownFields rejects unknown keys so typos fail loudly instead of
+	// silently applying defaults.
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	dec.KnownFields(true)
 	var y yamlConfig
-	if err := yaml.Unmarshal(b, &y); err != nil {
+	if err := dec.Decode(&y); err != nil && !errors.Is(err, io.EOF) {
 		return cfg, &domain.OpError{
 			Op:   "workspacefinder.loadconfig",
 			Kind: domain.KindInvalidConfig,
