@@ -39,6 +39,7 @@ type junitTestCase struct {
 	Time      string        `xml:"time,attr"`
 	Failures  []junitDetail `xml:"failure,omitempty"`
 	Errors    []junitDetail `xml:"error,omitempty"`
+	SystemOut string        `xml:"system-out,omitempty"`
 }
 
 type junitDetail struct {
@@ -63,15 +64,6 @@ func formatJUnit(w io.Writer, run domain.RunResult, runID string) error {
 			Time:      fmt.Sprintf("%.3f", float64(r.LatencyMS)/1000),
 		}
 
-		if r.Error != nil {
-			totalErrors++
-			tc.Errors = append(tc.Errors, junitDetail{
-				Message: r.Error.Message,
-				Type:    string(r.Error.Kind),
-				Body:    r.Error.Message,
-			})
-		}
-
 		var failMsgs []string
 		for _, a := range r.Assertions {
 			if !a.Passed {
@@ -84,13 +76,33 @@ func formatJUnit(w io.Writer, run domain.RunResult, runID string) error {
 			}
 		}
 
-		if len(failMsgs) > 0 {
+		// A case is either an error OR a failure, never both: some CI
+		// parsers reject reports where failures+errors exceeds tests.
+		switch {
+		case r.Error != nil:
+			totalErrors++
+			body := r.Error.Message
+			if len(failMsgs) > 0 {
+				body += "\n" + strings.Join(failMsgs, "\n")
+			}
+			tc.Errors = append(tc.Errors, junitDetail{
+				Message: r.Error.Message,
+				Type:    string(r.Error.Kind),
+				Body:    body,
+			})
+		case len(failMsgs) > 0:
 			totalFailures++
 			tc.Failures = append(tc.Failures, junitDetail{
 				Message: fmt.Sprintf("%d assertion(s) failed", len(failMsgs)),
 				Type:    "assertion",
 				Body:    strings.Join(failMsgs, "\n"),
 			})
+		}
+
+		// Response context for diagnosing failures straight from the XML.
+		if (r.Error != nil || len(failMsgs) > 0) && len(r.Response.Body) > 0 {
+			tc.SystemOut = fmt.Sprintf("status: %d\nresponse (excerpt): %s",
+				r.StatusCode, excerpt(r.Response.Body, 2000))
 		}
 
 		cases = append(cases, tc)

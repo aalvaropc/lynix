@@ -196,7 +196,7 @@ func TestPrintRun_JSON_ValidOutput(t *testing.T) {
 		EndedAt:         now.Add(100 * time.Millisecond),
 	}
 	var buf bytes.Buffer
-	if err := printRun(&buf, run, "abc123", "json"); err != nil {
+	if err := printRun(&buf, run, "abc123", "json", prettyOpts{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	var payload map[string]any
@@ -219,7 +219,7 @@ func TestPrintRun_Pretty_ContainsCollectionName(t *testing.T) {
 		EndedAt:         time.Date(2024, 1, 1, 0, 0, 1, 0, time.UTC),
 	}
 	var buf bytes.Buffer
-	if err := printRun(&buf, run, "run-42", "pretty"); err != nil {
+	if err := printRun(&buf, run, "run-42", "pretty", prettyOpts{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	out := buf.String()
@@ -233,14 +233,14 @@ func TestPrintRun_Pretty_ContainsCollectionName(t *testing.T) {
 
 func TestPrintRun_EmptyFormat_IsPretty(t *testing.T) {
 	var buf bytes.Buffer
-	if err := printRun(&buf, domain.RunResult{}, "", ""); err != nil {
+	if err := printRun(&buf, domain.RunResult{}, "", "", prettyOpts{}); err != nil {
 		t.Fatalf("empty format should behave like pretty, got error: %v", err)
 	}
 }
 
 func TestPrintRun_UnknownFormat_ReturnsError(t *testing.T) {
 	var buf bytes.Buffer
-	err := printRun(&buf, domain.RunResult{}, "", "xml")
+	err := printRun(&buf, domain.RunResult{}, "", "xml", prettyOpts{})
 	if err == nil {
 		t.Fatal("expected error for unknown format")
 	}
@@ -274,7 +274,7 @@ func TestPrintPrettyRun_WithResults(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	printPrettyRun(&buf, run, "")
+	printPrettyRun(&buf, run, "", prettyOpts{})
 	out := buf.String()
 
 	if !strings.Contains(out, "health") {
@@ -283,8 +283,8 @@ func TestPrintPrettyRun_WithResults(t *testing.T) {
 	if !strings.Contains(out, "1 pass / 1 fail") {
 		t.Errorf("expected assertion pass/fail count, got:\n%s", out)
 	}
-	if !strings.Contains(out, "1 ok / 0 fail") {
-		t.Errorf("expected extract ok/fail count, got:\n%s", out)
+	if strings.Contains(out, "1 ok / 0 fail") {
+		t.Errorf("fully passing extracts should not print detail lines, got:\n%s", out)
 	}
 	if !strings.Contains(out, "token") {
 		t.Errorf("expected extracted var in output, got:\n%s", out)
@@ -302,7 +302,7 @@ func TestPrintPrettyRun_RequestWithError(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	printPrettyRun(&buf, run, "")
+	printPrettyRun(&buf, run, "", prettyOpts{})
 	out := buf.String()
 
 	if !strings.Contains(out, "connection refused") {
@@ -357,7 +357,7 @@ func TestPrintPrettyRun_SummaryLine(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	printPrettyRun(&buf, run, "")
+	printPrettyRun(&buf, run, "", prettyOpts{})
 	out := buf.String()
 	if !strings.Contains(out, "Results:") {
 		t.Errorf("expected summary line in output, got:\n%s", out)
@@ -380,7 +380,7 @@ func TestPrintRun_JSON_ContainsSummary(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	if err := printRun(&buf, run, "", "json"); err != nil {
+	if err := printRun(&buf, run, "", "json", prettyOpts{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	var payload map[string]any
@@ -824,5 +824,42 @@ func TestExitCodeFor(t *testing.T) {
 		if got := exitCodeFor(tc.err); got != tc.want {
 			t.Errorf("%s: expected %d, got %d", tc.name, tc.want, got)
 		}
+	}
+}
+
+func TestPrintPrettyRun_QuietShowsOnlyFailures(t *testing.T) {
+	run := domain.RunResult{
+		Results: []domain.RequestResult{
+			{Name: "passing-req", StatusCode: 200},
+			{Name: "failing-req", Assertions: []domain.AssertionResult{{Name: "status", Passed: false, Message: "boom"}}},
+		},
+	}
+	var buf bytes.Buffer
+	printPrettyRun(&buf, run, "", prettyOpts{quiet: true})
+	out := buf.String()
+
+	if strings.Contains(out, "passing-req") {
+		t.Errorf("quiet mode must hide passing requests, got:\n%s", out)
+	}
+	if !strings.Contains(out, "failing-req") {
+		t.Errorf("quiet mode must show failing requests, got:\n%s", out)
+	}
+}
+
+func TestPrintPrettyRun_FailureShowsResponseExcerpt(t *testing.T) {
+	run := domain.RunResult{
+		Results: []domain.RequestResult{
+			{
+				Name:       "fail",
+				StatusCode: 500,
+				Assertions: []domain.AssertionResult{{Name: "status", Passed: false, Message: "expected 200"}},
+				Response:   domain.ResponseSnapshot{Body: []byte(`{"error":"database on fire"}`)},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	printPrettyRun(&buf, run, "", prettyOpts{})
+	if !strings.Contains(buf.String(), "database on fire") {
+		t.Errorf("expected response excerpt on failure, got:\n%s", buf.String())
 	}
 }

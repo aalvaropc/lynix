@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/xml"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,5 +117,47 @@ func TestValidateReportFlags(t *testing.T) {
 				t.Errorf("error = %q, want %q", got, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestFormatJUnit_ErrorAndFailureNotDoubleCounted(t *testing.T) {
+	run := domain.RunResult{
+		CollectionName: "col",
+		Results: []domain.RequestResult{
+			{
+				Name:       "both",
+				Error:      &domain.RunError{Kind: domain.RunErrorTimeout, Message: "timeout"},
+				Assertions: []domain.AssertionResult{{Name: "status", Passed: false, Message: "no status"}},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	if err := formatJUnit(&buf, run, "id"); err != nil {
+		t.Fatalf("formatJUnit: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `tests="1"`) || !strings.Contains(out, `errors="1"`) || !strings.Contains(out, `failures="0"`) {
+		t.Errorf("expected 1 test / 1 error / 0 failures, got:\n%s", out)
+	}
+}
+
+func TestFormatJUnit_SystemOutOnFailure(t *testing.T) {
+	run := domain.RunResult{
+		CollectionName: "col",
+		Results: []domain.RequestResult{
+			{
+				Name:       "fail",
+				StatusCode: 500,
+				Assertions: []domain.AssertionResult{{Name: "status", Passed: false, Message: "expected 200"}},
+				Response:   domain.ResponseSnapshot{Body: []byte(`{"error":"boom"}`)},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	if err := formatJUnit(&buf, run, "id"); err != nil {
+		t.Fatalf("formatJUnit: %v", err)
+	}
+	if !strings.Contains(buf.String(), "system-out") || !strings.Contains(buf.String(), "boom") {
+		t.Errorf("expected system-out with response excerpt, got:\n%s", buf.String())
 	}
 }
