@@ -4,6 +4,17 @@ All commands auto-detect the workspace root by walking up from the current direc
 
 Running `lynix` with no subcommand prints the help.
 
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Everything passed |
+| `1` | Assertion failures (the API misbehaved) |
+| `2` | Usage or configuration error (bad flags, invalid YAML, missing files/vars) |
+| `3` | Execution error (network failure, timeout, cancellation) |
+
+If a run contains both execution errors and assertion failures, the exit code is `3`.
+
 ---
 
 ## `lynix version`
