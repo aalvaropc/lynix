@@ -926,3 +926,44 @@ func TestEvaluate_Schema_TruncatedBody_MessageIncludesTruncation(t *testing.T) {
 		t.Errorf("expected message to mention truncation, got: %s", out.Message)
 	}
 }
+
+func TestEvaluate_NumericJSONPathFilterStillMatches(t *testing.T) {
+	// Regression: UseNumber alone made gval filters compare json.Number
+	// against float64 literals and never match.
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.items[?(@.id == 4)].name": {Eq: strPtr("b")},
+		},
+	}
+	body := []byte(`{"items":[{"id":1,"name":"a"},{"id":4,"name":"b"}]}`)
+	out := Evaluate(spec, 200, 10, body, nil, nil, false)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("numeric filter must still match: %+v", out)
+	}
+}
+
+func TestEvaluate_FloatFormattingUnchanged(t *testing.T) {
+	// 3.10 must stringify as "3.1" (float64 semantics), not the raw literal.
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.v": {Eq: strPtr("3.1")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"v":3.10}`), nil, nil, false)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("expected 3.10 to compare as \"3.1\": %+v", out)
+	}
+}
+
+func TestEvaluate_ExistsFalse_InvalidExpressionFails(t *testing.T) {
+	// A typo'd JSONPath must never satisfy exists:false.
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.error[": {Exists: boolPtr(false)},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"ok":true}`), nil, nil, false)
+	if len(out) != 1 || out[0].Passed {
+		t.Fatalf("invalid expression must fail exists:false: %+v", out)
+	}
+}
