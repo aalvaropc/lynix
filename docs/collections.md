@@ -6,7 +6,7 @@ Collections are YAML files stored in `collections/`. They describe a sequence of
 schema_version: 1
 name: Auth Flow
 
-# Default variables (lowest priority — overridden by env vars)
+# Default variables (overridden by env vars, secrets, and --var)
 vars:
   base_url: "https://api.example.com"
   timeout_ms: 2000
@@ -29,7 +29,7 @@ requests:
       password: "{{password}}"
     assert:
       status: 200
-      max_ms: "{{timeout_ms}}"
+      max_ms: 2000
       jsonpath:
         "$.token":
           exists: true
@@ -69,8 +69,10 @@ requests:
 | `tags` | | List of tags for selective execution with `--tags` |
 | `delay_ms` | | Delay in milliseconds before executing this request |
 | `timeout_ms` | | Per-request timeout in ms — aborts the request if exceeded (distinct from `max_ms` which is an assertion) |
+| `follow_redirects` | | `true`/`false` — overrides the global `--no-redirects` flag in both directions |
 | `assert` | | Assertions on the response |
-| `extract` | | Variables to extract from the response body |
+| `extract` | | Variables to extract from the response body (JSONPath) |
+| `extract_headers` | | Variables to extract from response headers (`var_name: Header-Name`) |
 
 > Only one of `json`, `form`, or `raw` may be specified per request.
 
@@ -265,6 +267,14 @@ Extraction rules are applied in sorted order. If a rule fails (path not found, e
 
 Extracted variables are available in all subsequent requests within the same run.
 
+Headers can be extracted too:
+
+```yaml
+extract_headers:
+  session: "Set-Cookie"
+  request_id: "X-Request-Id"
+```
+
 ---
 
 ## Variable Resolution Order
@@ -272,14 +282,19 @@ Extracted variables are available in all subsequent requests within the same run
 When the same variable name appears in multiple places, the highest priority wins:
 
 ```
-secrets.local.yaml  >  environment YAML  >  collection vars  >  built-ins
+--var flags  >  secrets.local.yaml  >  environment YAML  >  collection vars  >  built-ins
 ```
 
 | Source | Priority | Description |
 |--------|----------|-------------|
-| `secrets.local.yaml` | Highest | Local overrides — gitignored |
-| Environment YAML | High | Selected environment file (`-e dev`) |
+| `--var key=value` | Highest | CLI overrides (repeatable) |
+| `secrets.local.yaml` | High | Local overrides — gitignored |
+| Environment YAML | Medium-high | Selected environment file (`-e dev`) |
 | Collection `vars` | Medium | Defined in the collection itself |
-| Built-ins (`$uuid`, `$timestamp`) | Lowest | Generated at request time |
+| Built-ins (`$uuid`, `$timestamp`, `$env.NAME`) | Lowest | Generated/read at request time |
 
 Variables extracted from responses are merged into the running set and available to the next request.
+
+> Assertion **values** resolve `{{var}}` references. To assert on a literal
+> `{{` (e.g. a template in the response), escape the braces in a regex:
+> `matches: "\\{\\{.*\\}\\}"`.

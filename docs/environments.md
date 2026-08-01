@@ -113,7 +113,7 @@ lynix:
   # What to include in saved run artifacts
   artifacts:
     save_response_headers: true    # Include response headers
-    save_response_body: false      # Include response body (opt-in, capped at 256 KB)
+    save_response_body: true       # Include response body (default true; capped by run.max_body_kb)
 
   # Global timeout for an entire collection run
   run:

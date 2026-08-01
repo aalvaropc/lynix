@@ -35,7 +35,7 @@ Hexagonal architecture (ports & adapters). **Core rule: `domain` never imports `
 - **`internal/ports/`** — Interface definitions (CollectionLoader, EnvironmentLoader, RequestRunner, ArtifactStore, EnvironmentCatalog).
 - **`internal/usecase/`** — Application orchestration. RunCollection (load → resolve vars → execute → assert → extract → store), ValidateCollection, InitWorkspace. Sub-packages: `assert/` (status, latency, JSONPath, JSON Schema checks), `extract/` (JSONPath variable extraction).
 - **`internal/infra/`** — Adapter implementations: `yamlcollection/`, `yamlenv/`, `httpclient/`, `httprunner/`, `redaction/`, `runstore/`, `fsworkspace/`, `workspacefinder/`, `curlparse/`, `postmanparse/`. Shared wiring in `wiring/wiring.go` (`NewAdapters()`).
-- **`internal/cli/`** — Cobra commands (run, validate, init, collections list, envs list). JUnit XML report generation in `format_junit.go`.
+- **`internal/cli/`** — Cobra commands (run, validate, init, collections list, envs list, runs list/show/diff, import curl/postman, version). JUnit XML report generation in `format_junit.go`.
 - **`cmd/lynix/`** — Thin binary entrypoint.
 
 ## Build Requirements
@@ -45,11 +45,11 @@ Hexagonal architecture (ports & adapters). **Core rule: `domain` never imports `
 
 ## Key Conventions
 
-- **Commit messages:** Conventional Commits — `<type>(<scope>): <description>`. Types: feat, fix, test, refactor, docs, chore. Scopes: assert, cli, domain, infra, ci, config.
+- **Commit messages:** Conventional Commits — `<type>(<scope>): <description>`. Types: feat, fix, test, refactor, docs, chore. Scopes: assert, cli, domain, infra, usecase, ci, config, deps.
 - **Branch names:** `<type>/<short-description>` off `main`.
 - **Testing:** All tests run with `-race`. CI enforces 70% coverage threshold. Test names follow `TestFunctionName_Scenario_Expected`.
 - **Linting:** golangci-lint with govet, errcheck, staticcheck, ineffassign, gosimple, revive, gofmt, goimports, errorlint, bodyclose. Config in `.golangci.yml`. `errcheck` is disabled for test files.
-- **Error handling:** Explicit error returns, no panics in production. Sentinel errors defined in `domain/errors.go`. Runtime errors classified via `ClassifyRunError()` into UI-friendly kinds (dns, connection, timeout, http, unknown).
+- **Error handling:** Explicit error returns, no panics in production. Sentinel errors defined in `domain/errors.go`. Runtime errors classified via `ClassifyRunError()` into UI-friendly kinds (dns, connection, timeout, canceled, http, unknown).
 - **Redaction:** Sensitive data (Authorization, Cookie, token/secret/password/api-key fields) masked before artifact storage. Configured per-surface (header, body, query).
-- **Variable resolution priority:** secrets.local.yaml > environment YAML > collection vars > built-ins ({{$uuid}}, {{$timestamp}}).
+- **Variable resolution priority:** --var flags > secrets.local.yaml > environment YAML > collection vars > built-ins ({{$uuid}}, {{$timestamp}}, {{$env.NAME}}).
 - **Build metadata:** Version, commit, date injected via ldflags in `internal/buildinfo/`.

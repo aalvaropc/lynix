@@ -19,7 +19,7 @@ No accounts. No dashboards. No proprietary formats. Single binary, plain YAML, G
 | Test format | Plain YAML | `.bru` markup | `.hurl` DSL | JSON exports |
 | JSON Schema validation | Yes (Draft 7 & 2020-12) | No | No | Via scripts |
 | Variable chaining | Yes | Yes | Captures | Yes |
-| Secret redaction in artifacts/logs | By default, all surfaces | No | Opt-in (`--secret`) | Partial |
+| Secret redaction in artifacts/reports | By default, all surfaces | No | Opt-in (`--secret`) | Partial |
 | Compare runs (`runs diff`) | Yes | No | No | No |
 | Differentiated exit codes | Yes | No | Yes | No |
 | Import from curl/Postman | Yes | Postman only | No | N/A |

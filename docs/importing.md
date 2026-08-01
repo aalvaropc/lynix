@@ -18,7 +18,9 @@ lynix import curl --from-file saved-curl.txt --name "My API"
 
 ### Unsupported curl Flags (warned)
 
-`--compressed`, `-k`, `-L`, `--cert`, `--key`, `-o`, `-v`, `-s`, `-F` (multipart), `-d @file`.
+`--compressed`, `--cert`, `--key`, `-o`, `-v`, `-s`, `-F` (multipart), `-d @file`.
+
+Supported redirect/TLS flags: `-L` maps to `follow_redirects: true`; `-k` is reported so you can opt into `--insecure` deliberately.
 
 ### Base URL Extraction
 

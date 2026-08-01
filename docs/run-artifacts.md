@@ -98,7 +98,7 @@ artifacts:
   save_response_headers: false
 ```
 
-Bodies are capped at **256 KB** per response. If truncated, `"truncated": true` is set in the artifact.
+Bodies are capped at **256 KB** per response by default (configurable via `run.max_body_kb`). If truncated, `"truncated": true` is set in the artifact.
 
 ---
 

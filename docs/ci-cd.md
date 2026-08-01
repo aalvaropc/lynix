@@ -39,12 +39,42 @@ lynix validate -c smoke-tests -e stg
 ### Using the Official GitHub Action
 
 For the simplest setup, use the official GitHub Action — see [action.yml](../action.yml).
+(The floating `v1` tag is published with each release.)
 
 ```yaml
 - uses: aalvaropc/lynix@v1
   with:
     collection: smoke-tests
     environment: prod
+    vars: |
+      base_url=https://api.staging.example.com
+      api_token=${{ secrets.API_TOKEN }}
+```
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `collection` | *(required)* | Collection name or path |
+| `environment` | | Environment name or path |
+| `workspace` | `.` | Workspace root directory |
+| `vars` | | Newline-separated `key=value` overrides (values are hidden from the step log) |
+| `format` | `pretty` | Output format (`pretty` or `json`) |
+| `report` / `report-path` | | Report type (`junit`) and output file |
+| `fail-fast` | `false` | Stop on first failure |
+| `tags` / `only` | | Filter requests |
+| `no-save` | `true` | Skip saving run artifacts |
+| `retries` / `retry-delay` / `retry-5xx` | | Retry policy |
+| `parallel` | `false` | Run independent requests in parallel |
+| `insecure` | `false` | Skip TLS verification |
+| `version` | `latest` | Lynix version to install |
+
+Secrets can also flow through the environment with `{{$env.NAME}}`:
+
+```yaml
+- uses: aalvaropc/lynix@v1
+  with:
+    collection: smoke-tests
+  env:
+    API_TOKEN: ${{ secrets.API_TOKEN }}
 ```
 
 ### Simple Example (Exit Code Only)

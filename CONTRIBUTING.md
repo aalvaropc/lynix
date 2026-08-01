@@ -133,7 +133,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 | `docs`     | Documentation only                             |
 | `chore`    | Build, deps, CI, tooling                       |
 
-**Scopes** (optional but helpful): `assert`, `cli`, `domain`, `infra`, `ci`, `config`.
+**Scopes** (optional but helpful): `assert`, `cli`, `domain`, `infra`, `usecase`, `ci`, `config`, `deps`.
 
 **Examples:**
 
@@ -156,11 +156,14 @@ chore(ci): add race detector and multi-platform build
 6. **Reference issues** in the PR description when applicable (`Closes #123`).
 
 The CI pipeline runs on every push and PR:
-- `test` job: `go test -race` + coverage summary
-- `lint` job: golangci-lint
-- `build` job: cross-compile for Linux, macOS, and Windows (amd64 + arm64)
+- `test`: `go test -race` + 70% coverage gate, on a Linux/macOS/Windows and Go-version matrix
+- `lint`: golangci-lint
+- `vulncheck`: govulncheck
+- `examples`: builds the real binary and runs every bundled example end to end
+- `action-self-test`: exercises the GitHub Action
+- `build`: cross-compile for Linux, macOS, and Windows (amd64 + arm64)
 
-All three jobs must pass for a PR to be merged.
+All jobs must pass for a PR to be merged.
 
 ---
 
@@ -177,8 +180,8 @@ All three jobs must pass for a PR to be merged.
 
 1. Add the assertion field to `domain.AssertionsSpec` in `internal/domain/collection.go`
 2. Add the YAML mapping in `internal/infra/yamlcollection/loader.go` (yaml struct + `mapAndValidate`)
-3. Implement evaluation in `internal/usecase/assert/evaluate.go`
-4. Add tests in `internal/usecase/assert/evaluate_test.go` following `TestEvaluate_<Type>_<Scenario>` naming
+3. Implement evaluation in `internal/usecase/assert/assert.go`
+4. Add tests in `internal/usecase/assert/assert_test.go` following `TestEvaluate_<Type>_<Scenario>` naming
 5. Update `schemas/collection.schema.json` to include the new field
 
 ### Adding a new infra adapter
