@@ -27,6 +27,10 @@ func envsListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List environments",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := validateListFormat(format); err != nil {
+				return err
+			}
+
 			ws, err := loadWorkspace(workspace, wiring.Opts{})
 			if err != nil {
 				return err
