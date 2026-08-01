@@ -154,7 +154,10 @@ func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
 		toSave = s.redacter.Redact(toSave)
 	}
 
-	if s.failOnSecret {
+	// The check verifies that redaction worked, so it only makes sense when
+	// masking ran: with masking disabled it would flag every legitimate
+	// token in a response and no run could ever be saved.
+	if s.failOnSecret && s.maskingEnabled {
 		if checker, ok := s.redacter.(SecretChecker); ok {
 			if err := checker.CheckForSecrets(toSave); err != nil {
 				return "", err

@@ -67,16 +67,23 @@ lynix run -w /custom/root -c demo -e dev     # Override workspace root
 | `--collection` | `-c` | Collection name or path **(required)** |
 | `--env` | `-e` | Environment name or path (optional) |
 | `--workspace` | `-w` | Workspace root (optional, auto-detected) |
+| `--var` | | Override a variable (`key=value`, repeatable; highest precedence) |
 | `--no-save` | | Skip saving the run artifact |
 | `--format` | | Output format: `pretty` or `json` (default: `pretty`) |
+| `--quiet` | `-q` | Show only failed requests in pretty output |
+| `--no-color` | | Disable colored output (`NO_COLOR` is also honored) |
 | `--report` | | Report type to generate (currently only `junit`) |
 | `--report-path` | | File path to write the report to |
 | `--fail-fast` | | Stop execution on the first failed request |
 | `--only` | | Run only the named requests (comma-separated) |
 | `--tags` | | Run only requests matching any of these tags (comma-separated) |
-| `--retries` | | Number of retries for transient errors (default: 0) |
-| `--retry-delay` | | Delay between retries in milliseconds (default: 0) |
+| `--parallel` | | Execute independent requests in parallel (dependency-graph scheduling) |
+| `--dry-run` | | Resolve variables and show requests without executing |
+| `--retries` | | Retries for transient errors (default: `run.retries` from `lynix.yaml`) |
+| `--retry-delay` | | Delay between retries in ms (default: `run.retry_delay_ms`) |
 | `--retry-5xx` | | Also retry on HTTP 5xx responses |
+| `--insecure` | | Skip TLS certificate verification (prints a warning) |
+| `--no-redirects` | | Do not follow HTTP redirects |
 
 ### Collection Resolution Order
 
@@ -102,6 +109,7 @@ lynix validate -c demo
 | `--collection` | `-c` | Collection name or path **(required)** |
 | `--env` | `-e` | Environment name or path (optional) |
 | `--workspace` | `-w` | Workspace root (optional) |
+| `--var` | | Override a variable (`key=value`, repeatable) |
 
 Outputs `OK` on success, or a descriptive error message on failure.
 
@@ -113,6 +121,7 @@ List all collections discovered in the workspace.
 
 ```bash
 lynix collections list
+lynix collections list --format json
 lynix collections list -w /path/to/workspace
 
 # Output:
@@ -130,6 +139,7 @@ List all environments discovered in the workspace.
 
 ```bash
 lynix envs list
+lynix envs list --format json
 
 # Output:
 # Workspace: /home/user/project

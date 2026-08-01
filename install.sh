@@ -56,8 +56,17 @@ resolve_version() {
 
     need_cmd curl
 
+    # An authenticated request avoids the 60 req/h unauthenticated API limit
+    # that shared CI runners regularly exhaust.
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        set -- -H "Authorization: Bearer ${GITHUB_TOKEN}"
+    else
+        set --
+    fi
+
     tag="$(curl -sSfL \
         -H "Accept: application/vnd.github+json" \
+        "$@" \
         "https://api.github.com/repos/${REPO}/releases/latest" \
         | grep '"tag_name"' \
         | head -1 \
