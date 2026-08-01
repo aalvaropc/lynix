@@ -2,6 +2,7 @@ package assert
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -88,7 +89,16 @@ func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []by
 		} else {
 			for expr, a := range spec.JSONPath {
 				ctx := checkContext{kind: "jsonpath", key: expr}
-				val, getErr := jsonpath.Get(expr, doc)
+				// Compile first: a syntactically invalid expression must be a
+				// hard failure for every operator. Treating it as "absent"
+				// would let exists:false pass forever on a typo'd path.
+				eval, compileErr := jsonpath.New(expr)
+				if compileErr != nil {
+					out = append(out, valueChecks(ctx, a, nil,
+						&bodyError{msg: fmt.Sprintf("invalid jsonpath expression: %v", compileErr)})...)
+					continue
+				}
+				val, getErr := eval(context.Background(), doc)
 				out = append(out, valueChecks(ctx, a, val, getErr)...)
 			}
 		}
@@ -433,6 +443,17 @@ func valueToString(val any) (string, error) {
 		return strconv.FormatBool(v), nil
 	case nil:
 		return "", fmt.Errorf("value is null")
+	case []any:
+		// JSONPath filters/wildcards return slices; unwrap single matches
+		// (same semantics as extract) so eq works on filter results.
+		if len(v) == 1 {
+			return valueToString(v[0])
+		}
+		b, err := json.Marshal(v)
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
 	default:
 		return fmt.Sprint(v), nil
 	}
@@ -454,13 +475,21 @@ func valueToFloat64(val any) (float64, error) {
 			return 0, fmt.Errorf("value %q is not numeric", v)
 		}
 		return f, nil
+	case []any:
+		if len(v) == 1 {
+			return valueToFloat64(v[0])
+		}
+		return 0, fmt.Errorf("value is a %d-element array, not a number", len(v))
 	default:
 		return 0, fmt.Errorf("value of type %T is not numeric", val)
 	}
 }
 
 // parseJSON decodes with UseNumber so large integers (e.g. int64 IDs) keep
-// their exact representation instead of losing precision as float64.
+// their exact representation, then normalizes the document: json.Number stays
+// ONLY for integers float64 cannot represent exactly. Everything else becomes
+// float64 again, because gval-based JSONPath filters ($[?(@.id == 4)]) compare
+// float64 and would silently stop matching against json.Number.
 func parseJSON(body []byte) (any, error) {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber()
@@ -471,7 +500,36 @@ func parseJSON(body []byte) (any, error) {
 	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("unexpected data after JSON value")
 	}
-	return doc, nil
+	return normalizeJSONNumbers(doc), nil
+}
+
+// float64Exact is the largest integer magnitude float64 represents exactly.
+const float64Exact = int64(1) << 53
+
+func normalizeJSONNumbers(v any) any {
+	switch t := v.(type) {
+	case json.Number:
+		s := t.String()
+		if !strings.ContainsAny(s, ".eE") {
+			if i, err := t.Int64(); err == nil && i >= -float64Exact && i <= float64Exact {
+				return float64(i)
+			}
+			return t // huge integer: keep the exact literal
+		}
+		if f, err := t.Float64(); err == nil {
+			return f
+		}
+		return t
+	case map[string]any:
+		for k, val := range t {
+			t[k] = normalizeJSONNumbers(val)
+		}
+	case []any:
+		for i, val := range t {
+			t[i] = normalizeJSONNumbers(val)
+		}
+	}
+	return v
 }
 
 func isEmptyValue(v any) bool {
