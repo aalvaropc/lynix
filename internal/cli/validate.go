@@ -23,7 +23,7 @@ func validateCmd() *cobra.Command {
 				return err
 			}
 
-			ws, err := loadWorkspace(workspace, wiring.Opts{})
+			ws, err := loadWorkspaceOrStandalone(cmd.Flags().Changed("workspace"), workspace, wiring.Opts{})
 			if err != nil {
 				return err
 			}

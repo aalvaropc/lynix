@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/aalvaropc/lynix/internal/infra/wiring"
@@ -20,6 +21,7 @@ func envsCmd() *cobra.Command {
 
 func envsListCmd() *cobra.Command {
 	var workspace string
+	var format string
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -33,6 +35,21 @@ func envsListCmd() *cobra.Command {
 			refs, err := ws.envCatalog.ListEnvironments(cmd.Context(), ws.root)
 			if err != nil {
 				return err
+			}
+
+			if format == "json" {
+				entries := make([]listEntryJSON, 0, len(refs))
+				for _, r := range refs {
+					rel, relErr := filepath.Rel(ws.root, r.Path)
+					if relErr != nil {
+						rel = r.Path
+					}
+					entries = append(entries, listEntryJSON{Name: r.Name, Path: rel})
+				}
+				return printJSONList(os.Stdout, map[string]any{
+					"default":      ws.cfg.Defaults.Environment,
+					"environments": entries,
+				})
 			}
 
 			if len(refs) == 0 {
@@ -52,5 +69,6 @@ func envsListCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&workspace, "workspace", "w", "", "Workspace root (optional; autodetected if omitted)")
+	cmd.Flags().StringVar(&format, "format", "pretty", "Output format: pretty|json")
 	return cmd
 }

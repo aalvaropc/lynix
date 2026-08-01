@@ -55,6 +55,24 @@ func loadWorkspace(workspaceFlag string, opts wiring.Opts) (*workspaceCtx, error
 	}, nil
 }
 
+// loadWorkspaceOrStandalone loads the workspace, falling back to standalone
+// mode ONLY when no workspace exists. Any other load error (e.g. a broken
+// lynix.yaml) propagates: silently falling back used to mask config errors
+// behind a confusing "bare names require a workspace" message.
+func loadWorkspaceOrStandalone(workspaceFlagChanged bool, workspaceFlag string, opts wiring.Opts) (*workspaceCtx, error) {
+	ws, err := loadWorkspace(workspaceFlag, opts)
+	if err == nil {
+		return ws, nil
+	}
+	if workspaceFlagChanged {
+		return nil, err
+	}
+	if !domain.IsKind(err, domain.KindNotFound) {
+		return nil, err
+	}
+	return loadStandalone(opts)
+}
+
 // loadStandalone creates a minimal context for running without a workspace.
 // Uses DefaultConfig, CWD for relative path resolution, and no artifact storage.
 func loadStandalone(opts wiring.Opts) (*workspaceCtx, error) {

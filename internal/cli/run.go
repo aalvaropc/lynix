@@ -35,6 +35,8 @@ func runCmd() *cobra.Command {
 	var dryRun bool
 	var parallel bool
 	var varFlags []string
+	var quiet bool
+	var noColor bool
 
 	c := &cobra.Command{
 		Use:   "run",
@@ -53,15 +55,9 @@ func runCmd() *cobra.Command {
 				Insecure:          insecure,
 				NoFollowRedirects: noRedirects,
 			}
-			ws, err := loadWorkspace(workspace, wiringOpts)
+			ws, err := loadWorkspaceOrStandalone(cmd.Flags().Changed("workspace"), workspace, wiringOpts)
 			if err != nil {
-				if cmd.Flags().Changed("workspace") {
-					return err
-				}
-				ws, err = loadStandalone(wiringOpts)
-				if err != nil {
-					return err
-				}
+				return err
 			}
 
 			collectionPath, err := resolveCollectionPath(ws, collection)
@@ -121,12 +117,17 @@ func runCmd() *cobra.Command {
 				defer cancel()
 			}
 
+			pretty := prettyOpts{
+				quiet:  quiet,
+				colors: newPalette(colorsEnabled(noColor, os.Stdout)),
+			}
+
 			run, runID, err := uc.Execute(ctx, collectionPath, envArg)
 			if err != nil {
 				if dryRun {
 					_ = printDryRun(os.Stdout, run)
 				} else {
-					_ = printRun(os.Stdout, run, runID, format)
+					_ = printRun(os.Stdout, run, runID, format, pretty)
 				}
 				return err
 			}
@@ -145,8 +146,15 @@ func runCmd() *cobra.Command {
 				}
 			}
 
-			if err := printRun(os.Stdout, run, runID, format); err != nil {
+			if err := printRun(os.Stdout, run, runID, format, pretty); err != nil {
 				return err
+			}
+
+			// When stdout is redirected (e.g. `> report.txt`), echo the
+			// one-line summary to stderr so the terminal still shows it.
+			if !isTerminal(os.Stdout) && format != "json" {
+				total := run.EndedAt.Sub(run.StartedAt)
+				fmt.Fprint(os.Stderr, summaryLine(run, total, palette{}))
 			}
 
 			if report == "junit" {
@@ -183,14 +191,16 @@ func runCmd() *cobra.Command {
 	c.Flags().BoolVar(&failFast, "fail-fast", false, "Stop execution on the first failed request")
 	c.Flags().StringVar(&only, "only", "", "Run only the named requests (comma-separated)")
 	c.Flags().StringVar(&tags, "tags", "", "Run only requests matching any of these tags (comma-separated)")
-	c.Flags().IntVar(&retries, "retries", 0, "Number of retries for transient errors (default 0)")
-	c.Flags().IntVar(&retryDelayMS, "retry-delay", 0, "Delay between retries in milliseconds (default 0)")
+	c.Flags().IntVar(&retries, "retries", 0, "Number of retries for transient errors (default: run.retries from lynix.yaml)")
+	c.Flags().IntVar(&retryDelayMS, "retry-delay", 0, "Delay between retries in milliseconds (default: run.retry_delay_ms from lynix.yaml)")
 	c.Flags().BoolVar(&retry5xx, "retry-5xx", false, "Retry on HTTP 5xx responses")
 	c.Flags().BoolVar(&insecure, "insecure", false, "Skip TLS certificate verification")
 	c.Flags().BoolVar(&noRedirects, "no-redirects", false, "Do not follow HTTP redirects")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "Resolve variables and show requests without executing")
 	c.Flags().BoolVar(&parallel, "parallel", false, "Execute independent requests in parallel")
 	c.Flags().StringArrayVar(&varFlags, "var", nil, "Override a variable (key=value, repeatable; wins over env and collection vars)")
+	c.Flags().BoolVarP(&quiet, "quiet", "q", false, "Show only failed requests in pretty output")
+	c.Flags().BoolVar(&noColor, "no-color", false, "Disable colored output (NO_COLOR is also honored)")
 
 	if err := c.MarkFlagRequired("collection"); err != nil {
 		panic(fmt.Sprintf("MarkFlagRequired: %v", err))
@@ -260,7 +270,13 @@ func printDryRun(w io.Writer, run domain.RunResult) error {
 	return nil
 }
 
-func printRun(w io.Writer, run domain.RunResult, runID string, format string) error {
+// prettyOpts controls the human-readable output.
+type prettyOpts struct {
+	quiet  bool // only failed requests
+	colors palette
+}
+
+func printRun(w io.Writer, run domain.RunResult, runID string, format string, opts prettyOpts) error {
 	switch format {
 	case "json":
 		enc := json.NewEncoder(w)
@@ -285,14 +301,18 @@ func printRun(w io.Writer, run domain.RunResult, runID string, format string) er
 		}
 		return enc.Encode(payload)
 	case "pretty", "":
-		printPrettyRun(w, run, runID)
+		printPrettyRun(w, run, runID, opts)
 		return nil
 	default:
 		return fmt.Errorf("unsupported format %q (expected pretty|json)", format)
 	}
 }
 
-func printPrettyRun(w io.Writer, run domain.RunResult, runID string) {
+const maxMessageLen = 300
+const maxBodyExcerptLen = 200
+
+func printPrettyRun(w io.Writer, run domain.RunResult, runID string, opts prettyOpts) {
+	c := opts.colors
 	total := run.EndedAt.Sub(run.StartedAt)
 	if run.StartedAt.IsZero() || run.EndedAt.IsZero() {
 		total = 0
@@ -300,8 +320,6 @@ func printPrettyRun(w io.Writer, run domain.RunResult, runID string) {
 
 	fmt.Fprintf(w, "Collection: %s\n", run.CollectionName)
 	fmt.Fprintf(w, "Env:        %s\n", run.EnvironmentName)
-	fmt.Fprintf(w, "Started:    %s\n", run.StartedAt.Format(time.RFC3339))
-	fmt.Fprintf(w, "Ended:      %s\n", run.EndedAt.Format(time.RFC3339))
 	fmt.Fprintf(w, "Duration:   %s\n", total)
 	if runID != "" {
 		fmt.Fprintf(w, "Run ID:     %s\n", runID)
@@ -309,9 +327,14 @@ func printPrettyRun(w io.Writer, run domain.RunResult, runID string) {
 	fmt.Fprintln(w)
 
 	for _, r := range run.Results {
-		status := "OK"
-		if isRequestFailed(r) {
-			status = "FAIL"
+		failed := isRequestFailed(r)
+		if opts.quiet && !failed {
+			continue
+		}
+
+		status := c.green + "OK" + c.reset
+		if failed {
+			status = c.red + c.bold + "FAIL" + c.reset
 		}
 
 		fmt.Fprintf(w, "- [%s] %s (%s) %dms\n", status, r.Name, r.Method, r.LatencyMS)
@@ -321,36 +344,44 @@ func printPrettyRun(w io.Writer, run domain.RunResult, runID string) {
 		}
 
 		if r.Error != nil {
-			fmt.Fprintf(w, "  error: %s (%s)\n", r.Error.Message, r.Error.Kind)
+			fmt.Fprintf(w, "  %serror:%s %s (%s)\n", c.red, c.reset, truncateMessage(r.Error.Message), r.Error.Kind)
 		} else {
 			fmt.Fprintf(w, "  status: %d\n", r.StatusCode)
 		}
 
+		// Detail lines only for failures — a 30-request run with 5 checks
+		// each should not print 150 lines of passing noise.
 		if len(r.Assertions) > 0 {
 			pass, fail := countAssertionPassFail(r.Assertions)
 			fmt.Fprintf(w, "  assertions: %d pass / %d fail\n", pass, fail)
 			for _, a := range r.Assertions {
-				mark := "✓"
-				if !a.Passed {
-					mark = "✗"
+				if a.Passed {
+					continue
 				}
-				fmt.Fprintf(w, "    %s %s — %s\n", mark, a.Name, a.Message)
+				fmt.Fprintf(w, "    %s✗ %s — %s%s\n", c.red, a.Name, truncateMessage(a.Message), c.reset)
 			}
 		}
 
 		if len(r.Extracts) > 0 {
 			ok, bad := countExtractPassFail(r.Extracts)
-			fmt.Fprintf(w, "  extracts: %d ok / %d fail\n", ok, bad)
-			for _, e := range r.Extracts {
-				mark := "✓"
-				if !e.Success {
-					mark = "✗"
+			if bad > 0 {
+				fmt.Fprintf(w, "  extracts: %d ok / %d fail\n", ok, bad)
+				for _, e := range r.Extracts {
+					if e.Success {
+						continue
+					}
+					fmt.Fprintf(w, "    %s✗ %s — %s%s\n", c.red, e.Name, truncateMessage(e.Message), c.reset)
 				}
-				fmt.Fprintf(w, "    %s %s — %s\n", mark, e.Name, e.Message)
 			}
 		}
 
-		if len(r.Extracted) > 0 {
+		// A failing request prints a response excerpt: the assertion message
+		// alone rarely explains what the server actually said.
+		if failed && r.Error == nil && len(r.Response.Body) > 0 {
+			fmt.Fprintf(w, "  %sresponse:%s %s\n", c.dim, c.reset, excerpt(r.Response.Body, maxBodyExcerptLen))
+		}
+
+		if len(r.Extracted) > 0 && !opts.quiet {
 			fmt.Fprintf(w, "  extracted vars:\n")
 			keys := make([]string, 0, len(r.Extracted))
 			for k := range r.Extracted {
@@ -366,12 +397,45 @@ func printPrettyRun(w io.Writer, run domain.RunResult, runID string) {
 	}
 
 	passed, failed, errs := summarizeResults(run)
-	fmt.Fprintln(w, "───────────────────────────────────")
-	fmt.Fprintf(w, "Results: %d passed, %d failed, %d error", passed, failed, errs)
-	if errs != 1 {
-		fmt.Fprint(w, "s")
+	if opts.quiet && failed == 0 && errs == 0 {
+		fmt.Fprintf(w, "%sAll %d request(s) passed.%s (%s)\n", c.green, passed, c.reset, total)
+		return
 	}
-	fmt.Fprintf(w, " (%s)\n", total)
+	fmt.Fprintln(w, "───────────────────────────────────")
+	fmt.Fprint(w, summaryLine(run, total, c))
+}
+
+func summaryLine(run domain.RunResult, total time.Duration, c palette) string {
+	passed, failed, errs := summarizeResults(run)
+	fc := ""
+	if failed > 0 || errs > 0 {
+		fc = c.red
+	} else {
+		fc = c.green
+	}
+	plural := "s"
+	if errs == 1 {
+		plural = ""
+	}
+	return fmt.Sprintf("%sResults: %d passed, %d failed, %d error%s%s (%s)\n",
+		fc, passed, failed, errs, plural, c.reset, total)
+}
+
+func truncateMessage(s string) string {
+	return excerptString(s, maxMessageLen)
+}
+
+func excerpt(b []byte, maxRunes int) string {
+	return excerptString(string(b), maxRunes)
+}
+
+func excerptString(s string, maxRunes int) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return string(runes[:maxRunes]) + "…"
 }
 
 func summarizeResults(run domain.RunResult) (passed, failed, errors int) {
