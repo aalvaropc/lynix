@@ -43,13 +43,14 @@ func BuildDepGraph(requests []RequestSpec, seedVars Vars) DepGraph {
 		}
 
 		if len(level) == 0 {
-			// Unresolvable dependencies — append remaining in original order.
+			// Unresolvable dependencies (e.g. a var no request produces).
+			// Serialize the remaining requests one per level in original order:
+			// running them concurrently would race and misattribute the failure.
 			for i := range requests {
 				if remaining[i] {
-					level = append(level, i)
+					levels = append(levels, []int{i})
 				}
 			}
-			levels = append(levels, level)
 			break
 		}
 

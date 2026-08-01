@@ -16,17 +16,29 @@ import (
 
 const defaultMaxBodyBytes = 256 * 1024 // 256KB
 
+// defaultRequestTimeout applies when a request has no timeout_ms. It lives in
+// the runner (as a context deadline) rather than http.Client.Timeout so an
+// explicit larger timeout_ms is not silently capped by the client.
+const defaultRequestTimeout = 30 * time.Second
+
 type Runner struct {
-	client       *http.Client
-	maxBodyBytes int64
-	resolver     *domain.VarResolver
-	log          *slog.Logger
+	client         *http.Client
+	maxBodyBytes   int64
+	requestTimeout time.Duration
+	resolver       *domain.VarResolver
+	log            *slog.Logger
 }
 
 type Option func(*Runner)
 
 func WithMaxBodyBytes(n int64) Option {
 	return func(r *Runner) { r.maxBodyBytes = n }
+}
+
+// WithRequestTimeout sets the default per-request timeout used when a request
+// does not declare timeout_ms. Zero disables the default.
+func WithRequestTimeout(d time.Duration) Option {
+	return func(r *Runner) { r.requestTimeout = d }
 }
 
 func WithResolver(vr *domain.VarResolver) Option {
@@ -40,10 +52,11 @@ func WithLogger(log *slog.Logger) Option {
 
 func New(client *http.Client, opts ...Option) *Runner {
 	r := &Runner{
-		client:       client,
-		maxBodyBytes: defaultMaxBodyBytes,
-		resolver:     domain.NewVarResolver(),
-		log:          slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		client:         client,
+		maxBodyBytes:   defaultMaxBodyBytes,
+		requestTimeout: defaultRequestTimeout,
+		resolver:       domain.NewVarResolver(),
+		log:            slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -80,10 +93,14 @@ func (r *Runner) Run(ctx context.Context, req domain.RequestSpec, vars domain.Va
 		},
 	}
 
-	// Per-request timeout overrides the global client timeout.
+	// Per-request timeout: timeout_ms wins over the runner default.
+	timeout := r.requestTimeout
 	if req.TimeoutMS != nil && *req.TimeoutMS > 0 {
+		timeout = time.Duration(*req.TimeoutMS) * time.Millisecond
+	}
+	if timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(*req.TimeoutMS)*time.Millisecond)
+		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
 

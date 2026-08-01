@@ -84,6 +84,11 @@ func (uc *ValidateCollection) Execute(ctx context.Context, collectionPath string
 				vars[k] = "x"
 			}
 		}
+		for k := range req.ExtractHeaders {
+			if _, ok := vars[k]; !ok {
+				vars[k] = "x"
+			}
+		}
 	}
 
 	return nil

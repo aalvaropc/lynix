@@ -43,6 +43,9 @@ func NewAdapters(root string, cfg domain.Config, enableStore bool, opts Opts) Ad
 	hcfg := httpclient.DefaultConfig()
 	hcfg.Insecure = cfg.Run.Insecure || opts.Insecure
 	hcfg.NoFollowRedirects = opts.NoFollowRedirects
+	// Timeouts are enforced by the runner per request (context deadline);
+	// a client-level timeout would silently cap larger timeout_ms values.
+	hcfg.Timeout = 0
 	client := httpclient.New(hcfg)
 	runner := httprunner.New(client)
 

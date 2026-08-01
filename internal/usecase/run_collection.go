@@ -83,7 +83,13 @@ func (uc *RunCollection) Execute(
 		return domain.RunResult{}, "", err
 	}
 
-	// Pre-load schema files for requests that reference them.
+	col.Requests, err = uc.filterRequests(col.Requests)
+	if err != nil {
+		return domain.RunResult{}, "", err
+	}
+
+	// Pre-load schema files AFTER filtering so indices match the slice that
+	// actually runs (a mismatch would validate the wrong request's schema).
 	schemaCache := make(map[int][]byte) // request index → schema bytes
 	for i, req := range col.Requests {
 		sb, err := loadSchemaBytes(req.Assert)
@@ -93,11 +99,6 @@ func (uc *RunCollection) Execute(
 		if sb != nil {
 			schemaCache[i] = sb
 		}
-	}
-
-	col.Requests, err = uc.filterRequests(col.Requests)
-	if err != nil {
-		return domain.RunResult{}, "", err
 	}
 
 	// collection vars < env vars < extracted runtime vars (updated per request)
@@ -146,6 +147,9 @@ func (uc *RunCollection) Execute(
 		if req.DelayMS != nil && *req.DelayMS > 0 {
 			select {
 			case <-ctx.Done():
+				// Record the interrupted request (parity with parallel mode)
+				// so it never vanishes from the report.
+				run.Results = append(run.Results, erroredResult(req, ctx.Err()))
 				run.EndedAt = time.Now()
 				return run, "", ctx.Err()
 			case <-time.After(time.Duration(*req.DelayMS) * time.Millisecond):
@@ -269,7 +273,8 @@ func (uc *RunCollection) runWithRetries(
 
 // filterRequests applies --only and --tags filtering.
 // --only names must exist in the collection (error on typo).
-// --tags with no match returns 0 results (not an error).
+// A filter combination matching zero requests is an error: silently running
+// nothing would report success in CI without testing anything.
 // Combination is intersection: request must match both.
 func (uc *RunCollection) filterRequests(requests []domain.RequestSpec) ([]domain.RequestSpec, error) {
 	if len(uc.only) == 0 && len(uc.tags) == 0 {
@@ -306,6 +311,9 @@ func (uc *RunCollection) filterRequests(requests []domain.RequestSpec) ([]domain
 		if matchOnly && matchTags {
 			filtered = append(filtered, r)
 		}
+	}
+	if len(filtered) == 0 {
+		return nil, fmt.Errorf("no requests match the given filters (--only %v, --tags %v)", uc.only, uc.tags)
 	}
 	return filtered, nil
 }
@@ -385,13 +393,7 @@ func (uc *RunCollection) executeParallel(
 		// Snapshot vars for this level — goroutines only read from this.
 		levelVars := cloneVars(vars)
 
-		var g *errgroup.Group
-		var gctx context.Context
-		if uc.failFast {
-			g, gctx = errgroup.WithContext(ctx)
-		} else {
-			g, gctx = errgroup.WithContext(ctx)
-		}
+		g, gctx := errgroup.WithContext(ctx)
 
 		for _, idx := range level {
 			idx := idx // capture for goroutine
@@ -401,6 +403,7 @@ func (uc *RunCollection) executeParallel(
 				if req.DelayMS != nil && *req.DelayMS > 0 {
 					select {
 					case <-gctx.Done():
+						results[idx] = erroredResult(req, gctx.Err())
 						return gctx.Err()
 					case <-time.After(time.Duration(*req.DelayMS) * time.Millisecond):
 					}
@@ -408,18 +411,7 @@ func (uc *RunCollection) executeParallel(
 
 				rr, runErr := uc.runWithRetries(gctx, req, levelVars)
 				if runErr != nil {
-					results[idx] = domain.RequestResult{
-						Name:           req.Name,
-						Method:         req.Method,
-						URL:            req.URL,
-						RequestHeaders: map[string]string{},
-						Assertions:     []domain.AssertionResult{},
-						Extracts:       []domain.ExtractResult{},
-						Extracted:      domain.Vars{},
-						Response:       domain.ResponseSnapshot{Headers: map[string][]string{}},
-						Error:          domain.NewRunError(runErr),
-						Attempts:       1,
-					}
+					results[idx] = erroredResult(req, runErr)
 					if uc.failFast {
 						return fmt.Errorf("request %q failed: %w", req.Name, runErr)
 					}
@@ -445,8 +437,8 @@ func (uc *RunCollection) executeParallel(
 			})
 		}
 
-		if err := g.Wait(); err != nil && uc.failFast {
-			// Merge what we have and stop.
+		if err := g.Wait(); err != nil {
+			// Fail-fast abort or parent cancellation: merge what we have and stop.
 			break
 		}
 
@@ -458,14 +450,32 @@ func (uc *RunCollection) executeParallel(
 		}
 	}
 
-	// Copy results in original order, skipping zero-value entries.
+	// Copy results in original order. Zero-value entries only remain for
+	// levels that never started (fail-fast abort in an earlier level).
 	for i := range results {
 		if results[i].Name != "" {
 			run.Results = append(run.Results, results[i])
 		}
 	}
 
-	return nil
+	return ctx.Err()
+}
+
+// erroredResult builds a placeholder result for a request that could not
+// complete (runner error or cancellation) so it never vanishes from reports.
+func erroredResult(req domain.RequestSpec, err error) domain.RequestResult {
+	return domain.RequestResult{
+		Name:           req.Name,
+		Method:         req.Method,
+		URL:            req.URL,
+		RequestHeaders: map[string]string{},
+		Assertions:     []domain.AssertionResult{},
+		Extracts:       []domain.ExtractResult{},
+		Extracted:      domain.Vars{},
+		Response:       domain.ResponseSnapshot{Headers: map[string][]string{}},
+		Error:          domain.NewRunError(err),
+		Attempts:       1,
+	}
 }
 
 func cloneVars(v domain.Vars) domain.Vars {

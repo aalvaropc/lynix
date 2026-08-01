@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,9 +68,11 @@ func (e errEnvLoader) LoadEnvironment(_ string) (domain.Environment, error) {
 type stubRunner struct {
 	result domain.RequestResult
 	err    error
+	calls  int
 }
 
 func (s *stubRunner) Run(_ context.Context, _ domain.RequestSpec, _ domain.Vars) (domain.RequestResult, error) {
+	s.calls++
 	return s.result, s.err
 }
 
@@ -773,7 +776,9 @@ func TestRunCollection_Execute_OnlyAndTags_Intersection(t *testing.T) {
 	}
 }
 
-func TestRunCollection_Execute_TagsFilter_NoMatch_RunsNothing(t *testing.T) {
+func TestRunCollection_Execute_TagsFilter_NoMatch_ReturnsError(t *testing.T) {
+	// A filter matching nothing must be an error: silently running zero
+	// requests would produce a green build in CI without testing anything.
 	col := domain.Collection{
 		Requests: []domain.RequestSpec{
 			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com", Tags: []string{"auth"}},
@@ -786,12 +791,15 @@ func TestRunCollection_Execute_TagsFilter_NoMatch_RunsNothing(t *testing.T) {
 	}}
 	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Tags: []string{"nonexistent"}})
 
-	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err == nil {
+		t.Fatal("expected error when no requests match the filters")
 	}
-	if len(run.Results) != 0 {
-		t.Fatalf("expected 0 results, got %d", len(run.Results))
+	if !strings.Contains(err.Error(), "no requests match") {
+		t.Fatalf("expected filter-mismatch error, got: %v", err)
+	}
+	if runner.calls != 0 {
+		t.Fatalf("expected no requests executed, got %d", runner.calls)
 	}
 }
 
@@ -1186,3 +1194,86 @@ func (c *countingRunnerStub) Run(ctx context.Context, req domain.RequestSpec, va
 var _ ports.CollectionLoader = (*fakeCollectionLoader)(nil)
 var _ ports.EnvironmentLoader = (*fakeEnvLoader)(nil)
 var _ ports.ArtifactStore = (*fakeStore)(nil)
+
+func TestRunCollection_Execute_OnlyFilter_SchemaStillApplied(t *testing.T) {
+	// Regression: the schema cache was built before filtering, so with --only
+	// the schema landed on the wrong index and the request ran unvalidated.
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "first", Method: domain.MethodGet, URL: "http://a.com"},
+			{
+				Name:   "second",
+				Method: domain.MethodGet,
+				URL:    "http://b.com",
+				Assert: domain.AssertionsSpec{
+					SchemaInline: map[string]any{
+						"type":     "object",
+						"required": []any{"present"},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubRunner{result: domain.RequestResult{
+		StatusCode: 200,
+		Response:   domain.ResponseSnapshot{Body: []byte(`{"other":1}`)},
+	}}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Only: []string{"second"}})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(run.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(run.Results))
+	}
+
+	var schemaAssertion *domain.AssertionResult
+	for i := range run.Results[0].Assertions {
+		if run.Results[0].Assertions[i].Name == "schema" {
+			schemaAssertion = &run.Results[0].Assertions[i]
+		}
+	}
+	if schemaAssertion == nil {
+		t.Fatal("expected a schema assertion to be evaluated for the filtered request")
+	}
+	if schemaAssertion.Passed {
+		t.Fatalf("expected schema assertion to fail (body violates schema): %s", schemaAssertion.Message)
+	}
+}
+
+func TestRunCollection_ParallelCancel_ResultsNotLost(t *testing.T) {
+	// Regression: requests interrupted while waiting on delay_ms vanished
+	// from the report entirely in parallel mode.
+	delay := 500
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://a.com", DelayMS: &delay},
+			{Name: "req2", Method: domain.MethodGet, URL: "http://b.com", DelayMS: &delay},
+		},
+	}
+	runner := &stubRunner{result: domain.RequestResult{
+		StatusCode: 200,
+		Response:   domain.ResponseSnapshot{Body: []byte(`{}`)},
+	}}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Parallel: true})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	run, _, err := uc.Execute(ctx, "col.yaml", "env.yaml")
+	if err == nil {
+		t.Fatal("expected error from canceled context")
+	}
+	if len(run.Results) != 2 {
+		t.Fatalf("canceled requests must not vanish from results: expected 2, got %d", len(run.Results))
+	}
+	for _, rr := range run.Results {
+		if rr.Error == nil {
+			t.Errorf("expected %q to carry a cancellation error", rr.Name)
+		}
+	}
+}
