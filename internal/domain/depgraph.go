@@ -82,6 +82,41 @@ func requestConsumedVars(req RequestSpec) map[string]bool {
 	for _, v := range bodyVarRefs(req.Body) {
 		refs[v] = true
 	}
+	// Assertion expected values resolve {{var}} too: without counting them
+	// as dependencies, a collection can pass sequentially and fail with
+	// --parallel because the producing request lands in the same level.
+	for _, v := range assertVarRefs(req.Assert) {
+		refs[v] = true
+	}
+	return refs
+}
+
+func assertVarRefs(spec AssertionsSpec) []string {
+	var refs []string
+	scan := func(p *string) {
+		if p != nil {
+			refs = append(refs, extractVarRefs(*p)...)
+		}
+	}
+	scanVA := func(m map[string]ValueAssertion) {
+		for _, a := range m {
+			scan(a.Eq)
+			scan(a.NotEq)
+			scan(a.Contains)
+			scan(a.NotContains)
+			scan(a.Matches)
+			scan(a.NotMatches)
+		}
+	}
+	scanVA(spec.JSONPath)
+	scanVA(spec.Headers)
+	if b := spec.Body; b != nil {
+		scan(b.Eq)
+		scan(b.Contains)
+		scan(b.NotContains)
+		scan(b.Matches)
+		scan(b.NotMatches)
+	}
 	return refs
 }
 
