@@ -22,7 +22,7 @@ lynix:
     runs_dir: runs
   artifacts:
     save_response_headers: true
-    save_response_body: false
+    save_response_body: false  # default is true; kept off here to slim artifacts
   # run:
   #   timeout_seconds: 300     # whole-run deadline
   #   retries: 0               # retries for transient errors
