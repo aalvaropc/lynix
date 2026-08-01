@@ -11,6 +11,7 @@ requests:
     headers:
       Content-Type: "application/json"
     json:
+      userId: 1
       username: "{{username}}"
       password: "{{password}}"
     assert:
@@ -20,12 +21,13 @@ requests:
           exists: true
     extract:
       auth_token: "$.id"
+      user_id: "$.userId"
     tags:
       - auth
 
   - name: get-profile
     method: GET
-    url: "{{base_url}}/users/{{auth_token}}"
+    url: "{{base_url}}/users/{{user_id}}"
     headers:
       Accept: "application/json"
       Authorization: "Bearer {{auth_token}}"
@@ -44,7 +46,7 @@ requests:
 
   - name: get-user-posts
     method: GET
-    url: "{{base_url}}/posts?userId={{auth_token}}"
+    url: "{{base_url}}/posts?userId={{user_id}}"
     headers:
       Accept: "application/json"
       Authorization: "Bearer {{auth_token}}"
