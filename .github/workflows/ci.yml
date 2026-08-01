@@ -55,6 +55,31 @@ jobs:
       - name: Lint
         run: make lint
 
+  examples:
+    name: Examples (E2E smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Build binary
+        run: make build
+
+      # Runs every bundled example against its real public API with the
+      # compiled binary — the same first commands a new user would try.
+      - name: Run examples
+        run: |
+          for ex in health-check rest-crud auth-chain; do
+            echo "::group::${ex}"
+            ./bin/lynix run -c "examples/${ex}/collection.yaml" -e "examples/${ex}/env.yaml" --no-save
+            echo "::endgroup::"
+          done
+
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-latest
