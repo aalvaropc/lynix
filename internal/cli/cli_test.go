@@ -795,3 +795,9 @@ func TestParseVarFlags(t *testing.T) {
 		t.Fatal("expected error for empty key")
 	}
 }
+
+func TestParseVarFlags_RejectsBuiltinKeys(t *testing.T) {
+	if _, err := parseVarFlags([]string{"$uuid=x"}); err == nil {
+		t.Fatal("expected error for $-prefixed key (silently ignored otherwise)")
+	}
+}

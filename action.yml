@@ -125,9 +125,23 @@ runs:
 
         if [ -n "$INPUT_VARS" ]; then
           while IFS= read -r kv; do
+            kv="$(printf '%s' "$kv" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
             [ -n "$kv" ] && args+=(--var "$kv")
           done <<< "$INPUT_VARS"
         fi
 
-        echo "Running: lynix ${args[*]}"
+        # Log the command with --var VALUES hidden: GitHub only masks exact
+        # ${{ secrets.* }} strings, not values derived from them.
+        display=()
+        skip_value=false
+        for a in "${args[@]}"; do
+          if [ "$skip_value" = true ]; then
+            display+=("${a%%=*}=***")
+            skip_value=false
+            continue
+          fi
+          display+=("$a")
+          [ "$a" = "--var" ] && skip_value=true
+        done
+        echo "Running: lynix ${display[*]}"
         lynix "${args[@]}"
