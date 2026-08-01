@@ -13,17 +13,20 @@ No accounts. No dashboards. No proprietary formats. Single binary, plain YAML, G
 
 ## Why Lynix?
 
-| | Lynix | Bruno | Hurl | Postman | curl scripts |
-|---|---|---|---|---|---|
-| Single binary (no runtime) | Yes | No (Electron) | Yes | No | Yes |
-| Git-friendly YAML | Yes | Yes (Bru format) | Yes (.hurl) | JSON exports | Manual |
-| CI/CD native | Yes | CLI mode | Yes | Newman (Node) | Yes |
-| JSONPath assertions | Yes | Yes | Limited | Yes | Manual |
-| JSON Schema validation | Yes | No | No | No | Manual |
-| Variable chaining | Yes | Yes | Captures | Yes | Manual |
-| Sensitive data masking | Yes | No | No | Partial | No |
-| Import from curl/Postman | Yes | Postman only | No | N/A | N/A |
-| GitHub Action | Yes | No | No | No | Manual |
+| | Lynix | Bruno | Hurl | Postman/Newman |
+|---|---|---|---|---|
+| Single binary (no runtime) | Yes | No (Node/Electron) | Yes | No (Node) |
+| Test format | Plain YAML | `.bru` markup | `.hurl` DSL | JSON exports |
+| JSON Schema validation | Yes (Draft 7 & 2020-12) | No | No | Via scripts |
+| Variable chaining | Yes | Yes | Captures | Yes |
+| Secret redaction in artifacts/logs | By default, all surfaces | No | Opt-in (`--secret`) | Partial |
+| Compare runs (`runs diff`) | Yes | No | No | No |
+| Differentiated exit codes | Yes | No | Yes | No |
+| Import from curl/Postman | Yes | Postman only | No | N/A |
+
+Honest note: [Hurl](https://hurl.dev) is an excellent, more mature tool in this
+space. Choose Lynix if you prefer plain YAML over a DSL, want JSON Schema
+contract checks and secret redaction out of the box, or want to diff runs.
 
 ---
 
@@ -130,14 +133,18 @@ See [Getting Started](docs/getting-started.md) for detailed installation instruc
 
 ## Features
 
-- **Headless CI mode** -- `lynix run` with JSON or JUnit XML output and proper exit codes
-- **Assertions** -- status codes, latency thresholds, JSONPath (8 operators), JSON Schema (Draft 7 & 2020-12)
-- **Variable chaining** -- extract values from responses and inject into subsequent requests
-- **Git-friendly** -- collections and environments are plain YAML you can diff, review, and version
-- **Environment layering** -- base environment files + gitignored `secrets.local.yaml` for local overrides
-- **Sensitive data masking** -- redacts auth headers, tokens, secrets, and passwords before saving artifacts
+- **Headless CI mode** -- `lynix run` with JSON or JUnit XML output and differentiated exit codes (`1` assert failures, `2` config errors, `3` network errors)
+- **Assertions** -- status (single or list), latency, raw body (any content type), JSONPath (12 operators incl. `len`, `gte`, `not_matches`), JSON Schema (Draft 7 & 2020-12)
+- **Variable chaining** -- extract values from responses, inject into later requests, and assert against them (`eq: "{{created_id}}"`)
+- **CI secrets without files** -- `{{$env.API_TOKEN}}` reads the process environment; `--var key=value` overrides anything
+- **Secret redaction by default** -- headers, bodies, query strings, error messages, and assertion output are scrubbed before artifacts or reports are written; `fail_on_detected_secret` gates the save
+- **Run history** -- `lynix runs list|show|diff` compares stored runs: status changes, latency deltas, assertion regressions
+- **Parallel execution** -- dependency-graph scheduling of independent requests (`--parallel`)
+- **Git-friendly** -- collections, environments, and artifacts are plain text you can diff and review
 - **Import from curl & Postman** -- convert existing API definitions to Lynix YAML
 - **Single binary** -- one Go executable, no runtime dependencies
+
+See the [CHANGELOG](CHANGELOG.md) and [ROADMAP](ROADMAP.md).
 
 ---
 
