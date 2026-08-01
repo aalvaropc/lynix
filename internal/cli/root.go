@@ -34,6 +34,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(collectionsCmd())
 	cmd.AddCommand(envsCmd())
 	cmd.AddCommand(importCmd())
+	cmd.AddCommand(runsCmd())
 
 	return cmd
 }

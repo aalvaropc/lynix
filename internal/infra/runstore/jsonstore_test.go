@@ -526,3 +526,83 @@ func TestSaveRun_MaskingWithoutRedacterFails(t *testing.T) {
 		t.Fatalf("expected KindInvalidConfig OpError, got: %v", err)
 	}
 }
+
+func TestListRuns_And_LoadRun(t *testing.T) {
+	tmp := t.TempDir()
+
+	cfg := domain.DefaultConfig()
+	cfg.Paths.RunsDir = "runs"
+	cfg.Masking.Enabled = false
+
+	store := NewJSONStore(tmp, cfg)
+
+	start := time.Date(2026, 2, 3, 10, 11, 12, 0, time.UTC)
+	id1, err := store.SaveRun(domain.RunArtifact{
+		CollectionName: "Alpha",
+		StartedAt:      start,
+		Results: []domain.RequestResult{
+			{Name: "ok", StatusCode: 200},
+			{Name: "bad", Assertions: []domain.AssertionResult{{Passed: false}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveRun 1: %v", err)
+	}
+	if _, err := store.SaveRun(domain.RunArtifact{
+		CollectionName: "Beta",
+		StartedAt:      start.Add(time.Hour),
+		Results:        []domain.RequestResult{{Name: "ok", StatusCode: 200}},
+	}); err != nil {
+		t.Fatalf("SaveRun 2: %v", err)
+	}
+
+	summaries, err := store.ListRuns()
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("expected 2 runs, got %d", len(summaries))
+	}
+	if summaries[0].Collection != "Beta" {
+		t.Errorf("expected newest first, got %q", summaries[0].Collection)
+	}
+	if summaries[1].Passed != 1 || summaries[1].Failed != 1 {
+		t.Errorf("expected 1 passed / 1 failed for Alpha, got %+v", summaries[1])
+	}
+
+	run, err := store.LoadRun(id1)
+	if err != nil {
+		t.Fatalf("LoadRun: %v", err)
+	}
+	if run.CollectionName != "Alpha" || len(run.Results) != 2 {
+		t.Fatalf("unexpected loaded run: %+v", run)
+	}
+}
+
+func TestLoadRun_RejectsPathTraversal(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := domain.DefaultConfig()
+	cfg.Masking.Enabled = false
+	store := NewJSONStore(tmp, cfg)
+
+	for _, id := range []string{"../secrets", "a/b", `a\b`} {
+		if _, err := store.LoadRun(id); err == nil {
+			t.Errorf("expected error for id %q", id)
+		}
+	}
+}
+
+func TestLoadRun_NotFound(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := domain.DefaultConfig()
+	cfg.Masking.Enabled = false
+	store := NewJSONStore(tmp, cfg)
+
+	_, err := store.LoadRun("20990101T000000Z_nope")
+	if err == nil {
+		t.Fatal("expected not-found error")
+	}
+	if !domain.IsKind(err, domain.KindNotFound) {
+		t.Fatalf("expected KindNotFound, got: %v", err)
+	}
+}
