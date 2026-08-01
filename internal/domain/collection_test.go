@@ -2,6 +2,8 @@ package domain
 
 import "testing"
 
+func boolPtr(b bool) *bool { return &b }
+
 func TestCompileDomain(t *testing.T) {
 	status := 200
 	maxLatency := 150
@@ -22,7 +24,7 @@ func TestCompileDomain(t *testing.T) {
 					Status:       &status,
 					MaxLatencyMS: &maxLatency,
 					JSONPath: map[string]ValueAssertion{
-						"$.data": {Exists: true},
+						"$.data": {Exists: boolPtr(true)},
 					},
 				},
 				Extract: ExtractSpec{

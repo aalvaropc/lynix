@@ -1,8 +1,11 @@
 package assert
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/textproto"
 	"regexp"
 	"strconv"
@@ -80,7 +83,7 @@ func Evaluate(spec domain.AssertionsSpec, status int, latencyMs int64, body []by
 			for expr, a := range spec.JSONPath {
 				ctx := checkContext{kind: "jsonpath", key: expr}
 				out = append(out, valueChecks(ctx, a, nil,
-					fmt.Errorf("%s", jsonErrMsg))...)
+					&bodyError{msg: jsonErrMsg})...)
 			}
 		} else {
 			for expr, a := range spec.JSONPath {
@@ -115,10 +118,16 @@ func lookupHeader(headers map[string][]string, name string) (string, bool) {
 	return strings.Join(values, ", "), true
 }
 
+// bodyError marks a failure to parse the response body itself (as opposed to a
+// path or header lookup miss), so exists:false does not treat it as absence.
+type bodyError struct{ msg string }
+
+func (e *bodyError) Error() string { return e.msg }
+
 func valueChecks(ctx checkContext, a domain.ValueAssertion, val any, getErr error) []domain.AssertionResult {
 	var out []domain.AssertionResult
-	if a.Exists {
-		out = append(out, checkExists(ctx, val, getErr))
+	if a.Exists != nil {
+		out = append(out, checkExists(ctx, val, getErr, *a.Exists))
 	}
 	if a.Eq != nil {
 		out = append(out, checkEq(ctx, val, getErr, *a.Eq))
@@ -144,26 +153,46 @@ func valueChecks(ctx checkContext, a domain.ValueAssertion, val any, getErr erro
 	return out
 }
 
-func checkExists(ctx checkContext, val any, getErr error) domain.AssertionResult {
+func checkExists(ctx checkContext, val any, getErr error, expected bool) domain.AssertionResult {
 	name := ctx.kind + ".exists"
-	if getErr != nil {
+
+	var be *bodyError
+	if errors.As(getErr, &be) {
 		return domain.AssertionResult{
 			Name:    name,
 			Passed:  false,
 			Message: fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, getErr),
 		}
 	}
-	if isEmptyValue(val) {
+
+	absent := getErr != nil || isEmptyValue(val)
+
+	if expected {
+		if absent {
+			msg := fmt.Sprintf("%s %q: expected value to exist, got empty", ctx.kind, ctx.key)
+			if getErr != nil {
+				msg = fmt.Sprintf("%s %q: %v", ctx.kind, ctx.key, getErr)
+			}
+			return domain.AssertionResult{Name: name, Passed: false, Message: msg}
+		}
 		return domain.AssertionResult{
 			Name:    name,
-			Passed:  false,
-			Message: fmt.Sprintf("%s %q: expected value to exist, got empty", ctx.kind, ctx.key),
+			Passed:  true,
+			Message: fmt.Sprintf("%s %q exists", ctx.kind, ctx.key),
+		}
+	}
+
+	if absent {
+		return domain.AssertionResult{
+			Name:    name,
+			Passed:  true,
+			Message: fmt.Sprintf("%s %q does not exist", ctx.kind, ctx.key),
 		}
 	}
 	return domain.AssertionResult{
 		Name:    name,
-		Passed:  true,
-		Message: fmt.Sprintf("%s %q exists", ctx.kind, ctx.key),
+		Passed:  false,
+		Message: fmt.Sprintf("%s %q: expected value to not exist, but it does", ctx.kind, ctx.key),
 	}
 }
 
@@ -396,6 +425,8 @@ func valueToString(val any) (string, error) {
 	switch v := val.(type) {
 	case string:
 		return v, nil
+	case json.Number:
+		return v.String(), nil
 	case float64:
 		return strconv.FormatFloat(v, 'f', -1, 64), nil
 	case bool:
@@ -409,6 +440,12 @@ func valueToString(val any) (string, error) {
 
 func valueToFloat64(val any) (float64, error) {
 	switch v := val.(type) {
+	case json.Number:
+		f, err := v.Float64()
+		if err != nil {
+			return 0, fmt.Errorf("value %q is not numeric", v.String())
+		}
+		return f, nil
 	case float64:
 		return v, nil
 	case string:
@@ -422,10 +459,17 @@ func valueToFloat64(val any) (float64, error) {
 	}
 }
 
+// parseJSON decodes with UseNumber so large integers (e.g. int64 IDs) keep
+// their exact representation instead of losing precision as float64.
 func parseJSON(body []byte) (any, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
 	var doc any
-	if err := json.Unmarshal(body, &doc); err != nil {
+	if err := dec.Decode(&doc); err != nil {
 		return nil, err
+	}
+	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("unexpected data after JSON value")
 	}
 	return doc, nil
 }

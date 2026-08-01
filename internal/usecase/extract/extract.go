@@ -1,8 +1,11 @@
 package extract
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -155,10 +158,17 @@ func lookupHeader(headers map[string][]string, name string) (string, bool) {
 	return "", false
 }
 
+// parseJSON decodes with UseNumber so large integers (e.g. int64 IDs) keep
+// their exact representation instead of losing precision as float64.
 func parseJSON(body []byte) (any, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
 	var doc any
-	if err := json.Unmarshal(body, &doc); err != nil {
+	if err := dec.Decode(&doc); err != nil {
 		return nil, err
+	}
+	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("unexpected data after JSON value")
 	}
 	return doc, nil
 }
@@ -186,6 +196,8 @@ func toString(v any) (string, error) {
 	switch t := v.(type) {
 	case string:
 		return t, nil
+	case json.Number:
+		return t.String(), nil
 	case float64, bool, int, int64, uint64:
 		return fmt.Sprint(t), nil
 	case map[string]any:

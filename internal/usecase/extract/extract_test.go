@@ -350,3 +350,14 @@ func TestApply_SingleElementArrayUnwrapped(t *testing.T) {
 		t.Fatalf("expected item=single, got %q", vars["item"])
 	}
 }
+
+func TestApply_LargeIntegerPrecision(t *testing.T) {
+	body := []byte(`{"id":7238905612345678901}`)
+	vars, results := Apply(body, domain.ExtractSpec{"id": "$.id"}, false)
+	if len(results) != 1 || !results[0].Success {
+		t.Fatalf("expected successful extract, got %+v", results)
+	}
+	if vars["id"] != "7238905612345678901" {
+		t.Errorf("int64 id must extract without precision loss, got %q", vars["id"])
+	}
+}

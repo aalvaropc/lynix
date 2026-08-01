@@ -3,6 +3,7 @@ package yamlcollection
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aalvaropc/lynix/internal/domain"
@@ -130,7 +131,7 @@ requests:
 	if !ok {
 		t.Fatal("expected $.name assertion")
 	}
-	if !nameA.Exists {
+	if nameA.Exists == nil || !*nameA.Exists {
 		t.Error("expected $.name exists=true")
 	}
 	if nameA.Eq == nil || *nameA.Eq != "alice" {
@@ -446,7 +447,7 @@ requests:
 	if !ok {
 		t.Fatal("expected Cache-Control assertion")
 	}
-	if !cc.Exists {
+	if cc.Exists == nil || !*cc.Exists {
 		t.Error("expected Cache-Control exists=true")
 	}
 	if cc.NotContains == nil || *cc.NotContains != "no-store" {
@@ -480,5 +481,92 @@ requests:
 	}
 	if !domain.IsKind(err, domain.KindInvalidConfig) {
 		t.Fatalf("expected KindInvalidConfig, got: %v", err)
+	}
+}
+
+func TestLoadCollection_ExistsFalse(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "demo.yaml")
+
+	content := []byte(`
+name: Exists API
+requests:
+  - name: check
+    method: GET
+    url: "http://x/api"
+    assert:
+      jsonpath:
+        "$.error":
+          exists: false
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	c, err := l.LoadCollection(p)
+	if err != nil {
+		t.Fatalf("LoadCollection error: %v", err)
+	}
+
+	a, ok := c.Requests[0].Assert.JSONPath["$.error"]
+	if !ok {
+		t.Fatal("expected $.error assertion")
+	}
+	if a.Exists == nil || *a.Exists {
+		t.Errorf("expected exists=false to be preserved, got=%v", a.Exists)
+	}
+}
+
+func TestLoadCollection_EmptyAssertionRejected(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "demo.yaml")
+
+	content := []byte(`
+name: Empty Assert API
+requests:
+  - name: check
+    method: GET
+    url: "http://x/api"
+    assert:
+      jsonpath:
+        "$.foo": {}
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	_, err := l.LoadCollection(p)
+	if err == nil {
+		t.Fatal("expected error for assertion without operators")
+	}
+	if !strings.Contains(err.Error(), "no operators") {
+		t.Errorf("expected 'no operators' in error, got: %v", err)
+	}
+}
+
+func TestLoadCollection_EmptyHeaderAssertionRejected(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "demo.yaml")
+
+	content := []byte(`
+name: Empty Header Assert API
+requests:
+  - name: check
+    method: GET
+    url: "http://x/api"
+    assert:
+      headers:
+        "X-Foo": {}
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	_, err := l.LoadCollection(p)
+	if err == nil {
+		t.Fatal("expected error for header assertion without operators")
 	}
 }
