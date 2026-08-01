@@ -84,10 +84,7 @@ lynix run -w /custom/root -c demo -e dev     # Override workspace root
 2. Tries `collections/{name}.yaml`, then `collections/{name}.yml`
 3. Falls back to matching by collection `name` field (case-insensitive)
 
-### Exit Codes
-
-- `0` -- all requests completed and all assertions passed
-- `1` -- any request failed or any assertion was violated
+See [Exit Codes](#exit-codes) for the run exit code convention.
 
 ---
 
@@ -180,3 +177,20 @@ lynix import postman collection.json --name "Renamed API"
 | `--name` | | Override collection name |
 
 See [Importing](importing.md) for details on supported Postman features.
+
+---
+
+## `lynix runs`
+
+Inspect saved run artifacts (`runs/` in the workspace).
+
+```bash
+lynix runs list                      # newest first (--limit 20 by default)
+lynix runs list --format json
+lynix runs show <run-id>             # same report as `lynix run` (--format json for raw)
+lynix runs diff <run-id-a> <run-id-b>
+```
+
+`diff` compares runs request-by-request: status changes, latency deltas,
+assertion regressions and recoveries, and requests present in only one run —
+useful for spotting regressions between CI runs or before/after a deploy.
