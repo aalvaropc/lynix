@@ -13,6 +13,7 @@ type ValidateCollection struct {
 	collections ports.CollectionLoader
 	envs        ports.EnvironmentLoader
 	resolver    *domain.VarResolver
+	extraVars   domain.Vars
 }
 
 type ValidateOption func(*ValidateCollection)
@@ -23,6 +24,11 @@ func WithVarResolver(vr *domain.VarResolver) ValidateOption {
 			uc.resolver = vr
 		}
 	}
+}
+
+// WithVars adds CLI-level variable overrides (--var key=value).
+func WithVars(vars domain.Vars) ValidateOption {
+	return func(uc *ValidateCollection) { uc.extraVars = vars }
 }
 
 func NewValidateCollection(cl ports.CollectionLoader, el ports.EnvironmentLoader, opts ...ValidateOption) *ValidateCollection {
@@ -51,8 +57,8 @@ func (uc *ValidateCollection) Execute(ctx context.Context, collectionPath string
 		return err
 	}
 
-	// collection vars < env vars < extracted vars
-	vars := domain.Merge(col.Vars, env.Vars)
+	// collection vars < env vars < CLI --var overrides < extracted vars
+	vars := domain.Merge(domain.Merge(col.Vars, env.Vars), uc.extraVars)
 
 	for _, req := range col.Requests {
 		if err := ctx.Err(); err != nil {

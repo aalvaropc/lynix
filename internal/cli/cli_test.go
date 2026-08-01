@@ -778,3 +778,26 @@ func TestResolveWorkspaceRoot_RelativePath(t *testing.T) {
 		t.Errorf("expected absolute path, got %q", got)
 	}
 }
+
+func TestParseVarFlags(t *testing.T) {
+	vars, err := parseVarFlags([]string{"a=1", "b=x=y", "c="})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if vars["a"] != "1" || vars["b"] != "x=y" || vars["c"] != "" {
+		t.Fatalf("unexpected vars: %v", vars)
+	}
+
+	if _, err := parseVarFlags([]string{"novalue"}); err == nil {
+		t.Fatal("expected error for flag without '='")
+	}
+	if _, err := parseVarFlags([]string{"=v"}); err == nil {
+		t.Fatal("expected error for empty key")
+	}
+}
+
+func TestParseVarFlags_RejectsBuiltinKeys(t *testing.T) {
+	if _, err := parseVarFlags([]string{"$uuid=x"}); err == nil {
+		t.Fatal("expected error for $-prefixed key (silently ignored otherwise)")
+	}
+}

@@ -12,11 +12,17 @@ func validateCmd() *cobra.Command {
 	var workspace string
 	var collection string
 	var env string
+	var varFlags []string
 
 	c := &cobra.Command{
 		Use:   "validate",
 		Short: "Validate a collection and environment (no HTTP)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			cliVars, err := parseVarFlags(varFlags)
+			if err != nil {
+				return err
+			}
+
 			ws, err := loadWorkspace(workspace, wiring.Opts{})
 			if err != nil {
 				return err
@@ -32,7 +38,7 @@ func validateCmd() *cobra.Command {
 				return err
 			}
 
-			uc := usecase.NewValidateCollection(ws.collections, ws.envs)
+			uc := usecase.NewValidateCollection(ws.collections, ws.envs, usecase.WithVars(cliVars))
 			if err := uc.Execute(cmd.Context(), collectionPath, envArg); err != nil {
 				return err
 			}
@@ -45,6 +51,7 @@ func validateCmd() *cobra.Command {
 	c.Flags().StringVarP(&workspace, "workspace", "w", "", "Workspace root (optional; autodetected if omitted)")
 	c.Flags().StringVarP(&collection, "collection", "c", "", "Collection name or path (required)")
 	c.Flags().StringVarP(&env, "env", "e", "", "Environment name or path (optional; defaults to workspace default env)")
+	c.Flags().StringArrayVar(&varFlags, "var", nil, "Override a variable (key=value, repeatable)")
 
 	if err := c.MarkFlagRequired("collection"); err != nil {
 		panic(fmt.Sprintf("MarkFlagRequired: %v", err))

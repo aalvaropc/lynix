@@ -1277,3 +1277,32 @@ func TestRunCollection_ParallelCancel_ResultsNotLost(t *testing.T) {
 		}
 	}
 }
+
+func TestRunCollection_Execute_CLIVarsWinOverEnvVars(t *testing.T) {
+	col := domain.Collection{
+		Vars: domain.Vars{"who": "collection"},
+		Requests: []domain.RequestSpec{
+			{Name: "req1", Method: domain.MethodGet, URL: "http://x/{{who}}"},
+		},
+	}
+	runner := &multiCallRunner{
+		results: []domain.RequestResult{
+			{StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{}`)}},
+		},
+	}
+	uc := NewRunCollection(
+		fakeCollectionLoader{col: col},
+		fakeEnvLoader{env: domain.Environment{Vars: domain.Vars{"who": "environment"}}},
+		runner,
+		nil,
+		RunOpts{Vars: domain.Vars{"who": "cli"}},
+	)
+
+	_, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := runner.capturedVars[0]["who"]; got != "cli" {
+		t.Fatalf("expected --var override to win, got %q", got)
+	}
+}

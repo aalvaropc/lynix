@@ -61,6 +61,9 @@ inputs:
     description: 'Skip TLS verification'
     required: false
     default: 'false'
+  vars:
+    description: 'Newline-separated key=value variable overrides'
+    required: false
 
 runs:
   using: 'composite'
@@ -101,6 +104,7 @@ runs:
         INPUT_RETRY_5XX: ${{ inputs.retry-5xx }}
         INPUT_PARALLEL: ${{ inputs.parallel }}
         INPUT_INSECURE: ${{ inputs.insecure }}
+        INPUT_VARS: ${{ inputs.vars }}
       run: |
         args=(run -c "$INPUT_COLLECTION")
 
@@ -119,5 +123,26 @@ runs:
         [ "$INPUT_PARALLEL" = "true" ] && args+=(--parallel)
         [ "$INPUT_INSECURE" = "true" ] && args+=(--insecure)
 
-        echo "Running: lynix ${args[*]}"
+        if [ -n "$INPUT_VARS" ]; then
+          while IFS= read -r kv; do
+            kv="$(printf '%s' "$kv" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            [ -n "$kv" ] && args+=(--var "$kv")
+          done <<< "$INPUT_VARS"
+        fi
+
+        # Log the command with --var VALUES hidden: GitHub only masks exact
+        # secret strings, not values derived from them. (Note: GitHub parses
+        # dollar-brace expressions even inside YAML comments in action files.)
+        display=()
+        skip_value=false
+        for a in "${args[@]}"; do
+          if [ "$skip_value" = true ]; then
+            display+=("${a%%=*}=***")
+            skip_value=false
+            continue
+          fi
+          display+=("$a")
+          [ "$a" = "--var" ] && skip_value=true
+        done
+        echo "Running: lynix ${display[*]}"
         lynix "${args[@]}"

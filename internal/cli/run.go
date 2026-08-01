@@ -34,12 +34,18 @@ func runCmd() *cobra.Command {
 	var noRedirects bool
 	var dryRun bool
 	var parallel bool
+	var varFlags []string
 
 	c := &cobra.Command{
 		Use:   "run",
 		Short: "Run a collection (functional checks) from a Lynix workspace",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := validateReportFlags(report, reportPath); err != nil {
+				return err
+			}
+
+			cliVars, err := parseVarFlags(varFlags)
+			if err != nil {
 				return err
 			}
 
@@ -68,12 +74,14 @@ func runCmd() *cobra.Command {
 				return err
 			}
 
-			// Feed known secret values (secrets file + sensitive env vars) to
-			// the redactor so they are scrubbed from every output surface.
+			// Feed known secret values (secrets file + sensitive env vars +
+			// sensitive --var overrides) to the redactor so they are
+			// scrubbed from every output surface.
 			if ws.redactor != nil {
 				if secretsEnv, envErr := ws.envs.LoadEnvironment(envArg); envErr == nil {
 					ws.redactor.AddSecretsFromEnv(secretsEnv)
 				}
+				ws.redactor.AddSecretsFromVars(cliVars)
 			}
 
 			var store = ws.store
@@ -90,6 +98,7 @@ func runCmd() *cobra.Command {
 				Retry5xx:   ws.cfg.Run.Retry5xx,
 				DryRun:     dryRun,
 				Parallel:   parallel,
+				Vars:       cliVars,
 			}
 			if cmd.Flags().Changed("retries") {
 				retryOpts.Retries = retries
@@ -185,6 +194,7 @@ func runCmd() *cobra.Command {
 	c.Flags().BoolVar(&noRedirects, "no-redirects", false, "Do not follow HTTP redirects")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "Resolve variables and show requests without executing")
 	c.Flags().BoolVar(&parallel, "parallel", false, "Execute independent requests in parallel")
+	c.Flags().StringArrayVar(&varFlags, "var", nil, "Override a variable (key=value, repeatable; wins over env and collection vars)")
 
 	if err := c.MarkFlagRequired("collection"); err != nil {
 		panic(fmt.Sprintf("MarkFlagRequired: %v", err))

@@ -93,6 +93,7 @@ Generated fresh per request:
 | `{{$randomString}}` | Random 8-character alphanumeric string |
 | `{{$randomEmail}}` | Random email (`user_abc123@test.lynix`) |
 | `{{$randomBool}}` | Random `true` or `false` |
+| `{{$env.NAME}}` | Value of the process environment variable `NAME` (error if unset) |
 
 ---
 

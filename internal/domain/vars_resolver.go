@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -14,11 +15,13 @@ import (
 
 // VarResolver resolves {{var}} placeholders in strings and JSON-like payloads.
 // Built-ins: {{$timestamp}}, {{$uuid}}, {{$isoTimestamp}}, {{$randomInt}},
-// {{$randomString}}, {{$randomEmail}}, {{$randomBool}}.
+// {{$randomString}}, {{$randomEmail}}, {{$randomBool}}, and {{$env.NAME}}
+// (reads the process environment — the natural carrier for CI secrets).
 type VarResolver struct {
 	now        func() time.Time
 	uuidV4     func() (string, error)
 	randSource io.Reader
+	lookupEnv  func(string) (string, bool)
 }
 
 // VarResolverOption configures VarResolver.
@@ -39,11 +42,17 @@ func WithRand(src io.Reader) VarResolverOption {
 	return func(r *VarResolver) { r.randSource = src }
 }
 
+// WithLookupEnv overrides process-environment lookup (useful for tests).
+func WithLookupEnv(fn func(string) (string, bool)) VarResolverOption {
+	return func(r *VarResolver) { r.lookupEnv = fn }
+}
+
 func NewVarResolver(opts ...VarResolverOption) *VarResolver {
 	r := &VarResolver{
 		now:        time.Now,
 		uuidV4:     uuidV4,
 		randSource: rand.Reader,
+		lookupEnv:  os.LookupEnv,
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -307,6 +316,21 @@ func (r *VarResolver) resolveStringWith(vars Vars, builtins Vars, s string) (str
 					Kind: KindInvalidConfig,
 					Err:  errors.New("empty placeholder"),
 				}
+			}
+
+			// {{$env.NAME}} reads the process environment directly.
+			if envName, isEnv := strings.CutPrefix(name, "$env."); isEnv {
+				val, found := r.lookupEnv(envName)
+				if !found {
+					return "", &OpError{
+						Op:   "vars.resolve",
+						Kind: KindMissingVar,
+						Err:  fmt.Errorf("missing variable: %s (environment variable %q is not set)", name, envName),
+					}
+				}
+				b.WriteString(val)
+				i = end + 2
+				continue
 			}
 
 			val, ok := builtins[name]
