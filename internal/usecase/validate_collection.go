@@ -111,8 +111,11 @@ func (uc *ValidateCollection) Execute(ctx context.Context, collectionPath string
 // and regex patterns without {{var}} placeholders.
 func validateAssertionExpressions(req domain.RequestSpec) error {
 	checkPath := func(where, expr string) error {
+		// {{var}} in a JSONPath expression is never resolved at runtime
+		// (only expected VALUES are): rejecting it here beats an opaque
+		// runtime failure — or a silent pass with exists:false.
 		if strings.Contains(expr, "{{") {
-			return nil // resolvable only at runtime
+			return fmt.Errorf("%s: variables are not supported in JSONPath expressions (%q)", where, expr)
 		}
 		if _, err := jsonpath.New(expr); err != nil {
 			return fmt.Errorf("%s: invalid jsonpath %q: %w", where, expr, err)

@@ -30,6 +30,10 @@ func collectionsListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List collections",
 		RunE: func(_ *cobra.Command, _ []string) error {
+			if err := validateListFormat(format); err != nil {
+				return err
+			}
+
 			ws, err := loadWorkspace(workspace, wiring.Opts{})
 			if err != nil {
 				return err

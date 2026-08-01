@@ -73,7 +73,13 @@ For the simplest setup, use the official GitHub Action — see [action.yml](../a
 
 ## Exit Codes
 
-- `0` -- all assertions passed
-- `1` -- any request failed or any assertion was violated
+| Code | Meaning |
+|------|---------|
+| `0` | Everything passed |
+| `1` | Assertion failures (the API misbehaved) |
+| `2` | Usage or configuration error (bad flags, invalid YAML, missing files/vars) |
+| `3` | Execution error (network failure, timeout, cancellation) |
 
-Use exit codes directly in CI scripts to gate deployments or mark builds as failed.
+If a run contains both execution errors and assertion failures, the exit code is `3`.
+Use exit codes directly in CI scripts to gate deployments or distinguish "the API
+is broken" from "the pipeline could not reach it".

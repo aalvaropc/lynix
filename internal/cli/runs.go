@@ -43,6 +43,10 @@ func runsListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List saved runs (newest first)",
 		RunE: func(_ *cobra.Command, _ []string) error {
+			if err := validateListFormat(format); err != nil {
+				return err
+			}
+
 			store, err := runsStore(workspace)
 			if err != nil {
 				return err
@@ -215,7 +219,10 @@ func diffRequest(a, b domain.RequestResult) []string {
 		out = append(out, fmt.Sprintf("status: %d → %d", a.StatusCode, b.StatusCode))
 	}
 
-	if delta := b.LatencyMS - a.LatencyMS; delta != 0 && a.LatencyMS > 0 {
+	// Compare latency only when both requests actually completed: errored
+	// requests report 0ms, which would produce meaningless deltas — but
+	// legitimate sub-millisecond responses must still compare.
+	if delta := b.LatencyMS - a.LatencyMS; delta != 0 && a.Error == nil && b.Error == nil {
 		sign := "+"
 		if delta < 0 {
 			sign = ""

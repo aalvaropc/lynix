@@ -798,6 +798,12 @@ func TestParseVarFlags(t *testing.T) {
 	}
 }
 
+func TestParseVarFlags_RejectsBuiltinKeys(t *testing.T) {
+	if _, err := parseVarFlags([]string{"$uuid=x"}); err == nil {
+		t.Fatal("expected error for $-prefixed key (silently ignored otherwise)")
+	}
+}
+
 func TestExitCodeFor(t *testing.T) {
 	cases := []struct {
 		name string
