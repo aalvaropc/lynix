@@ -91,10 +91,24 @@ type ValueAssertion struct {
 	Eq          *string  // toStr(value) == *Eq
 	Contains    *string  // toStr(value) contains substring
 	Matches     *string  // toStr(value) matches regex pattern (stdlib regexp)
+	NotMatches  *string  // toStr(value) does not match regex pattern
 	Gt          *float64 // numeric value > threshold
 	Lt          *float64 // numeric value < threshold
+	Gte         *float64 // numeric value >= threshold
+	Lte         *float64 // numeric value <= threshold
 	NotEq       *string  // toStr(value) != *NotEq
 	NotContains *string  // toStr(value) does not contain substring
+	Len         *int     // length of array/object/string == *Len
+}
+
+// BodyAssertion defines checks against the raw response body, regardless of
+// content type (JSON, HTML, plain text, CSV, ...).
+type BodyAssertion struct {
+	Eq          *string
+	Contains    *string
+	NotContains *string
+	Matches     *string
+	NotMatches  *string
 }
 
 // AssertionsSpec defines functional assertions for a request.
@@ -102,8 +116,15 @@ type AssertionsSpec struct {
 	// Status is an expected HTTP status code (optional).
 	Status *int
 
+	// StatusIn is a set of accepted HTTP status codes (optional).
+	// Mutually exclusive with Status at load time.
+	StatusIn []int
+
 	// MaxLatencyMS is a maximum allowed latency in milliseconds (optional).
 	MaxLatencyMS *int
+
+	// Body contains assertions on the raw response body (optional).
+	Body *BodyAssertion
 
 	// JSONPath contains JSONPath assertions keyed by a JSONPath expression (optional).
 	// The key is passed directly to jsonpath.Get(), e.g. "$.data", "$.users[0].id".

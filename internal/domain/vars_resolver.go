@@ -284,6 +284,83 @@ func (rr *RuntimeResolver) ResolveJSONValue(v any) (any, error) {
 	}
 }
 
+// ResolveAssertionValues resolves {{var}} references in the string-typed
+// expected values of an assertion spec (eq, contains, matches, ... and the
+// body block), enabling comparisons against previously extracted variables.
+// Builtins are intentionally unavailable: a freshly generated {{$uuid}} could
+// never match the one sent with the request. {{$env.NAME}} still works.
+func (r *VarResolver) ResolveAssertionValues(vars Vars, spec AssertionsSpec) (AssertionsSpec, error) {
+	resolve := func(p *string) (*string, error) {
+		if p == nil {
+			return nil, nil
+		}
+		s, err := r.resolveStringWith(vars, Vars{}, *p)
+		if err != nil {
+			return nil, err
+		}
+		return &s, nil
+	}
+
+	resolveVA := func(in map[string]ValueAssertion) (map[string]ValueAssertion, error) {
+		if len(in) == 0 {
+			return in, nil
+		}
+		out := make(map[string]ValueAssertion, len(in))
+		for k, a := range in {
+			var err error
+			if a.Eq, err = resolve(a.Eq); err != nil {
+				return nil, err
+			}
+			if a.NotEq, err = resolve(a.NotEq); err != nil {
+				return nil, err
+			}
+			if a.Contains, err = resolve(a.Contains); err != nil {
+				return nil, err
+			}
+			if a.NotContains, err = resolve(a.NotContains); err != nil {
+				return nil, err
+			}
+			if a.Matches, err = resolve(a.Matches); err != nil {
+				return nil, err
+			}
+			if a.NotMatches, err = resolve(a.NotMatches); err != nil {
+				return nil, err
+			}
+			out[k] = a
+		}
+		return out, nil
+	}
+
+	out := spec
+	var err error
+	if out.JSONPath, err = resolveVA(spec.JSONPath); err != nil {
+		return AssertionsSpec{}, err
+	}
+	if out.Headers, err = resolveVA(spec.Headers); err != nil {
+		return AssertionsSpec{}, err
+	}
+	if spec.Body != nil {
+		b := *spec.Body
+		if b.Eq, err = resolve(b.Eq); err != nil {
+			return AssertionsSpec{}, err
+		}
+		if b.Contains, err = resolve(b.Contains); err != nil {
+			return AssertionsSpec{}, err
+		}
+		if b.NotContains, err = resolve(b.NotContains); err != nil {
+			return AssertionsSpec{}, err
+		}
+		if b.Matches, err = resolve(b.Matches); err != nil {
+			return AssertionsSpec{}, err
+		}
+		if b.NotMatches, err = resolve(b.NotMatches); err != nil {
+			return AssertionsSpec{}, err
+		}
+		out.Body = &b
+	}
+	return out, nil
+}
+
 func (r *VarResolver) resolveStringWith(vars Vars, builtins Vars, s string) (string, error) {
 	// Fast path: no token start.
 	if !strings.Contains(s, "{{") {

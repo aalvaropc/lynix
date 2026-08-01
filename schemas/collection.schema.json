@@ -53,7 +53,8 @@
           "additionalProperties": { "type": "string" }
         },
         "json": {
-          "description": "JSON request body."
+          "description": "JSON request body (object or array).",
+          "type": ["object", "array"]
         },
         "form": {
           "type": "object",
@@ -97,12 +98,25 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "status": { "type": "integer" },
-        "max_ms": {
+        "status": {
           "oneOf": [
             { "type": "integer" },
-            { "type": "string" }
+            { "type": "array", "items": { "type": "integer" }, "minItems": 1 }
           ]
+        },
+        "max_ms": { "type": "integer" },
+        "body": {
+          "type": "object",
+          "description": "Assertions on the raw response body (any content type).",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "eq": { "type": "string" },
+            "contains": { "type": "string" },
+            "not_contains": { "type": "string" },
+            "matches": { "type": "string" },
+            "not_matches": { "type": "string" }
+          }
         },
         "jsonpath": {
           "type": "object",
@@ -127,10 +141,14 @@
         "eq": { "type": "string" },
         "contains": { "type": "string" },
         "matches": { "type": "string" },
+        "not_matches": { "type": "string" },
         "gt": { "type": "number" },
         "lt": { "type": "number" },
+        "gte": { "type": "number" },
+        "lte": { "type": "number" },
         "not_eq": { "type": "string" },
-        "not_contains": { "type": "string" }
+        "not_contains": { "type": "string" },
+        "len": { "type": "integer", "minimum": 0 }
       }
     }
   }

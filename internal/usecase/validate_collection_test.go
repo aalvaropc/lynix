@@ -160,3 +160,41 @@ func TestValidateCollection_ExtractHeadersSeedsVars(t *testing.T) {
 		t.Fatalf("expected extract_headers vars to satisfy later requests, got: %v", err)
 	}
 }
+
+func TestValidateCollection_InvalidRegexRejected(t *testing.T) {
+	col := domain.Collection{
+		Name: "re",
+		Requests: []domain.RequestSpec{
+			{
+				Name: "r", Method: domain.MethodGet, URL: "http://x",
+				Assert: domain.AssertionsSpec{
+					JSONPath: map[string]domain.ValueAssertion{
+						"$.v": {Matches: strPtr("([unclosed")},
+					},
+				},
+			},
+		},
+	}
+	uc := NewValidateCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{})
+	if err := uc.Execute(context.Background(), "col.yaml", ""); err == nil {
+		t.Fatal("expected error for invalid regex")
+	}
+}
+
+func TestValidateCollection_InvalidJSONPathRejected(t *testing.T) {
+	col := domain.Collection{
+		Name: "jp",
+		Requests: []domain.RequestSpec{
+			{
+				Name: "r", Method: domain.MethodGet, URL: "http://x",
+				Extract: domain.ExtractSpec{"v": "$.data["},
+			},
+		},
+	}
+	uc := NewValidateCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{})
+	if err := uc.Execute(context.Background(), "col.yaml", ""); err == nil {
+		t.Fatal("expected error for invalid jsonpath")
+	}
+}
+
+func strPtr(s string) *string { return &s }

@@ -46,6 +46,7 @@ type RunCollection struct {
 	dryRun      bool
 	parallel    bool
 	extraVars   domain.Vars
+	resolver    *domain.VarResolver
 }
 
 func NewRunCollection(
@@ -69,7 +70,23 @@ func NewRunCollection(
 		dryRun:      opts.DryRun,
 		parallel:    opts.Parallel,
 		extraVars:   opts.Vars,
+		resolver:    domain.NewVarResolver(),
 	}
+}
+
+// evaluateAssertions resolves {{var}} references in expected values and runs
+// the assertion engine. A resolution failure (e.g. a typo'd variable) surfaces
+// as a failing assertion instead of silently comparing against the raw text.
+func (uc *RunCollection) evaluateAssertions(req domain.RequestSpec, rr domain.RequestResult, schemaBytes []byte, vars domain.Vars) []domain.AssertionResult {
+	spec, err := uc.resolver.ResolveAssertionValues(vars, req.Assert)
+	if err != nil {
+		return []domain.AssertionResult{{
+			Name:    "assert.resolve",
+			Passed:  false,
+			Message: fmt.Sprintf("cannot resolve assertion value: %v", err),
+		}}
+	}
+	return ucassert.Evaluate(spec, rr.StatusCode, rr.LatencyMS, rr.Response.Body, schemaBytes, rr.Response.Headers, rr.Response.Truncated)
 }
 
 // Execute runs a collection and (optionally) persists the artifact via ArtifactStore.
@@ -186,7 +203,7 @@ func (uc *RunCollection) Execute(
 		}
 
 		// Assertions (always evaluated, even if rr.Error != nil)
-		rr.Assertions = ucassert.Evaluate(req.Assert, rr.StatusCode, rr.LatencyMS, rr.Response.Body, schemaCache[i], rr.Response.Headers, rr.Response.Truncated)
+		rr.Assertions = uc.evaluateAssertions(req, rr, schemaCache[i], vars)
 
 		extracted, extractResults := ucextract.Apply(rr.Response.Body, req.Extract, rr.Response.Truncated)
 		headerExtracted, headerExtractResults := ucextract.ApplyHeaders(rr.Response.Headers, req.ExtractHeaders)
@@ -424,7 +441,7 @@ func (uc *RunCollection) executeParallel(
 					return nil
 				}
 
-				rr.Assertions = ucassert.Evaluate(req.Assert, rr.StatusCode, rr.LatencyMS, rr.Response.Body, schemaCache[idx], rr.Response.Headers, rr.Response.Truncated)
+				rr.Assertions = uc.evaluateAssertions(req, rr, schemaCache[idx], levelVars)
 
 				extracted, extractResults := ucextract.Apply(rr.Response.Body, req.Extract, rr.Response.Truncated)
 				headerExtracted, headerExtractResults := ucextract.ApplyHeaders(rr.Response.Headers, req.ExtractHeaders)

@@ -143,13 +143,23 @@ type yamlRequest struct {
 }
 
 type yamlAssertions struct {
-	Status *int `yaml:"status"`
+	// Status accepts a single code (status: 200) or a list (status: [200, 201]).
+	Status any  `yaml:"status"`
 	MaxMS  *int `yaml:"max_ms"`
 
+	Body         *yamlBodyAssertion               `yaml:"body"`
 	JSONPath     map[string]yamlJSONPathAssertion `yaml:"jsonpath"`
 	Headers      map[string]yamlJSONPathAssertion `yaml:"headers"`
 	Schema       *string                          `yaml:"schema"`
 	SchemaInline map[string]any                   `yaml:"schema_inline"`
+}
+
+type yamlBodyAssertion struct {
+	Eq          *string `yaml:"eq"`
+	Contains    *string `yaml:"contains"`
+	NotContains *string `yaml:"not_contains"`
+	Matches     *string `yaml:"matches"`
+	NotMatches  *string `yaml:"not_matches"`
 }
 
 type yamlJSONPathAssertion struct {
@@ -157,10 +167,14 @@ type yamlJSONPathAssertion struct {
 	Eq          *string  `yaml:"eq"`
 	Contains    *string  `yaml:"contains"`
 	Matches     *string  `yaml:"matches"`
+	NotMatches  *string  `yaml:"not_matches"`
 	Gt          *float64 `yaml:"gt"`
 	Lt          *float64 `yaml:"lt"`
+	Gte         *float64 `yaml:"gte"`
+	Lte         *float64 `yaml:"lte"`
 	NotEq       *string  `yaml:"not_eq"`
 	NotContains *string  `yaml:"not_contains"`
+	Len         *int     `yaml:"len"`
 }
 
 func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
@@ -233,6 +247,27 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 			schemaPtr = &s
 		}
 
+		status, statusIn, err := parseStatusSpec(r.Assert.Status)
+		if err != nil {
+			return domain.Collection{}, invalidField(path, fieldPrefix+".assert.status", err.Error())
+		}
+
+		var bodyAssert *domain.BodyAssertion
+		if r.Assert.Body != nil {
+			b := r.Assert.Body
+			if b.Eq == nil && b.Contains == nil && b.NotContains == nil && b.Matches == nil && b.NotMatches == nil {
+				return domain.Collection{}, invalidField(path, fieldPrefix+".assert.body",
+					"body assertion has no operators (expected one of: eq, contains, not_contains, matches, not_matches)")
+			}
+			bodyAssert = &domain.BodyAssertion{
+				Eq:          b.Eq,
+				Contains:    b.Contains,
+				NotContains: b.NotContains,
+				Matches:     b.Matches,
+				NotMatches:  b.NotMatches,
+			}
+		}
+
 		req := domain.RequestSpec{
 			Name:    r.Name,
 			Method:  method,
@@ -240,8 +275,10 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 			Headers: domain.Headers(r.Headers),
 			Tags:    r.Tags,
 			Assert: domain.AssertionsSpec{
-				Status:       r.Assert.Status,
+				Status:       status,
+				StatusIn:     statusIn,
 				MaxLatencyMS: r.Assert.MaxMS,
+				Body:         bodyAssert,
 				JSONPath:     mapJSONPath(r.Assert.JSONPath),
 				Headers:      mapJSONPath(r.Assert.Headers),
 				Schema:       schemaPtr,
@@ -315,11 +352,37 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 	return col, nil
 }
 
-const noOperatorMsg = "assertion has no operators (expected one of: exists, eq, not_eq, contains, not_contains, matches, gt, lt)"
+const noOperatorMsg = "assertion has no operators (expected one of: exists, eq, not_eq, contains, not_contains, matches, not_matches, gt, lt, gte, lte, len)"
 
 func assertionHasOperator(a yamlJSONPathAssertion) bool {
 	return a.Exists != nil || a.Eq != nil || a.Contains != nil || a.Matches != nil ||
-		a.Gt != nil || a.Lt != nil || a.NotEq != nil || a.NotContains != nil
+		a.NotMatches != nil || a.Gt != nil || a.Lt != nil || a.Gte != nil || a.Lte != nil ||
+		a.NotEq != nil || a.NotContains != nil || a.Len != nil
+}
+
+// parseStatusSpec accepts a single status code or a list of codes.
+func parseStatusSpec(v any) (*int, []int, error) {
+	switch t := v.(type) {
+	case nil:
+		return nil, nil, nil
+	case int:
+		return &t, nil, nil
+	case []any:
+		if len(t) == 0 {
+			return nil, nil, fmt.Errorf("status list cannot be empty")
+		}
+		codes := make([]int, 0, len(t))
+		for _, item := range t {
+			code, ok := item.(int)
+			if !ok {
+				return nil, nil, fmt.Errorf("status list must contain integers, got %T", item)
+			}
+			codes = append(codes, code)
+		}
+		return nil, codes, nil
+	default:
+		return nil, nil, fmt.Errorf("status must be an integer or a list of integers, got %T", v)
+	}
 }
 
 func mapJSONPath(in map[string]yamlJSONPathAssertion) map[string]domain.ValueAssertion {
@@ -333,10 +396,14 @@ func mapJSONPath(in map[string]yamlJSONPathAssertion) map[string]domain.ValueAss
 			Eq:          v.Eq,
 			Contains:    v.Contains,
 			Matches:     v.Matches,
+			NotMatches:  v.NotMatches,
 			Gt:          v.Gt,
 			Lt:          v.Lt,
+			Gte:         v.Gte,
+			Lte:         v.Lte,
 			NotEq:       v.NotEq,
 			NotContains: v.NotContains,
+			Len:         v.Len,
 		}
 	}
 	return out
