@@ -926,3 +926,98 @@ func TestEvaluate_Schema_TruncatedBody_MessageIncludesTruncation(t *testing.T) {
 		t.Errorf("expected message to mention truncation, got: %s", out.Message)
 	}
 }
+
+func f64Ptr2(f float64) *float64 { return &f }
+
+func intPtr2(i int) *int { return &i }
+
+func TestEvaluate_StatusIn(t *testing.T) {
+	spec := domain.AssertionsSpec{StatusIn: []int{200, 201}}
+	out := Evaluate(spec, 201, 10, nil, nil, nil, false)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("expected 201 to pass status in [200,201]: %+v", out)
+	}
+	out = Evaluate(spec, 404, 10, nil, nil, nil, false)
+	if len(out) != 1 || out[0].Passed {
+		t.Fatalf("expected 404 to fail status in [200,201]: %+v", out)
+	}
+}
+
+func TestEvaluate_BodyAssertions(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Body: &domain.BodyAssertion{
+			Contains:   strPtr("<title>Hello</title>"),
+			Matches:    strPtr(`<h1>[A-Za-z ]+</h1>`),
+			NotMatches: strPtr(`error`),
+		},
+	}
+	body := []byte(`<html><title>Hello</title><h1>Welcome home</h1></html>`)
+	out := Evaluate(spec, 200, 10, body, nil, nil, false)
+	if len(out) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(out))
+	}
+	for _, r := range out {
+		if !r.Passed {
+			t.Errorf("expected %s to pass: %s", r.Name, r.Message)
+		}
+	}
+}
+
+func TestEvaluate_BodyAssertions_TruncatedFails(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Body: &domain.BodyAssertion{Contains: strPtr("x")},
+	}
+	out := Evaluate(spec, 200, 10, []byte("xxxx"), nil, nil, true)
+	if len(out) != 1 || out[0].Passed {
+		t.Fatalf("truncated body must not be asserted reliably: %+v", out)
+	}
+}
+
+func TestEvaluate_GteLte(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.count": {Gte: f64Ptr2(3), Lte: f64Ptr2(3)},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"count":3}`), nil, nil, false)
+	if len(out) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(out))
+	}
+	for _, r := range out {
+		if !r.Passed {
+			t.Errorf("expected %s to pass for boundary value: %s", r.Name, r.Message)
+		}
+	}
+}
+
+func TestEvaluate_NotMatches(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.state": {NotMatches: strPtr(`^err`)},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"state":"ok"}`), nil, nil, false)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("expected not_matches to pass: %+v", out)
+	}
+	out = Evaluate(spec, 200, 10, []byte(`{"state":"error"}`), nil, nil, false)
+	if len(out) != 1 || out[0].Passed {
+		t.Fatalf("expected not_matches to fail on match: %+v", out)
+	}
+}
+
+func TestEvaluate_Len(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.items": {Len: intPtr2(2)},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"items":[1,2]}`), nil, nil, false)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("expected len=2 to pass: %+v", out)
+	}
+	out = Evaluate(spec, 200, 10, []byte(`{"items":[]}`), nil, nil, false)
+	if len(out) != 1 || out[0].Passed {
+		t.Fatalf("expected len=2 to fail on empty array: %+v", out)
+	}
+}

@@ -105,20 +105,33 @@ Assertions are evaluated on every response regardless of previous failures. Each
 
 ```yaml
 assert:
-  status: 200
+  status: 200          # exact code
+  # status: [200, 201] # or any of a set
 ```
-
-Checks the HTTP status code exactly.
 
 ### Latency
 
 ```yaml
 assert:
-  max_ms: 500          # fixed value
-  max_ms: "{{timeout_ms}}"  # or from a variable
+  max_ms: 500
 ```
 
 Checks that the response latency is at or below the threshold.
+
+### Raw Body Assertions
+
+Assert on the response body as text, whatever its content type (HTML, plain
+text, CSV, invalid JSON, ...):
+
+```yaml
+assert:
+  body:
+    contains: "<title>Dashboard</title>"
+    not_contains: "stack trace"
+    matches: "id=[0-9]+"
+    not_matches: "(?i)internal server error"
+    # eq: "exact body"
+```
 
 ### JSONPath Assertions
 
@@ -140,14 +153,19 @@ assert:
 
 | Operator | Type | Description |
 |----------|------|-------------|
-| `exists` | bool | Path resolves to a non-null, non-empty value |
+| `exists` | bool | `true`: path resolves to a non-null value; `false`: path is absent or null |
 | `eq` | string | Value equals the given string (after type coercion) |
 | `contains` | string | Value contains the given substring |
 | `matches` | string | Value matches the given regular expression |
-| `gt` | number | Numeric value is greater than threshold |
-| `lt` | number | Numeric value is less than threshold |
+| `not_matches` | string | Value does NOT match the given regular expression |
+| `gt` / `gte` | number | Numeric value is greater than (or equal to) threshold |
+| `lt` / `lte` | number | Numeric value is less than (or equal to) threshold |
 | `not_eq` | string | Value does NOT equal the given string |
 | `not_contains` | string | Value does NOT contain the given substring |
+| `len` | integer | Length of an array, object, or string equals the value |
+
+Expected values may reference variables, including ones extracted from earlier
+requests: `eq: "{{created_id}}"`.
 
 **JSONPath syntax** follows [PaesslerAG/jsonpath](https://github.com/PaesslerAG/jsonpath):
 - `$.field` — top-level field

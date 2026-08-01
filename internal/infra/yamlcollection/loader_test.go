@@ -625,3 +625,84 @@ requests:
 		t.Errorf("expected duplicate name error, got: %v", err)
 	}
 }
+
+func TestLoadCollection_StatusList(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "s.yaml")
+
+	content := []byte(`
+name: Status List
+requests:
+  - name: create
+    method: POST
+    url: "http://x"
+    assert:
+      status: [200, 201]
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	c, err := NewLoader().LoadCollection(p)
+	if err != nil {
+		t.Fatalf("LoadCollection error: %v", err)
+	}
+	a := c.Requests[0].Assert
+	if a.Status != nil {
+		t.Errorf("expected nil single status, got %v", *a.Status)
+	}
+	if len(a.StatusIn) != 2 || a.StatusIn[0] != 200 || a.StatusIn[1] != 201 {
+		t.Errorf("expected StatusIn [200 201], got %v", a.StatusIn)
+	}
+}
+
+func TestLoadCollection_BodyAssertion(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "b.yaml")
+
+	content := []byte(`
+name: Body Assert
+requests:
+  - name: page
+    method: GET
+    url: "http://x"
+    assert:
+      body:
+        contains: "ok"
+        not_matches: "error"
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	c, err := NewLoader().LoadCollection(p)
+	if err != nil {
+		t.Fatalf("LoadCollection error: %v", err)
+	}
+	b := c.Requests[0].Assert.Body
+	if b == nil || b.Contains == nil || *b.Contains != "ok" || b.NotMatches == nil {
+		t.Fatalf("body assertion not mapped: %+v", b)
+	}
+}
+
+func TestLoadCollection_EmptyBodyAssertionRejected(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "b.yaml")
+
+	content := []byte(`
+name: Body Assert
+requests:
+  - name: page
+    method: GET
+    url: "http://x"
+    assert:
+      body: {}
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if _, err := NewLoader().LoadCollection(p); err == nil {
+		t.Fatal("expected error for body assertion without operators")
+	}
+}

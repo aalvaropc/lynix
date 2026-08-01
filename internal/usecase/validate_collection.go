@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 
+	"github.com/PaesslerAG/jsonpath"
 	"github.com/aalvaropc/lynix/internal/domain"
 	"github.com/aalvaropc/lynix/internal/ports"
 )
@@ -80,8 +83,12 @@ func (uc *ValidateCollection) Execute(ctx context.Context, collectionPath string
 				return fmt.Errorf("request %q: schema file %q: %w", req.Name, *req.Assert.Schema, err)
 			}
 		}
-		if req.Assert.Schema != nil && req.Assert.SchemaInline != nil {
-			return fmt.Errorf("request %q: schema and schema_inline cannot be used together", req.Name)
+
+		// Compile JSONPath expressions and static regex patterns so typos
+		// fail here, not at runtime. Patterns with {{var}} placeholders are
+		// only resolvable at runtime and are skipped.
+		if err := validateAssertionExpressions(req); err != nil {
+			return fmt.Errorf("request %q: %w", req.Name, err)
 		}
 
 		// Assume extract keys become available for subsequent requests.
@@ -97,5 +104,62 @@ func (uc *ValidateCollection) Execute(ctx context.Context, collectionPath string
 		}
 	}
 
+	return nil
+}
+
+// validateAssertionExpressions compiles JSONPath expressions (assert + extract)
+// and regex patterns without {{var}} placeholders.
+func validateAssertionExpressions(req domain.RequestSpec) error {
+	checkPath := func(where, expr string) error {
+		if strings.Contains(expr, "{{") {
+			return nil // resolvable only at runtime
+		}
+		if _, err := jsonpath.New(expr); err != nil {
+			return fmt.Errorf("%s: invalid jsonpath %q: %w", where, expr, err)
+		}
+		return nil
+	}
+	checkRegex := func(where string, p *string) error {
+		if p == nil || strings.Contains(*p, "{{") {
+			return nil
+		}
+		if _, err := regexp.Compile(*p); err != nil {
+			return fmt.Errorf("%s: invalid regex %q: %w", where, *p, err)
+		}
+		return nil
+	}
+
+	for expr, a := range req.Assert.JSONPath {
+		if err := checkPath("assert.jsonpath", expr); err != nil {
+			return err
+		}
+		if err := checkRegex("assert.jsonpath["+expr+"].matches", a.Matches); err != nil {
+			return err
+		}
+		if err := checkRegex("assert.jsonpath["+expr+"].not_matches", a.NotMatches); err != nil {
+			return err
+		}
+	}
+	for name, a := range req.Assert.Headers {
+		if err := checkRegex("assert.headers["+name+"].matches", a.Matches); err != nil {
+			return err
+		}
+		if err := checkRegex("assert.headers["+name+"].not_matches", a.NotMatches); err != nil {
+			return err
+		}
+	}
+	if b := req.Assert.Body; b != nil {
+		if err := checkRegex("assert.body.matches", b.Matches); err != nil {
+			return err
+		}
+		if err := checkRegex("assert.body.not_matches", b.NotMatches); err != nil {
+			return err
+		}
+	}
+	for name, expr := range req.Extract {
+		if err := checkPath("extract."+name, expr); err != nil {
+			return err
+		}
+	}
 	return nil
 }

@@ -1306,3 +1306,66 @@ func TestRunCollection_Execute_CLIVarsWinOverEnvVars(t *testing.T) {
 		t.Fatalf("expected --var override to win, got %q", got)
 	}
 }
+
+func TestRunCollection_Execute_AssertionValueFromExtractedVar(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{
+				Name: "create", Method: domain.MethodPost, URL: "http://x/items",
+				Extract: domain.ExtractSpec{"created_id": "$.id"},
+			},
+			{
+				Name: "read", Method: domain.MethodGet, URL: "http://x/items/1",
+				Assert: domain.AssertionsSpec{
+					JSONPath: map[string]domain.ValueAssertion{
+						"$.id": {Eq: strPtr("{{created_id}}")},
+					},
+				},
+			},
+		},
+	}
+	runner := &multiCallRunner{
+		results: []domain.RequestResult{
+			{StatusCode: 201, Response: domain.ResponseSnapshot{Body: []byte(`{"id":42}`)}},
+			{StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{"id":42}`)}},
+		},
+	}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	asserts := run.Results[1].Assertions
+	if len(asserts) != 1 || !asserts[0].Passed {
+		t.Fatalf("expected {{created_id}} to resolve and match, got %+v", asserts)
+	}
+}
+
+func TestRunCollection_Execute_AssertionValueMissingVarFails(t *testing.T) {
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{
+				Name: "req", Method: domain.MethodGet, URL: "http://x",
+				Assert: domain.AssertionsSpec{
+					JSONPath: map[string]domain.ValueAssertion{
+						"$.id": {Eq: strPtr("{{typo_var}}")},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubRunner{result: domain.RequestResult{
+		StatusCode: 200, Response: domain.ResponseSnapshot{Body: []byte(`{"id":1}`)},
+	}}
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	asserts := run.Results[0].Assertions
+	if len(asserts) != 1 || asserts[0].Passed || asserts[0].Name != "assert.resolve" {
+		t.Fatalf("expected failing assert.resolve for typo'd var, got %+v", asserts)
+	}
+}
