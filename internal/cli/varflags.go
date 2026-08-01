@@ -28,3 +28,14 @@ func parseVarFlags(flags []string) (domain.Vars, error) {
 	}
 	return vars, nil
 }
+
+// validateListFormat rejects unknown --format values on list commands so a
+// typo fails loudly (exit 2) instead of silently printing the pretty output.
+func validateListFormat(format string) error {
+	switch format {
+	case "", "pretty", "json":
+		return nil
+	default:
+		return fmt.Errorf("unsupported format %q (expected pretty|json)", format)
+	}
+}
