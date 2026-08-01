@@ -14,6 +14,10 @@ import (
 
 const defaultMaxBodyBytes = 256 * 1024 // 256KB
 
+// drainLimitBytes bounds how much of a truncated body is discarded to keep
+// the connection reusable (an endless stream must not block the run).
+const drainLimitBytes = 1 << 20 // 1MB
+
 // defaultRequestTimeout applies when a request has no timeout_ms. It lives in
 // the runner (as a context deadline) rather than http.Client.Timeout so an
 // explicit larger timeout_ms is not silently capped by the client.
@@ -98,9 +102,10 @@ func (r *Runner) Run(ctx context.Context, req domain.RequestSpec, vars domain.Va
 		defer cancel()
 	}
 
-	// Per-request redirect control via context key.
-	if req.FollowRedirects != nil && !*req.FollowRedirects {
-		ctx = httpclient.ContextWithNoRedirect(ctx)
+	// Per-request redirect control: an explicit follow_redirects overrides
+	// the global --no-redirects flag in both directions.
+	if req.FollowRedirects != nil {
+		ctx = httpclient.ContextWithRedirectOverride(ctx, *req.FollowRedirects)
 	}
 
 	httpReq, err := httpclient.BuildRequest(ctx, resolved)
@@ -141,6 +146,12 @@ func (r *Runner) Run(ctx context.Context, req domain.RequestSpec, vars domain.Va
 
 	result.Response.Body = body
 	result.Response.Truncated = truncated
+
+	// Drain (bounded) what remains of a truncated body so the connection
+	// can be reused instead of being torn down.
+	if truncated {
+		_, _ = io.CopyN(io.Discard, resp.Body, drainLimitBytes)
+	}
 
 	r.log.Debug("httprunner.request.done",
 		"name", resolved.Name,

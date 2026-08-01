@@ -19,6 +19,17 @@ type RunConfig struct {
 	RetryDelay time.Duration
 	Retry5xx   bool
 	Insecure   bool // skip TLS certificate verification
+	Cookies    bool // enable an in-memory cookie jar for the run
+	MaxBodyKB  int  // response body cap in KB (0 = default 256)
+	TLS        TLSConfig
+}
+
+// TLSConfig holds TLS trust settings.
+type TLSConfig struct {
+	// CAFile is a path to a PEM bundle of additional trusted CAs
+	// (relative paths resolve against the workspace root). This is the
+	// right tool for self-signed/corporate certs — not run.insecure.
+	CAFile string
 }
 
 // RedactionScope controls which surface a redaction rule applies to.

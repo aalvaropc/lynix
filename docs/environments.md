@@ -122,3 +122,25 @@ lynix:
     retry_delay_ms: 0              # Delay between retries in milliseconds
     retry_5xx: false               # Also retry on HTTP 5xx responses
 ```
+
+---
+
+## HTTP Client Options
+
+```yaml
+lynix:
+  run:
+    cookies: true            # in-memory cookie jar: Set-Cookie propagates to later requests
+    max_body_kb: 512         # response body cap (default 256)
+    tls:
+      ca_file: certs/ca.pem  # extra trusted CAs (PEM bundle, relative to workspace root)
+    insecure: false          # disables ALL certificate verification — prefer tls.ca_file
+```
+
+`tls.ca_file` extends the system trust store, so a self-signed or corporate CA
+does not require `insecure`. When `insecure` is active, every run prints a
+warning to stderr. TLS 1.2 is the minimum negotiated version.
+
+Requests are sent with a `User-Agent: lynix/<version>` header unless the
+collection sets its own. Proxies follow the standard `HTTP_PROXY`/`HTTPS_PROXY`/
+`NO_PROXY` environment variables.

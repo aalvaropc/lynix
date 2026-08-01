@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/aalvaropc/lynix/internal/buildinfo"
 	"github.com/aalvaropc/lynix/internal/domain"
 )
 
@@ -82,6 +83,11 @@ func BuildRequest(ctx context.Context, spec domain.RequestSpec) (*http.Request, 
 
 	if contentType != "" && req.Header.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+
+	// Identify ourselves instead of the anonymous Go default.
+	if req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", "lynix/"+buildinfo.Version)
 	}
 
 	return req, nil

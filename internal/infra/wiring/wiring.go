@@ -32,7 +32,7 @@ type Opts struct {
 }
 
 // NewAdapters creates all adapters for a workspace root and config.
-func NewAdapters(root string, cfg domain.Config, opts Opts) Adapters {
+func NewAdapters(root string, cfg domain.Config, opts Opts) (Adapters, error) {
 	colLoader := yamlcollection.NewLoader(
 		yamlcollection.WithCollectionsDir(cfg.Paths.CollectionsDir),
 	)
@@ -45,11 +45,29 @@ func NewAdapters(root string, cfg domain.Config, opts Opts) Adapters {
 	hcfg := httpclient.DefaultConfig()
 	hcfg.Insecure = cfg.Run.Insecure || opts.Insecure
 	hcfg.NoFollowRedirects = opts.NoFollowRedirects
+	hcfg.EnableCookieJar = cfg.Run.Cookies
 	// Timeouts are enforced by the runner per request (context deadline);
 	// a client-level timeout would silently cap larger timeout_ms values.
 	hcfg.Timeout = 0
+	if cfg.Run.TLS.CAFile != "" {
+		pool, err := httpclient.LoadCAFile(cfg.Run.TLS.CAFile)
+		if err != nil {
+			return Adapters{}, &domain.OpError{
+				Op:   "wiring.tls",
+				Kind: domain.KindInvalidConfig,
+				Path: cfg.Run.TLS.CAFile,
+				Err:  err,
+			}
+		}
+		hcfg.RootCAs = pool
+	}
 	client := httpclient.New(hcfg)
-	runner := httprunner.New(client)
+
+	var runnerOpts []httprunner.Option
+	if cfg.Run.MaxBodyKB > 0 {
+		runnerOpts = append(runnerOpts, httprunner.WithMaxBodyBytes(int64(cfg.Run.MaxBodyKB)*1024))
+	}
+	runner := httprunner.New(client, runnerOpts...)
 
 	redactor := redaction.New(cfg.Masking)
 
@@ -68,5 +86,5 @@ func NewAdapters(root string, cfg domain.Config, opts Opts) Adapters {
 		Store:       store,
 		Redactor:    redactor,
 		Config:      cfg,
-	}
+	}, nil
 }

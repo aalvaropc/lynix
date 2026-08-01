@@ -22,7 +22,7 @@ func TestNew_Insecure_SetsTLSConfig(t *testing.T) {
 	}
 }
 
-func TestNew_Secure_NoTLSOverride(t *testing.T) {
+func TestNew_Secure_VerifiesWithMinTLS12(t *testing.T) {
 	cfg := DefaultConfig()
 	client := New(cfg)
 
@@ -30,8 +30,28 @@ func TestNew_Secure_NoTLSOverride(t *testing.T) {
 	if !ok {
 		t.Fatal("expected *http.Transport")
 	}
-	if tr.TLSClientConfig != nil {
-		t.Error("expected nil TLSClientConfig for secure client")
+	if tr.TLSClientConfig == nil {
+		t.Fatal("expected TLSClientConfig with MinVersion")
+	}
+	if tr.TLSClientConfig.InsecureSkipVerify {
+		t.Error("secure client must verify certificates")
+	}
+	if tr.TLSClientConfig.MinVersion != tls.VersionTLS12 {
+		t.Errorf("expected MinVersion TLS 1.2, got %x", tr.TLSClientConfig.MinVersion)
+	}
+}
+
+func TestNew_CookieJarOptIn(t *testing.T) {
+	client := New(DefaultConfig())
+	if client.Jar != nil {
+		t.Error("cookie jar must be opt-in")
+	}
+
+	cfg := DefaultConfig()
+	cfg.EnableCookieJar = true
+	client = New(cfg)
+	if client.Jar == nil {
+		t.Error("expected cookie jar when enabled")
 	}
 }
 

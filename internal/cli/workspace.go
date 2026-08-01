@@ -41,7 +41,10 @@ func loadWorkspace(workspaceFlag string, opts wiring.Opts) (*workspaceCtx, error
 	}
 
 	opts.EnableStore = true
-	adapters := wiring.NewAdapters(root, cfg, opts)
+	adapters, err := wiring.NewAdapters(root, cfg, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	return &workspaceCtx{
 		root:        root,
@@ -82,7 +85,10 @@ func loadStandalone(opts wiring.Opts) (*workspaceCtx, error) {
 	}
 
 	cfg := domain.DefaultConfig()
-	adapters := wiring.NewAdapters(cwd, cfg, opts)
+	adapters, err := wiring.NewAdapters(cwd, cfg, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	return &workspaceCtx{
 		root:        cwd,
