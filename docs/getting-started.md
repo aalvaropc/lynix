@@ -29,7 +29,7 @@ brew install aalvaropc/tap/lynix
 go install github.com/aalvaropc/lynix/cmd/lynix@latest
 ```
 
-Requires Go 1.22+.
+Requires Go 1.25+.
 
 ### Manual download
 
@@ -44,7 +44,7 @@ make build
 # binary is at ./bin/lynix
 ```
 
-Requires Go 1.22+.
+Requires Go 1.25+.
 
 ---
 

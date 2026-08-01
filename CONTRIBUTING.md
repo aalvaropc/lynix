@@ -22,7 +22,7 @@ Thank you for your interest in contributing! This document explains how to set u
 
 | Tool | Version |
 |------|---------|
-| Go   | 1.22+   |
+| Go   | 1.25+   |
 | Git  | any     |
 
 Clone the repository and install dependencies:

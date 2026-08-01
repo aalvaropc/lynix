@@ -15,7 +15,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
 
       - name: Tidy check
         run: |
@@ -48,13 +48,12 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
 
+      # make lint compiles golangci-lint with the repo's Go toolchain, so the
+      # linter version and the language version can never drift apart.
       - name: Lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.64.2
-          args: --timeout=3m
+        run: make lint
 
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
@@ -79,7 +78,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.25"
 
       - name: Build
         env:
