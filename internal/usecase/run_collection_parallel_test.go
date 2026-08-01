@@ -253,3 +253,56 @@ func TestParallel_ContextCancel(t *testing.T) {
 		t.Fatal("expected error from cancelled context")
 	}
 }
+
+func TestRunCollection_Parallel_AssertVarDependencyScheduled(t *testing.T) {
+	// Regression: a request whose only {{var}} reference lives in an
+	// assertion expected value ran in level 0 with its producer, so the
+	// same collection passed sequentially and failed with --parallel.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/token", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"token":"abc"}`))
+	})
+	mux.HandleFunc("/owner", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"owner":"abc"}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	col := domain.Collection{
+		Requests: []domain.RequestSpec{
+			{
+				Name: "produce", Method: domain.MethodGet, URL: srv.URL + "/token",
+				Body:    domain.BodySpec{Type: domain.BodyNone},
+				Extract: domain.ExtractSpec{"token": "$.token"},
+			},
+			{
+				Name: "consume-in-assert", Method: domain.MethodGet, URL: srv.URL + "/owner",
+				Body: domain.BodySpec{Type: domain.BodyNone},
+				Assert: domain.AssertionsSpec{
+					JSONPath: map[string]domain.ValueAssertion{
+						"$.owner": {Eq: strPtr("{{token}}")},
+					},
+				},
+			},
+		},
+	}
+
+	client := httpclient.New(httpclient.DefaultConfig())
+	runner := httprunner.New(client)
+	uc := NewRunCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{}, runner, nil, RunOpts{Parallel: true})
+
+	run, _, err := uc.Execute(context.Background(), "col.yaml", "env.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, rr := range run.Results {
+		if rr.Name == "consume-in-assert" {
+			if rr.Error != nil {
+				t.Fatalf("request errored: %+v", rr.Error)
+			}
+			if len(rr.Assertions) != 1 || !rr.Assertions[0].Passed {
+				t.Fatalf("assert against extracted var must pass in parallel mode: %+v", rr.Assertions)
+			}
+		}
+	}
+}
