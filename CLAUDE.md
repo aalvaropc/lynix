@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Lynix
 
-Lynix is a TUI-first CLI tool for API testing and functional validation. Users define HTTP requests in YAML collections, run them against environments, and assert on responses (status, latency, JSONPath, JSON Schema). Single Go binary, no accounts or external services.
+Lynix is a CLI tool for declarative API testing in CI/CD pipelines. Users define HTTP requests in YAML collections, run them against environments, and assert on responses (status, latency, JSONPath, JSON Schema). Single Go binary, no accounts or external services.
 
 ## Common Commands
 
 ```bash
 make build              # Build binary → bin/lynix
-make dev                # Run TUI in dev mode (go run with ldflags)
+make dev                # Run the CLI in dev mode (go run with ldflags)
 make test               # go test -race ./...
 make test-coverage      # Tests + coverage report
 make lint               # golangci-lint
@@ -34,9 +34,8 @@ Hexagonal architecture (ports & adapters). **Core rule: `domain` never imports `
 - **`internal/domain/`** — Pure domain types with zero external dependencies. Collection, Environment, RunResult, RequestResult, VarResolver, error classification.
 - **`internal/ports/`** — Interface definitions (CollectionLoader, EnvironmentLoader, RequestRunner, ArtifactStore, EnvironmentCatalog, WorkspaceLocator).
 - **`internal/usecase/`** — Application orchestration. RunCollection (load → resolve vars → execute → assert → extract → store), ValidateCollection, InitWorkspace. Sub-packages: `assert/` (status, latency, JSONPath, JSON Schema checks), `extract/` (JSONPath variable extraction).
-- **`internal/infra/`** — Adapter implementations: `yamlcollection/`, `yamlenv/`, `httpclient/`, `httprunner/`, `redaction/`, `runstore/`, `fsworkspace/`, `workspacefinder/`, `curlparse/`, `postmanparse/`, `logger/`. Shared wiring in `wiring/wiring.go` (`NewAdapters()`).
+- **`internal/infra/`** — Adapter implementations: `yamlcollection/`, `yamlenv/`, `httpclient/`, `httprunner/`, `redaction/`, `runstore/`, `fsworkspace/`, `workspacefinder/`, `curlparse/`, `postmanparse/`. Shared wiring in `wiring/wiring.go` (`NewAdapters()`).
 - **`internal/cli/`** — Cobra commands (run, validate, init, collections list, envs list). JUnit XML report generation in `format_junit.go`.
-- **`internal/ui/tui/`** — Bubble Tea TUI with wizard-style step orchestration.
 - **`cmd/lynix/`** — Thin binary entrypoint.
 
 ## Build Requirements
@@ -46,7 +45,7 @@ Hexagonal architecture (ports & adapters). **Core rule: `domain` never imports `
 
 ## Key Conventions
 
-- **Commit messages:** Conventional Commits — `<type>(<scope>): <description>`. Types: feat, fix, test, refactor, docs, chore. Scopes: assert, cli, tui, domain, infra, ci, config.
+- **Commit messages:** Conventional Commits — `<type>(<scope>): <description>`. Types: feat, fix, test, refactor, docs, chore. Scopes: assert, cli, domain, infra, ci, config.
 - **Branch names:** `<type>/<short-description>` off `main`.
 - **Testing:** All tests run with `-race`. CI enforces 50% coverage threshold. Test names follow `TestFunctionName_Scenario_Expected`.
 - **Linting:** golangci-lint with govet, errcheck, staticcheck, ineffassign, gosimple, revive, gofmt, goimports, errorlint, bodyclose. Config in `.golangci.yml`. `errcheck` is disabled for test files.

@@ -5,7 +5,6 @@ Lynix follows **Hexagonal Architecture (Ports & Adapters)**. The core rule: doma
 ```
 +------------------------------------------+
 |  UI Layer                                |
-|  +-- TUI (Bubble Tea)  internal/ui/tui/  |
 |  +-- CLI (Cobra)       internal/cli/     |
 +-------------------+----------------------+
                     |
@@ -22,7 +21,7 @@ Lynix follows **Hexagonal Architecture (Ports & Adapters)**. The core rule: doma
        |  EnvironmentLoader      |
        |  RequestRunner          |
        |  ArtifactStore          |
-       |  WorkspaceLocator       |
+       |  WorkspaceInitializer   |
        +------------+------------+
                     |
          +----------v----------+
@@ -46,7 +45,7 @@ Lynix follows **Hexagonal Architecture (Ports & Adapters)**. The core rule: doma
          +---------------------+
 ```
 
-Both the TUI and CLI wire the same use cases with the same adapters via `internal/infra/wiring`.
+The CLI wires the use cases with the adapters via `internal/infra/wiring` (the composition root).
 
 ---
 
@@ -59,7 +58,7 @@ internal/
 |   +-- collection.go   # Collection, RequestSpec, AssertionsSpec, BodySpec
 |   +-- environment.go  # Environment, Vars, merge helpers
 |   +-- run.go          # RunResult, RequestResult, ResponseSnapshot
-|   +-- config.go       # WorkspaceConfig, defaults
+|   +-- config.go       # Config, defaults
 |   +-- vars_resolver.go# Template engine: resolves {{var}}, {{$uuid}}, etc.
 |   +-- errors.go       # Sentinel errors, OpError, IsKind()
 +-- ports/              # Interface definitions
@@ -74,12 +73,10 @@ internal/
 |   +-- runstore/       # JSON run artifacts + JSONL index
 |   +-- fsworkspace/    # Workspace initializer (embed.FS templates)
 |   +-- workspacefinder/# Walks up dir tree to find lynix.yaml
-|   +-- logger/         # slog-based structured logger
 |   +-- wiring/         # Shared adapter factory
 +-- usecase/            # Application orchestration
 |   +-- assert/         # Evaluates assertions
 |   +-- extract/        # JSONPath extraction
-+-- ui/tui/             # Bubble Tea TUI
 +-- cli/                # Cobra commands
 ```
 
@@ -88,7 +85,7 @@ internal/
 ## Development
 
 ```bash
-make dev            # Run TUI in dev mode (go run with ldflags)
+make dev            # Run the CLI in dev mode (go run with ldflags)
 make build          # Build binary -> bin/lynix
 make test           # go test -race ./...
 make test-coverage  # Tests + HTML coverage report

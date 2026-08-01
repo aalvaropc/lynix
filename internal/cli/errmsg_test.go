@@ -1,4 +1,4 @@
-package tui
+package cli
 
 import (
 	"context"
@@ -147,9 +147,12 @@ func TestUserMessage_OpError_UnknownKind(t *testing.T) {
 		Kind: domain.KindExecution,
 		Err:  errors.New("boom"),
 	}
-	got := userMessage(err)
-	if got != "Unexpected error (see logs)" {
-		t.Fatalf("expected 'Unexpected error (see logs)', got %q", got)
+	// No headline for unknown kinds: friendlyError falls back to the raw error.
+	if got := userMessage(err); got != "" {
+		t.Fatalf("expected empty headline, got %q", got)
+	}
+	if got := friendlyError(err); got != err.Error() {
+		t.Fatalf("expected raw error passthrough, got %q", got)
 	}
 }
 
@@ -171,9 +174,11 @@ func TestUserMessage_PlainError_MissingVariable(t *testing.T) {
 
 func TestUserMessage_PlainError_Generic(t *testing.T) {
 	err := errors.New("something went wrong")
-	got := userMessage(err)
-	if got != "Unexpected error (see logs)" {
-		t.Fatalf("expected 'Unexpected error (see logs)', got %q", got)
+	if got := userMessage(err); got != "" {
+		t.Fatalf("expected empty headline for generic error, got %q", got)
+	}
+	if got := friendlyError(err); got != "something went wrong" {
+		t.Fatalf("expected raw error passthrough, got %q", got)
 	}
 }
 

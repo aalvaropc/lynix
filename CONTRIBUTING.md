@@ -52,7 +52,6 @@ internal/
   usecase/         # Application orchestration (depends on ports, not infra)
   infra/           # Adapter implementations (YAML, HTTP, filesystem, store)
   cli/             # Cobra CLI commands
-  ui/tui/          # Bubble Tea TUI
 cmd/lynix/         # Entry point
 ```
 
@@ -63,7 +62,7 @@ cmd/lynix/         # Entry point
 ## Running the project
 
 ```bash
-# Run with TUI (default)
+# Run the CLI in dev mode (prints help)
 make dev
 
 # Run a specific CLI subcommand
@@ -134,13 +133,13 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 | `docs`     | Documentation only                             |
 | `chore`    | Build, deps, CI, tooling                       |
 
-**Scopes** (optional but helpful): `assert`, `cli`, `tui`, `domain`, `infra`, `ci`, `config`.
+**Scopes** (optional but helpful): `assert`, `cli`, `domain`, `infra`, `ci`, `config`.
 
 **Examples:**
 
 ```
 feat(assert): add jsonpath eq/contains/matches/gt/lt checks
-fix(tui): recover from panic in run goroutine
+fix(cli): recover from panic in run goroutine
 test(cli): add coverage for printRun helpers
 chore(ci): add race detector and multi-platform build
 ```

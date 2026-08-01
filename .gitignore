@@ -48,5 +48,5 @@ env/secrets.local.yaml
 # Internal docs (not for public repo)
 docs/internal/
 
-# Claude Code session data (also ignored later in the stack)
+# Claude Code session data
 .claude/
