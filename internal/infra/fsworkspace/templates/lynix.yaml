@@ -23,3 +23,12 @@ lynix:
   artifacts:
     save_response_headers: true
     save_response_body: false
+  # run:
+  #   timeout_seconds: 300     # whole-run deadline
+  #   retries: 0               # retries for transient errors
+  #   retry_delay_ms: 0
+  #   retry_5xx: false
+  #   cookies: false           # in-memory cookie jar (session-based auth)
+  #   max_body_kb: 256         # response body cap
+  #   tls:
+  #     ca_file: certs/ca.pem  # extra trusted CAs (instead of insecure)

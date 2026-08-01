@@ -60,6 +60,10 @@ func runCmd() *cobra.Command {
 				return err
 			}
 
+			if ws.cfg.Run.Insecure || insecure {
+				fmt.Fprintln(os.Stderr, "Warning: TLS certificate verification is DISABLED for every request in this run")
+			}
+
 			collectionPath, err := resolveCollectionPath(ws, collection)
 			if err != nil {
 				return err

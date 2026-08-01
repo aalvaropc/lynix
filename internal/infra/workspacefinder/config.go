@@ -127,6 +127,18 @@ func LoadConfig(root string) (domain.Config, error) {
 	if y.Lynix.Run.Insecure != nil {
 		cfg.Run.Insecure = *y.Lynix.Run.Insecure
 	}
+	if y.Lynix.Run.Cookies != nil {
+		cfg.Run.Cookies = *y.Lynix.Run.Cookies
+	}
+	if y.Lynix.Run.MaxBodyKB != nil && *y.Lynix.Run.MaxBodyKB > 0 {
+		cfg.Run.MaxBodyKB = *y.Lynix.Run.MaxBodyKB
+	}
+	if caFile := y.Lynix.Run.TLS.CAFile; caFile != "" {
+		if !filepath.IsAbs(caFile) {
+			caFile = filepath.Join(root, caFile)
+		}
+		cfg.Run.TLS.CAFile = caFile
+	}
 
 	return cfg, nil
 }
@@ -173,6 +185,11 @@ type yamlConfig struct {
 			RetryDelayMS   *int  `yaml:"retry_delay_ms"`
 			Retry5xx       *bool `yaml:"retry_5xx"`
 			Insecure       *bool `yaml:"insecure"`
+			Cookies        *bool `yaml:"cookies"`
+			MaxBodyKB      *int  `yaml:"max_body_kb"`
+			TLS            struct {
+				CAFile string `yaml:"ca_file"`
+			} `yaml:"tls"`
 		} `yaml:"run"`
 	} `yaml:"lynix"`
 }
