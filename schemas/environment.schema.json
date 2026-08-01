@@ -4,7 +4,6 @@
   "title": "Lynix Environment",
   "description": "Schema for Lynix environment YAML files.",
   "type": "object",
-  "required": ["vars"],
   "additionalProperties": false,
   "properties": {
     "schema_version": {

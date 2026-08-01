@@ -69,7 +69,12 @@
           "additionalProperties": false,
           "properties": {
             "save_response_headers": { "type": "boolean", "default": true },
-            "save_response_body": { "type": "boolean", "default": false }
+            "save_response_body": { "type": "boolean", "default": true },
+            "max_runs": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Maximum saved runs; oldest artifacts are pruned after each save."
+            }
           }
         },
         "run": {
@@ -79,7 +84,33 @@
             "timeout_seconds": { "type": "integer", "minimum": 1, "default": 300 },
             "retries": { "type": "integer", "minimum": 0, "default": 0 },
             "retry_delay_ms": { "type": "integer", "minimum": 0, "default": 0 },
-            "retry_5xx": { "type": "boolean", "default": false }
+            "retry_5xx": { "type": "boolean", "default": false },
+            "insecure": {
+              "type": "boolean",
+              "default": false,
+              "description": "Disable ALL TLS certificate verification. Prefer tls.ca_file."
+            },
+            "cookies": {
+              "type": "boolean",
+              "default": false,
+              "description": "Enable an in-memory cookie jar for the run."
+            },
+            "max_body_kb": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 256,
+              "description": "Response body cap in KB."
+            },
+            "tls": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "ca_file": {
+                  "type": "string",
+                  "description": "PEM bundle of additional trusted CAs (relative to workspace root)."
+                }
+              }
+            }
           }
         }
       }

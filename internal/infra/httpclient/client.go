@@ -11,6 +11,8 @@ import (
 	"net/http/cookiejar"
 	"os"
 	"time"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 type Config struct {
@@ -52,7 +54,10 @@ func LoadCAFile(path string) (*x509.CertPool, error) {
 	}
 	pool, err := x509.SystemCertPool()
 	if err != nil {
-		pool = x509.NewCertPool()
+		// Falling back to an empty pool would silently REPLACE the system
+		// roots instead of extending them, breaking every public host with
+		// an indecipherable certificate error.
+		return nil, fmt.Errorf("load system cert pool: %w", err)
 	}
 	if !pool.AppendCertsFromPEM(pem) {
 		return nil, fmt.Errorf("CA file %q contains no valid PEM certificates", path)
@@ -128,8 +133,10 @@ func New(cfg Config) *http.Client {
 
 	var jar http.CookieJar
 	if cfg.EnableCookieJar {
-		// cookiejar.New with default options never returns an error.
-		jar, _ = cookiejar.New(nil)
+		// The public suffix list prevents a host from setting supercookies
+		// (Domain=co.uk) that would leak session cookies across the other
+		// hosts of a multi-host collection. New never errors here.
+		jar, _ = cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
 	}
 
 	noFollow := cfg.NoFollowRedirects
