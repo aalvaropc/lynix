@@ -22,7 +22,6 @@ func (i *Initializer) Init(spec domain.WorkspaceSpec, force bool) error {
 		filepath.Join(root, "collections"),
 		filepath.Join(root, "env"),
 		filepath.Join(root, "runs"),
-		filepath.Join(root, ".lynix", "logs"),
 	}
 
 	for _, d := range dirs {

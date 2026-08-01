@@ -2,53 +2,7 @@
 
 All commands auto-detect the workspace root by walking up from the current directory until `lynix.yaml` is found. Override with `--workspace`.
 
-All commands accept `--debug` to enable structured JSON logging to `.lynix/logs/lynix.log`.
-
----
-
-## `lynix` (TUI)
-
-```bash
-lynix               # Launch interactive TUI
-lynix --debug       # TUI with debug logging
-```
-
-### Navigation
-
-| Key | Action |
-|-----|--------|
-| `Up` / `Down` | Move selection up/down |
-| `Left` / `Right` | Switch tabs in results view |
-| `Enter` | Confirm selection / advance step |
-| `Esc` | Go back to previous screen |
-| `c` | Cancel in-flight execution |
-| `s` | Toggle artifact save (on/off) |
-| `q` | Quit |
-| `?` | Show help |
-
-### Run Wizard
-
-The TUI guides you through three steps:
-
-**Step 1 -- Select collection**
-Lists all `.yaml` files discovered in `collections/`. Navigate with `Up`/`Down` and press `Enter`.
-
-**Step 2 -- Select environment**
-Lists all environment files in `env/` (excluding `secrets.local.yaml`). The workspace default is pre-selected.
-
-**Step 3 -- Confirm & run**
-Shows a summary of what will run. Press `s` to toggle whether the run artifact is saved, then `Enter` to execute.
-
-During execution a spinner is shown. Press `c` to cancel.
-
-### Results View
-
-After a run completes:
-
-- **Per-request status** -- pass / fail with HTTP status code and latency
-- **Assertion breakdown** -- each assertion result with descriptive message
-- **Extracted variables** -- key=value pairs available in subsequent requests
-- **Tabs** -- switch between request details and the raw response body
+Running `lynix` with no subcommand prints the help.
 
 ---
 

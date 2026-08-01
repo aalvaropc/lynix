@@ -14,20 +14,18 @@ import (
 func Execute() {
 	cmd := newRootCmd()
 	if err := cmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, "Error: "+friendlyError(err))
 		os.Exit(1)
 	}
 }
 
 func newRootCmd() *cobra.Command {
-	var debug bool
-
 	cmd := &cobra.Command{
-		Use:          "lynix",
-		Short:        "Lynix — API testing for CI/CD pipelines",
-		SilenceUsage: true,
+		Use:           "lynix",
+		Short:         "Lynix — API testing for CI/CD pipelines",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
-
-	cmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable verbose logging to .lynix/logs/lynix.log")
 
 	cmd.AddCommand(versionCmd())
 	cmd.AddCommand(initCmd())

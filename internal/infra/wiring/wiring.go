@@ -12,9 +12,11 @@ import (
 )
 
 // Adapters holds all the adapter instances wired for a workspace.
+// Envs is the concrete loader: it implements both ports.EnvironmentLoader and
+// ports.EnvironmentCatalog, sparing callers an unchecked type assertion.
 type Adapters struct {
 	Collections ports.CollectionLoader
-	Envs        ports.EnvironmentLoader
+	Envs        *yamlenv.Loader
 	Runner      ports.RequestRunner
 	Store       ports.ArtifactStore
 	Redactor    *redaction.Redactor
@@ -26,11 +28,11 @@ type Adapters struct {
 type Opts struct {
 	Insecure          bool // skip TLS certificate verification
 	NoFollowRedirects bool // disable HTTP redirect following globally
+	EnableStore       bool // persist run artifacts (Store is nil when false)
 }
 
 // NewAdapters creates all adapters for a workspace root and config.
-// If enableStore is false, Store will be nil.
-func NewAdapters(root string, cfg domain.Config, enableStore bool, opts Opts) Adapters {
+func NewAdapters(root string, cfg domain.Config, opts Opts) Adapters {
 	colLoader := yamlcollection.NewLoader(
 		yamlcollection.WithCollectionsDir(cfg.Paths.CollectionsDir),
 	)
@@ -52,7 +54,7 @@ func NewAdapters(root string, cfg domain.Config, enableStore bool, opts Opts) Ad
 	redactor := redaction.New(cfg.Masking)
 
 	var store ports.ArtifactStore
-	if enableStore {
+	if opts.EnableStore {
 		store = runstore.NewJSONStore(root, cfg,
 			runstore.WithIndex(true),
 			runstore.WithRedacter(redactor),

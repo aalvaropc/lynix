@@ -66,8 +66,7 @@ your-project/
 │   ├── dev.yaml                # Dev environment variables
 │   ├── stg.yaml                # Staging environment variables
 │   └── secrets.local.yaml      # Local secrets override (gitignored)
-├── runs/                       # Saved run artifacts (gitignored)
-└── .lynix/logs/                # Debug logs (gitignored)
+└── runs/                       # Saved run artifacts (gitignored)
 ```
 
 `.gitignore` is automatically patched to exclude `runs/`, `.lynix/`, and `secrets.local.yaml`.
@@ -76,14 +75,8 @@ your-project/
 
 ## Run Your First Collection
 
-**Headlessly (CLI):**
 ```bash
 lynix run -c demo -e dev
-```
-
-**Interactively (TUI):**
-```bash
-lynix
 ```
 
 ---

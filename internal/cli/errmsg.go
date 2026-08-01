@@ -1,4 +1,4 @@
-package tui
+package cli
 
 import (
 	"context"
@@ -12,6 +12,18 @@ import (
 
 var reLine = regexp.MustCompile(`(?i)\bline\s+(\d+)\b`)
 
+// friendlyError renders an error as a short human headline followed by the
+// underlying detail. Falls back to the raw error when no headline applies.
+func friendlyError(err error) string {
+	headline := userMessage(err)
+	if headline == "" {
+		return err.Error()
+	}
+	return headline + "\n  " + err.Error()
+}
+
+// userMessage maps an error to a short, user-friendly headline.
+// Returns "" when there is no better message than the error itself.
 func userMessage(err error) string {
 	if err == nil {
 		return ""
@@ -29,9 +41,7 @@ func userMessage(err error) string {
 		switch oe.Kind {
 
 		case domain.KindNotFound:
-			// Use sentinel errors when available for precise classification.
 			if errors.Is(err, domain.ErrNotFound) {
-				// Classify by Op prefix for user-friendly messages.
 				switch {
 				case strings.HasPrefix(oe.Op, "yamlcollection"):
 					return "Collection not found"
@@ -67,7 +77,7 @@ func userMessage(err error) string {
 			return "Invalid config"
 
 		default:
-			return "Unexpected error (see logs)"
+			return ""
 		}
 	}
 
@@ -86,7 +96,7 @@ func userMessage(err error) string {
 		return "Missing variable"
 	}
 
-	return "Unexpected error (see logs)"
+	return ""
 }
 
 func looksLikeYAMLProblem(s string) bool {
@@ -105,20 +115,12 @@ func extractLine(s string) string {
 func extractMissingVarName(s string) string {
 	ls := strings.ToLower(s)
 
-	i := strings.LastIndex(ls, "missing variable:")
-	if i >= 0 {
-		part := strings.TrimSpace(s[i+len("missing variable:"):])
-		part = strings.Trim(part, " .,:;\"'")
-		fields := strings.Fields(part)
-		if len(fields) == 0 {
-			return ""
+	for _, marker := range []string{"missing variable:", "missing variable "} {
+		i := strings.LastIndex(ls, marker)
+		if i < 0 {
+			continue
 		}
-		return strings.Trim(fields[0], " .,:;\"'")
-	}
-
-	i = strings.LastIndex(ls, "missing variable ")
-	if i >= 0 {
-		part := strings.TrimSpace(s[i+len("missing variable "):])
+		part := strings.TrimSpace(s[i+len(marker):])
 		part = strings.Trim(part, " .,:;\"'")
 		fields := strings.Fields(part)
 		if len(fields) == 0 {

@@ -28,10 +28,6 @@ func WithEnvDir(dir string) Option {
 	return func(l *Loader) { l.envDir = dir }
 }
 
-func WithSecretsFile(name string) Option {
-	return func(l *Loader) { l.secretsFile = name }
-}
-
 func NewLoader(root string, opts ...Option) *Loader {
 	l := &Loader{
 		rootDir:     root,

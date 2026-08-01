@@ -41,10 +41,6 @@ func WithRequestTimeout(d time.Duration) Option {
 	return func(r *Runner) { r.requestTimeout = d }
 }
 
-func WithResolver(vr *domain.VarResolver) Option {
-	return func(r *Runner) { r.resolver = vr }
-}
-
 // WithLogger sets a structured logger for the runner.
 func WithLogger(log *slog.Logger) Option {
 	return func(r *Runner) { r.log = log }
