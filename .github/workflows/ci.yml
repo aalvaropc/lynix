@@ -4,10 +4,21 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    name: Test (race + coverage)
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }}, go ${{ matrix.go }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: ["1.25"]
+        include:
+          - os: ubuntu-latest
+            go: "1.26"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -15,28 +26,33 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
+          go-version: ${{ matrix.go }}
 
       - name: Tidy check
+        if: runner.os == 'Linux'
         run: |
           go mod tidy
           git diff --exit-code
 
       - name: Tests
+        shell: bash
         run: go test -race -coverprofile=coverage.out ./...
 
       - name: Coverage summary
+        if: runner.os == 'Linux'
         run: go tool cover -func=coverage.out
 
       - name: Coverage threshold check
+        if: runner.os == 'Linux'
+        shell: bash
         run: |
-          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
-          echo "Total coverage: ${COVERAGE}%"
-          THRESHOLD=50
-          if [ "$(echo "$COVERAGE < $THRESHOLD" | bc -l)" -eq 1 ]; then
+          COVERAGE=$(go tool cover -func=coverage.out | awk '/^total:/ {sub(/%/, "", $3); print $3}')
+          THRESHOLD=70
+          echo "Total coverage: ${COVERAGE}% (threshold: ${THRESHOLD}%)"
+          awk -v c="$COVERAGE" -v t="$THRESHOLD" 'BEGIN { exit (c >= t) ? 0 : 1 }' || {
             echo "::error::Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
             exit 1
-          fi
+          }
 
   lint:
     name: Lint
@@ -54,6 +70,21 @@ jobs:
       # linter version and the language version can never drift apart.
       - name: Lint
         run: make lint
+
+  vulncheck:
+    name: Vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: govulncheck
+        run: make vulncheck
 
   examples:
     name: Examples (E2E smoke)

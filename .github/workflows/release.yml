@@ -32,3 +32,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+      # The v0.2.0 release shipped while the tap silently stayed at v0.1.0.
+      # Verify the formula actually reached the released version.
+      - name: Verify Homebrew tap was updated
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          for i in 1 2 3; do
+            FORMULA=$(curl -sSfL "https://raw.githubusercontent.com/aalvaropc/homebrew-tap/main/Formula/lynix.rb" || true)
+            if echo "$FORMULA" | grep -q "$VERSION"; then
+              echo "Tap is at ${VERSION}."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Homebrew tap was not updated to ${VERSION}"
+          exit 1

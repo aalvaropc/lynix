@@ -58,7 +58,7 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: "https://github.com/aalvaropc/lynix"
-    description: "TUI-first CLI tool for API testing and functional validation"
+    description: "Declarative API testing for CI/CD pipelines"
     license: "MIT"
     install: |
       bin.install "lynix"

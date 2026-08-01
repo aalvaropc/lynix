@@ -1,5 +1,10 @@
 # Lynix
 
+[![CI](https://github.com/aalvaropc/lynix/actions/workflows/ci.yml/badge.svg)](https://github.com/aalvaropc/lynix/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/aalvaropc/lynix)](https://github.com/aalvaropc/lynix/releases)
+[![Go Report Card](https://goreportcard.com/badge/github.com/aalvaropc/lynix)](https://goreportcard.com/report/github.com/aalvaropc/lynix)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Declarative API testing for CI/CD pipelines. Define requests in YAML, assert responses, run anywhere.
 
 No accounts. No dashboards. No proprietary formats. Single binary, plain YAML, Git-native.
