@@ -97,14 +97,17 @@ func (l *Loader) LoadEnvironment(nameOrPath string) (domain.Environment, error) 
 	for k, v := range env.Vars {
 		merged[k] = v
 	}
+	secretValues := make([]string, 0, len(secrets))
 	for k, v := range secrets {
 		merged[k] = v
+		secretValues = append(secretValues, v)
 	}
 
 	return domain.Environment{
 		SchemaVersion: env.SchemaVersion,
 		Name:          envName,
 		Vars:          merged,
+		SecretValues:  secretValues,
 	}, nil
 }
 

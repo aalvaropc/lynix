@@ -9,6 +9,10 @@ type Environment struct {
 	SchemaVersion int
 	Name          string
 	Vars          Vars
+
+	// SecretValues holds the raw values that came from the secrets file.
+	// Redaction uses them as literal scrub targets on every output surface.
+	SecretValues []string
 }
 
 // Get returns a value for the given key and a boolean indicating if it exists.

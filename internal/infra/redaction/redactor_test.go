@@ -480,3 +480,100 @@ func TestCheckForSecrets_UnmaskedExtractedVar_ReturnsError(t *testing.T) {
 		t.Errorf("expected ErrSecretDetected, got: %v", err)
 	}
 }
+
+func TestRedact_ErrorMessage_MasksURLQueryParams(t *testing.T) {
+	cfg := domain.MaskingConfig{Enabled: true, MaskQueryParams: true}
+	r := New(cfg)
+
+	run := domain.RunArtifact{Results: []domain.RequestResult{{
+		Name: "broken",
+		Error: &domain.RunError{
+			Kind:    domain.RunErrorConn,
+			Message: `Get "https://api.example.com/x?api_key=RAW_SECRET&page=1": dial tcp: connection refused`,
+		},
+	}}}
+
+	out := r.Redact(run)
+	msg := out.Results[0].Error.Message
+	if strings.Contains(msg, "RAW_SECRET") {
+		t.Errorf("error message still contains the secret: %s", msg)
+	}
+	if !strings.Contains(msg, "connection refused") {
+		t.Errorf("error message should keep diagnostic text: %s", msg)
+	}
+}
+
+func TestRedact_FormBody_MasksSensitiveKeys(t *testing.T) {
+	cfg := domain.MaskingConfig{Enabled: true, MaskRequestBody: true}
+	r := New(cfg)
+
+	run := domain.RunArtifact{Results: []domain.RequestResult{{
+		Name:        "login",
+		RequestBody: []byte("username=alice&password=hunter2"),
+	}}}
+
+	out := r.Redact(run)
+	body := string(out.Results[0].RequestBody)
+	if strings.Contains(body, "hunter2") {
+		t.Errorf("form body still contains the password: %s", body)
+	}
+	if !strings.Contains(body, "alice") {
+		t.Errorf("form body should keep non-sensitive values: %s", body)
+	}
+}
+
+func TestRedact_KnownSecretValue_ScrubbedUnderInnocuousKey(t *testing.T) {
+	cfg := domain.MaskingConfig{Enabled: true}
+	r := New(cfg)
+	r.AddSecretValues("KNOWN_SECRET_VALUE")
+
+	run := domain.RunArtifact{Results: []domain.RequestResult{{
+		Name:      "req",
+		Extracted: domain.Vars{"sid": "KNOWN_SECRET_VALUE"},
+		Assertions: []domain.AssertionResult{{
+			Name:    "jsonpath.eq",
+			Passed:  false,
+			Message: `jsonpath "$.sid": expected "x", got "KNOWN_SECRET_VALUE"`,
+		}},
+	}}}
+
+	out := r.Redact(run)
+	if strings.Contains(out.Results[0].Extracted["sid"], "KNOWN_SECRET_VALUE") {
+		t.Error("extracted var with innocuous name still contains the known secret")
+	}
+	if strings.Contains(out.Results[0].Assertions[0].Message, "KNOWN_SECRET_VALUE") {
+		t.Error("assertion message still contains the known secret")
+	}
+}
+
+func TestCheckForSecrets_NotCircular_DetectsKnownValue(t *testing.T) {
+	// Regression: CheckForSecrets used the same predicates as Redact, so it
+	// could never detect what Redact missed. Value-based scanning must flag a
+	// known secret under a key no predicate matches.
+	cfg := domain.MaskingConfig{Enabled: true}
+	r := New(cfg)
+	r.AddSecretValues("LEAKED_VALUE_123")
+
+	run := domain.RunArtifact{Results: []domain.RequestResult{{
+		Name:      "req",
+		Extracted: domain.Vars{"sid": "LEAKED_VALUE_123"},
+	}}}
+
+	if err := r.CheckForSecrets(run); err == nil {
+		t.Fatal("expected CheckForSecrets to detect the known value under an innocuous key")
+	}
+}
+
+func TestCheckForSecrets_DetectsCredentialFormats(t *testing.T) {
+	cfg := domain.MaskingConfig{Enabled: true}
+	r := New(cfg)
+
+	run := domain.RunArtifact{Results: []domain.RequestResult{{
+		Name:      "req",
+		Extracted: domain.Vars{"x": "ghp_abcdefghijklmnopqrstuv0123456789"},
+	}}}
+
+	if err := r.CheckForSecrets(run); err == nil {
+		t.Fatal("expected CheckForSecrets to detect a GitHub token format")
+	}
+}

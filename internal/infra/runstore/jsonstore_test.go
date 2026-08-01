@@ -2,6 +2,7 @@ package runstore
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aalvaropc/lynix/internal/domain"
+	"github.com/aalvaropc/lynix/internal/infra/redaction"
 )
 
 func TestSaveRun_CreatesJSONFile(t *testing.T) {
@@ -85,7 +87,7 @@ func TestSaveRun_MasksSensitiveExtractedWhenEnabled(t *testing.T) {
 	cfg.Paths.RunsDir = "runs"
 	cfg.Masking.Enabled = true
 
-	store := NewJSONStore(tmp, cfg)
+	store := NewJSONStore(tmp, cfg, WithRedacter(redaction.New(cfg.Masking)))
 
 	start := time.Date(2026, 2, 3, 10, 11, 12, 0, time.UTC)
 
@@ -278,7 +280,7 @@ func TestSaveRun_MasksSensitiveResponseHeadersWhenEnabled(t *testing.T) {
 	cfg.Paths.RunsDir = "runs"
 	cfg.Masking.Enabled = true
 
-	store := NewJSONStore(tmp, cfg)
+	store := NewJSONStore(tmp, cfg, WithRedacter(redaction.New(cfg.Masking)))
 
 	start := time.Date(2026, 2, 3, 10, 11, 12, 0, time.UTC)
 	run := domain.RunArtifact{
@@ -503,5 +505,24 @@ func TestSaveRun_MaxRunsZero_NoRotation(t *testing.T) {
 	}
 	if count != 3 {
 		t.Errorf("expected 3 files with unlimited rotation, got %d", count)
+	}
+}
+
+func TestSaveRun_MaskingWithoutRedacterFails(t *testing.T) {
+	tmp := t.TempDir()
+
+	cfg := domain.DefaultConfig()
+	cfg.Paths.RunsDir = "runs"
+	cfg.Masking.Enabled = true
+
+	store := NewJSONStore(tmp, cfg) // no redacter injected
+
+	_, err := store.SaveRun(domain.RunArtifact{CollectionName: "x"})
+	if err == nil {
+		t.Fatal("expected error: masking enabled without a redacter must fail loudly")
+	}
+	var opErr *domain.OpError
+	if !errors.As(err, &opErr) || opErr.Kind != domain.KindInvalidConfig {
+		t.Fatalf("expected KindInvalidConfig OpError, got: %v", err)
 	}
 }

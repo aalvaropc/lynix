@@ -68,6 +68,14 @@ func runCmd() *cobra.Command {
 				return err
 			}
 
+			// Feed known secret values (secrets file + sensitive env vars) to
+			// the redactor so they are scrubbed from every output surface.
+			if ws.redactor != nil {
+				if secretsEnv, envErr := ws.envs.LoadEnvironment(envArg); envErr == nil {
+					ws.redactor.AddSecretsFromEnv(secretsEnv)
+				}
+			}
+
 			var store = ws.store
 			if noSave || dryRun {
 				store = nil
