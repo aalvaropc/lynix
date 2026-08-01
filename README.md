@@ -11,25 +11,6 @@ No accounts. No dashboards. No proprietary formats. Single binary, plain YAML, G
 
 ---
 
-## Why Lynix?
-
-| | Lynix | Bruno | Hurl | Postman/Newman |
-|---|---|---|---|---|
-| Single binary (no runtime) | Yes | No (Node/Electron) | Yes | No (Node) |
-| Test format | Plain YAML | `.bru` markup | `.hurl` DSL | JSON exports |
-| JSON Schema validation | Yes (Draft 7 & 2020-12) | No | No | Via scripts |
-| Variable chaining | Yes | Yes | Captures | Yes |
-| Secret redaction in artifacts/reports | By default, all surfaces | No | Opt-in (`--secret`) | Partial |
-| Compare runs (`runs diff`) | Yes | No | No | No |
-| Differentiated exit codes | Yes | No | Yes | No |
-| Import from curl/Postman | Yes | Postman only | No | N/A |
-
-Honest note: [Hurl](https://hurl.dev) is an excellent, more mature tool in this
-space. Choose Lynix if you prefer plain YAML over a DSL, want JSON Schema
-contract checks and secret redaction out of the box, or want to diff runs.
-
----
-
 ## Quick Start
 
 ```bash
