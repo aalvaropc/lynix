@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -94,7 +95,16 @@ func runCmd() *cobra.Command {
 
 			uc := usecase.NewRunCollection(ws.collections, ws.envs, ws.runner, store, retryOpts)
 
-			run, runID, err := uc.Execute(cmd.Context(), collectionPath, envArg)
+			// run.timeout_seconds bounds the whole run (parity with the
+			// documented behavior; it was previously ignored by the CLI).
+			ctx := cmd.Context()
+			if ws.cfg.Run.Timeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, ws.cfg.Run.Timeout)
+				defer cancel()
+			}
+
+			run, runID, err := uc.Execute(ctx, collectionPath, envArg)
 			if err != nil {
 				if dryRun {
 					_ = printDryRun(os.Stdout, run)

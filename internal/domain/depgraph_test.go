@@ -160,3 +160,26 @@ func TestExtractVarRefs_NoPlaceholders(t *testing.T) {
 		t.Errorf("expected empty, got %v", refs)
 	}
 }
+
+func TestBuildDepGraph_UnresolvableSerialized(t *testing.T) {
+	// A produces x; B consumes x and an undefined var; C consumes y from B.
+	// B and C are unresolvable and must be serialized (one level each), not
+	// dumped into a single concurrent level.
+	requests := []RequestSpec{
+		{Name: "A", URL: "http://x/a", Extract: ExtractSpec{"x": "$.x"}},
+		{Name: "B", URL: "http://x/{{x}}/{{undefined_var}}", Extract: ExtractSpec{"y": "$.y"}},
+		{Name: "C", URL: "http://x/{{y}}"},
+	}
+
+	g := BuildDepGraph(requests, Vars{})
+
+	want := [][]int{{0}, {1}, {2}}
+	if len(g.Levels) != len(want) {
+		t.Fatalf("expected %d levels, got %v", len(want), g.Levels)
+	}
+	for i, lvl := range want {
+		if len(g.Levels[i]) != len(lvl) || g.Levels[i][0] != lvl[0] {
+			t.Fatalf("level %d: expected %v, got %v", i, lvl, g.Levels[i])
+		}
+	}
+}

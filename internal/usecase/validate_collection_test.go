@@ -135,3 +135,28 @@ func TestValidateCollection_WithVarResolver(t *testing.T) {
 		t.Fatalf("expected uuidErr in chain, got %v", err)
 	}
 }
+
+func TestValidateCollection_ExtractHeadersSeedsVars(t *testing.T) {
+	col := domain.Collection{
+		Name: "hdr",
+		Requests: []domain.RequestSpec{
+			{
+				Name:           "login",
+				Method:         domain.MethodPost,
+				URL:            "http://x/login",
+				ExtractHeaders: domain.ExtractHeaderSpec{"session": "Set-Cookie"},
+			},
+			{
+				Name:    "me",
+				Method:  domain.MethodGet,
+				URL:     "http://x/me",
+				Headers: domain.Headers{"Cookie": "{{session}}"},
+			},
+		},
+	}
+
+	uc := NewValidateCollection(fakeCollectionLoader{col: col}, fakeEnvLoader{})
+	if err := uc.Execute(context.Background(), "col.yaml", ""); err != nil {
+		t.Fatalf("expected extract_headers vars to satisfy later requests, got: %v", err)
+	}
+}
