@@ -91,10 +91,7 @@ lynix run -w /custom/root -c demo -e dev     # Override workspace root
 2. Tries `collections/{name}.yaml`, then `collections/{name}.yml`
 3. Falls back to matching by collection `name` field (case-insensitive)
 
-### Exit Codes
-
-- `0` -- all requests completed and all assertions passed
-- `1` -- any request failed or any assertion was violated
+See [Exit Codes](#exit-codes) for the run exit code convention.
 
 ---
 
