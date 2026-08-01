@@ -1,10 +1,13 @@
 package redaction
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/aalvaropc/lynix/internal/domain"
@@ -28,14 +31,97 @@ var builtinKeyPatterns = []string{
 	"api-key", "access_key", "private_key", "credential",
 }
 
+// secretValuePatterns match well-known credential formats regardless of the
+// key they appear under (JWTs, GitHub/Stripe/AWS/Slack tokens).
+var secretValuePatterns = []*regexp.Regexp{
+	regexp.MustCompile(`eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}`),
+	regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{20,}`),
+	regexp.MustCompile(`sk_(?:live|test)_[A-Za-z0-9]{10,}`),
+	regexp.MustCompile(`AKIA[0-9A-Z]{16}`),
+	regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{10,}`),
+}
+
+// urlInTextPattern finds URLs embedded in free text (e.g. Go's *url.Error
+// messages, which include the full request URL with its query string).
+var urlInTextPattern = regexp.MustCompile(`https?://[^\s"']+`)
+
+// minSecretValueLen avoids over-masking on trivially short values.
+const minSecretValueLen = 4
+
 // Redactor masks sensitive data across all surfaces of a RunArtifact.
 type Redactor struct {
-	cfg domain.MaskingConfig
+	cfg          domain.MaskingConfig
+	secretValues []string
 }
 
 // New creates a Redactor from a MaskingConfig.
 func New(cfg domain.MaskingConfig) *Redactor {
 	return &Redactor{cfg: cfg}
+}
+
+// AddSecretValues registers literal values to scrub from every surface,
+// including free text (error messages, assertion messages, URLs, bodies).
+// Values are kept sorted longest-first: replacing a shorter secret that is a
+// substring of a longer one would leave a recognizable residue of the latter.
+func (r *Redactor) AddSecretValues(vals ...string) {
+	for _, v := range vals {
+		v = strings.TrimSpace(v)
+		if len(v) < minSecretValueLen {
+			continue
+		}
+		// Guard against values that would corrupt output or the check:
+		// mask-placeholder fragments and common literals that appear in
+		// virtually every payload (a secrets file may carry flags too).
+		if strings.Trim(v, "*") == "" {
+			continue
+		}
+		switch strings.ToLower(v) {
+		case "true", "false", "null":
+			continue
+		}
+		r.secretValues = append(r.secretValues, v)
+	}
+	sort.Slice(r.secretValues, func(i, j int) bool {
+		return len(r.secretValues[i]) > len(r.secretValues[j])
+	})
+}
+
+// AddSecretsFromEnv registers every value from the environment's secrets file
+// plus any env var whose name looks sensitive. Known values are the most
+// reliable redaction signal: they are matched literally on all surfaces.
+func (r *Redactor) AddSecretsFromEnv(env domain.Environment) {
+	r.AddSecretValues(env.SecretValues...)
+	for k, v := range env.Vars {
+		if r.isKeySensitive(k) {
+			r.AddSecretValues(v)
+		}
+	}
+}
+
+// scrubText replaces known secret values and well-known credential formats.
+func (r *Redactor) scrubText(s string) string {
+	if s == "" {
+		return s
+	}
+	for _, v := range r.secretValues {
+		s = strings.ReplaceAll(s, v, maskValue)
+	}
+	for _, p := range secretValuePatterns {
+		s = p.ReplaceAllString(s, maskValue)
+	}
+	return s
+}
+
+func (r *Redactor) scrubBytes(b []byte) []byte {
+	if len(b) == 0 {
+		return b
+	}
+	return []byte(r.scrubText(string(b)))
+}
+
+// maskURLsInText applies query-param masking to every URL found in free text.
+func (r *Redactor) maskURLsInText(s string) string {
+	return urlInTextPattern.ReplaceAllStringFunc(s, r.maskQueryParams)
 }
 
 // Redact returns a deep copy of the run artifact with sensitive data masked.
@@ -51,51 +137,63 @@ func (r *Redactor) Redact(run domain.RunArtifact) domain.RunArtifact {
 	for _, rr := range run.Results {
 		c := rr
 
-		// Request headers
-		if r.cfg.MaskRequestHeaders && len(rr.RequestHeaders) > 0 {
-			c.RequestHeaders = r.maskStringMap(rr.RequestHeaders, r.isHeaderSensitive)
+		// URL surfaces. URL and ResolvedURL carry the same resolved value in
+		// practice, so both must be masked (URL used to leak query secrets).
+		if r.cfg.MaskQueryParams {
+			c.URL = r.maskQueryParams(c.URL)
+			c.ResolvedURL = r.maskQueryParams(c.ResolvedURL)
 		}
+		c.URL = r.scrubText(c.URL)
+		c.ResolvedURL = r.scrubText(c.ResolvedURL)
 
-		// Response headers
-		if r.cfg.MaskResponseHeaders && len(rr.Response.Headers) > 0 {
-			c.Response = cloneResponseSnapshot(rr.Response)
-			for k := range c.Response.Headers {
-				if r.isHeaderSensitive(k) {
-					vals := c.Response.Headers[k]
-					masked := make([]string, len(vals))
-					for i := range vals {
-						masked[i] = maskValue
-					}
-					c.Response.Headers[k] = masked
+		// Request headers: key-based masking per config, value scrub always.
+		c.RequestHeaders = r.maskStringMap(rr.RequestHeaders, r.cfg.MaskRequestHeaders, r.isHeaderSensitive)
+
+		// Response headers.
+		c.Response = cloneResponseSnapshot(rr.Response)
+		for k, vals := range c.Response.Headers {
+			for i := range vals {
+				if r.cfg.MaskResponseHeaders && r.isHeaderSensitive(k) {
+					vals[i] = maskValue
+				} else {
+					vals[i] = r.scrubText(vals[i])
 				}
 			}
 		}
 
-		// Request body (JSON fields)
-		if r.cfg.MaskRequestBody && len(rr.RequestBody) > 0 {
-			c.RequestBody = r.maskJSONBytes(rr.RequestBody)
+		// Bodies: key-based masking for JSON/form per config, value scrub always.
+		if r.cfg.MaskRequestBody {
+			c.RequestBody = r.maskBodyBytes(rr.RequestBody)
+		} else {
+			c.RequestBody = r.scrubBytes(rr.RequestBody)
+		}
+		if r.cfg.MaskResponseBody {
+			c.Response.Body = r.maskBodyBytes(c.Response.Body)
+		} else {
+			c.Response.Body = r.scrubBytes(c.Response.Body)
 		}
 
-		// Response body (JSON fields)
-		if r.cfg.MaskResponseBody && len(rr.Response.Body) > 0 {
-			snap := cloneResponseSnapshot(c.Response)
-			snap.Body = r.maskJSONBytes(rr.Response.Body)
-			c.Response = snap
-		}
+		// Extracted vars: key-based masking + value scrub.
+		c.Extracted = r.maskStringMap(rr.Extracted, true, r.isKeySensitive)
 
-		// Query params in resolved URL
-		if r.cfg.MaskQueryParams && rr.ResolvedURL != "" {
-			c.ResolvedURL = r.maskQueryParams(rr.ResolvedURL)
-		}
-
-		// Extracted vars
-		if len(rr.Extracted) > 0 {
-			c.Extracted = r.maskStringMap(cloneVars(rr.Extracted), r.isKeySensitive)
-		}
-
-		// Deep copy slices that might be shared
+		// Assertion and extract messages embed observed response values
+		// (e.g. `expected "x", got "<token>"`), so they are scrubbed too.
 		c.Extracts = cloneExtractResults(rr.Extracts)
+		for i := range c.Extracts {
+			c.Extracts[i].Message = r.scrubText(c.Extracts[i].Message)
+		}
 		c.Assertions = cloneAssertionResults(rr.Assertions)
+		for i := range c.Assertions {
+			c.Assertions[i].Message = r.scrubText(c.Assertions[i].Message)
+		}
+
+		// Error messages wrap the full request URL (Go's *url.Error), which
+		// leaks query-string secrets into artifacts, stdout, and JUnit XML.
+		if rr.Error != nil {
+			e := *rr.Error
+			e.Message = r.scrubText(r.maskURLsInText(e.Message))
+			c.Error = &e
+		}
 
 		out.Results = append(out.Results, c)
 	}
@@ -159,13 +257,13 @@ func (r *Redactor) isQueryParamSensitive(key string) bool {
 	return false
 }
 
-func (r *Redactor) maskStringMap(m map[string]string, isSensitive func(string) bool) map[string]string {
+func (r *Redactor) maskStringMap(m map[string]string, keyMasking bool, isSensitive func(string) bool) map[string]string {
 	out := make(map[string]string, len(m))
 	for k, v := range m {
-		if isSensitive(k) {
+		if keyMasking && isSensitive(k) {
 			out[k] = maskValue
 		} else {
-			out[k] = v
+			out[k] = r.scrubText(v)
 		}
 	}
 	return out
@@ -178,11 +276,21 @@ func (r *Redactor) maskQueryParams(rawURL string) string {
 	}
 	q := u.Query()
 	changed := false
-	for k := range q {
+	for k, vals := range q {
 		if r.isQueryParamSensitive(k) {
 			q.Set(k, maskValue)
 			changed = true
+			continue
 		}
+		// Known secret values hide under innocuous params too — and the
+		// URL carries them percent-encoded, so scrub the DECODED value.
+		for i, v := range vals {
+			if nv := r.scrubText(v); nv != v {
+				vals[i] = nv
+				changed = true
+			}
+		}
+		q[k] = vals
 	}
 	if !changed {
 		return rawURL
@@ -191,41 +299,129 @@ func (r *Redactor) maskQueryParams(rawURL string) string {
 	return u.String()
 }
 
-// maskJSONBytes attempts to mask sensitive keys in a JSON document.
-// If the body is not valid JSON, it is returned as-is.
-func (r *Redactor) maskJSONBytes(body []byte) []byte {
-	var doc any
-	if err := json.Unmarshal(body, &doc); err != nil {
-		return body // not JSON, return as-is
-	}
-	r.walkAndMask(doc)
-	masked, err := json.Marshal(doc)
-	if err != nil {
+// maskBodyBytes masks sensitive keys in JSON or form-urlencoded bodies and
+// falls back to a value scrub for everything else (XML, plain text, ...).
+// A body must never pass through untouched: form logins used to leak
+// password=... verbatim because only JSON was handled.
+func (r *Redactor) maskBodyBytes(body []byte) []byte {
+	if len(body) == 0 {
 		return body
 	}
-	return masked
+	if masked, ok := r.maskJSONBody(body); ok {
+		return masked
+	}
+	if masked, ok := r.maskFormBody(body); ok {
+		return masked
+	}
+	return r.scrubBytes(body)
 }
 
-func (r *Redactor) walkAndMask(v any) {
+func (r *Redactor) maskJSONBody(body []byte) ([]byte, bool) {
+	// UseNumber keeps int64 IDs and decimal literals byte-exact through the
+	// mask round-trip (plain unmarshal would corrupt 9007199254740993).
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var doc any
+	if err := dec.Decode(&doc); err != nil {
+		return nil, false
+	}
+	doc = r.walkAndMask(doc)
+	masked, err := json.Marshal(doc)
+	if err != nil {
+		return nil, false
+	}
+	return r.scrubBytes(masked), true
+}
+
+// maskFormBody handles urlencoded-style bodies (k=v&k=v). It deliberately
+// avoids strict url.Values parsing: real bodies contain spaces, semicolons,
+// or unencoded characters that ParseQuery rejects, and a rejected body used
+// to leak password=... verbatim. The original bytes pass through untouched
+// unless something actually needs masking.
+func (r *Redactor) maskFormBody(body []byte) ([]byte, bool) {
+	s := string(body)
+	if strings.Contains(s, "{") || !strings.Contains(s, "=") {
+		return nil, false
+	}
+	segs := strings.Split(s, "&")
+	changed := false
+	for i, seg := range segs {
+		k, v, ok := strings.Cut(seg, "=")
+		if !ok || k == "" {
+			continue
+		}
+		key := k
+		if uk, err := url.QueryUnescape(k); err == nil {
+			key = uk
+		}
+		if r.isKeySensitive(key) {
+			segs[i] = k + "=" + maskValue
+			changed = true
+			continue
+		}
+		nv := r.scrubText(v)
+		// The value may carry a known secret percent-encoded.
+		if uv, err := url.QueryUnescape(v); err == nil && r.scrubText(uv) != uv {
+			nv = maskValue
+		}
+		if nv != v {
+			segs[i] = k + "=" + nv
+			changed = true
+		}
+	}
+	if !changed {
+		return nil, false
+	}
+	return []byte(strings.Join(segs, "&")), true
+}
+
+// walkAndMask masks sensitive keys and scrubs known secret values from
+// DECODED string leaves: matching on the marshaled bytes alone misses secrets
+// containing JSON-escapable characters (quotes, backslashes, newlines).
+func (r *Redactor) walkAndMask(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
 		for k, val := range t {
 			if r.isKeySensitive(k) {
 				t[k] = maskValue
 			} else {
-				r.walkAndMask(val)
+				t[k] = r.walkAndMask(val)
 			}
 		}
+		return t
 	case []any:
-		for _, item := range t {
-			r.walkAndMask(item)
+		for i, item := range t {
+			t[i] = r.walkAndMask(item)
 		}
+		return t
+	case string:
+		return r.scrubText(t)
 	}
+	return v
 }
 
 // CheckForSecrets scans a (presumably already-redacted) RunArtifact for any
 // sensitive values that were NOT masked. Returns ErrSecretDetected on first hit.
+//
+// Unlike Redact, this is not limited to the same key-based predicates (which
+// would make the check circular): it also scans the fully serialized artifact
+// for known secret values and well-known credential formats.
 func (r *Redactor) CheckForSecrets(run domain.RunArtifact) error {
+	if serialized, err := json.Marshal(run); err == nil {
+		if err := r.checkTextForSecrets(string(serialized)); err != nil {
+			return err
+		}
+	}
+	// Bodies serialize as base64 in JSON, so they need a separate raw scan.
+	for _, rr := range run.Results {
+		if err := r.checkTextForSecrets(string(rr.RequestBody)); err != nil {
+			return fmt.Errorf("%w (request body of %q)", err, rr.Name)
+		}
+		if err := r.checkTextForSecrets(string(rr.Response.Body)); err != nil {
+			return fmt.Errorf("%w (response body of %q)", err, rr.Name)
+		}
+	}
+
 	for _, rr := range run.Results {
 		// Request headers
 		for k, v := range rr.RequestHeaders {
@@ -255,7 +451,12 @@ func (r *Redactor) CheckForSecrets(run domain.RunArtifact) error {
 			return err
 		}
 
-		// Query params in resolved URL
+		// Query params in both URL surfaces
+		if rr.URL != "" {
+			if err := r.checkQuerySecrets(rr.URL, rr.Name); err != nil {
+				return err
+			}
+		}
 		if rr.ResolvedURL != "" {
 			if err := r.checkQuerySecrets(rr.ResolvedURL, rr.Name); err != nil {
 				return err
@@ -267,6 +468,25 @@ func (r *Redactor) CheckForSecrets(run domain.RunArtifact) error {
 			if r.isKeySensitive(k) && v != maskValue {
 				return fmt.Errorf("%w: extracted var %q in request %q", ErrSecretDetected, k, rr.Name)
 			}
+		}
+	}
+	return nil
+}
+
+// checkTextForSecrets scans free text for known secret values and well-known
+// credential formats.
+func (r *Redactor) checkTextForSecrets(s string) error {
+	if s == "" {
+		return nil
+	}
+	for _, v := range r.secretValues {
+		if strings.Contains(s, v) {
+			return fmt.Errorf("%w: a known secret value appears unmasked in the artifact", ErrSecretDetected)
+		}
+	}
+	for _, p := range secretValuePatterns {
+		if p.MatchString(s) {
+			return fmt.Errorf("%w: a value matching a known credential format appears in the artifact", ErrSecretDetected)
 		}
 	}
 	return nil
@@ -330,17 +550,6 @@ func (r *Redactor) checkQuerySecrets(rawURL, reqName string) error {
 }
 
 // --- deep copy helpers ---
-
-func cloneVars(in domain.Vars) domain.Vars {
-	if in == nil {
-		return domain.Vars{}
-	}
-	out := domain.Vars{}
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
 
 func cloneExtractResults(in []domain.ExtractResult) []domain.ExtractResult {
 	if in == nil {

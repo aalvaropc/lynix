@@ -72,6 +72,9 @@ func loadStandalone(opts wiring.Opts) (*workspaceCtx, error) {
 		collections: adapters.Collections,
 		envs:        adapters.Envs,
 		runner:      adapters.Runner,
+		// Standalone still loads secrets.local.yaml relative to the env
+		// file, so the redactor must be wired here too.
+		redactor: adapters.Redactor,
 	}, nil
 }
 

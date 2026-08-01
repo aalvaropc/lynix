@@ -68,6 +68,14 @@ func runCmd() *cobra.Command {
 				return err
 			}
 
+			// Feed known secret values (secrets file + sensitive env vars) to
+			// the redactor so they are scrubbed from every output surface.
+			if ws.redactor != nil {
+				if secretsEnv, envErr := ws.envs.LoadEnvironment(envArg); envErr == nil {
+					ws.redactor.AddSecretsFromEnv(secretsEnv)
+				}
+			}
+
 			var store = ws.store
 			if noSave || dryRun {
 				store = nil
@@ -105,11 +113,24 @@ func runCmd() *cobra.Command {
 			}
 
 			run, runID, err := uc.Execute(ctx, collectionPath, envArg)
+
+			// Redact BEFORE any output decision: the error path (global
+			// timeout, cancellation, failed save) returns a partial run and
+			// used to print it unredacted to stdout.
+			redacted := run
+			if ws.redactor != nil {
+				redacted = ws.redactor.Redact(run)
+			}
+			display := run
+			if ws.cfg.Masking.MaskCLIOutput {
+				display = redacted
+			}
+
 			if err != nil {
 				if dryRun {
 					_ = printDryRun(os.Stdout, run)
 				} else {
-					_ = printRun(os.Stdout, run, runID, format)
+					_ = printRun(os.Stdout, display, runID, format)
 				}
 				return err
 			}
@@ -118,22 +139,23 @@ func runCmd() *cobra.Command {
 				return printDryRun(os.Stdout, run)
 			}
 
-			if ws.cfg.Masking.MaskCLIOutput && ws.redactor != nil {
-				run = ws.redactor.Redact(run)
-			}
-
-			if ws.cfg.Masking.FailOnDetectedSecret && ws.redactor != nil {
-				if err := ws.redactor.CheckForSecrets(run); err != nil {
+			// The check must run on the REDACTED copy — checking the raw run
+			// would flag every legitimately returned token (e.g. a login
+			// response) even though the persisted artifact is clean.
+			if ws.cfg.Masking.Enabled && ws.cfg.Masking.FailOnDetectedSecret && ws.redactor != nil {
+				if err := ws.redactor.CheckForSecrets(redacted); err != nil {
 					return err
 				}
 			}
 
-			if err := printRun(os.Stdout, run, runID, format); err != nil {
+			if err := printRun(os.Stdout, display, runID, format); err != nil {
 				return err
 			}
 
+			// The JUnit file is a CI artifact: always redact it, regardless
+			// of the CLI-output masking preference.
 			if report == "junit" {
-				if err := writeJUnitReport(reportPath, run, runID); err != nil {
+				if err := writeJUnitReport(reportPath, redacted, runID); err != nil {
 					return err
 				}
 			}
