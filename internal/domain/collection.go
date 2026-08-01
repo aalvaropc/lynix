@@ -3,6 +3,7 @@ package domain
 import (
 	"encoding/json"
 	"net/url"
+	"strings"
 )
 
 // HTTPMethod represents an HTTP method (e.g., GET, POST).
@@ -214,7 +215,10 @@ func (b BodySpec) Serialize() []byte {
 			return []byte(vals.Encode())
 		}
 	case BodyRaw:
-		if b.Raw != "" {
+		// The transport skips whitespace-only raw bodies (builder.go), so
+		// the serialized artifact must too — never show a body that was
+		// not actually sent.
+		if strings.TrimSpace(b.Raw) != "" {
 			return []byte(b.Raw)
 		}
 	}

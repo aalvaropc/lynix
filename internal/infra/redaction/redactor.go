@@ -422,7 +422,8 @@ func (r *Redactor) CheckForSecrets(run domain.RunArtifact) error {
 			return err
 		}
 	}
-	// Bodies serialize as base64 in JSON, so they need a separate raw scan.
+	// Bodies may serialize escaped or base64-prefixed (see domain.BodyBytes),
+	// so scan the raw bytes separately from the serialized artifact.
 	for _, rr := range run.Results {
 		if err := r.checkTextForSecrets(string(rr.RequestBody)); err != nil {
 			return fmt.Errorf("%w (request body of %q)", err, rr.Name)
