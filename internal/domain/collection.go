@@ -1,5 +1,10 @@
 package domain
 
+import (
+	"encoding/json"
+	"net/url"
+)
+
 // HTTPMethod represents an HTTP method (e.g., GET, POST).
 type HTTPMethod string
 
@@ -185,4 +190,33 @@ type Collection struct {
 type CollectionRef struct {
 	Name string
 	Path string
+}
+
+// Serialize renders the body exactly as the HTTP layer sends it, so dry-run
+// output and stored artifacts always match the real request. Form bodies are
+// URL-encoded with sorted keys (url.Values.Encode), matching the transport.
+func (b BodySpec) Serialize() []byte {
+	switch b.Type {
+	case BodyJSON:
+		if b.JSON != nil {
+			out, err := json.Marshal(b.JSON)
+			if err != nil {
+				return nil
+			}
+			return out
+		}
+	case BodyForm:
+		if b.Form != nil {
+			vals := url.Values{}
+			for k, v := range b.Form {
+				vals.Set(k, v)
+			}
+			return []byte(vals.Encode())
+		}
+	case BodyRaw:
+		if b.Raw != "" {
+			return []byte(b.Raw)
+		}
+	}
+	return nil
 }

@@ -2,11 +2,9 @@ package httprunner
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/aalvaropc/lynix/internal/domain"
@@ -80,7 +78,7 @@ func (r *Runner) Run(ctx context.Context, req domain.RequestSpec, vars domain.Va
 		URL:            resolved.URL,
 		ResolvedURL:    resolved.URL,
 		RequestHeaders: copyHeaders(resolved.Headers),
-		RequestBody:    SerializeBody(resolved.Body),
+		RequestBody:    resolved.Body.Serialize(),
 		Extracted:      domain.Vars{},
 		Extracts:       []domain.ExtractResult{},
 		Assertions:     []domain.AssertionResult{},
@@ -165,32 +163,6 @@ func readBounded(r io.Reader, maxBytes int64) ([]byte, bool, error) {
 		return b[:maxBytes], true, nil
 	}
 	return b, false, nil
-}
-
-func SerializeBody(body domain.BodySpec) []byte {
-	switch body.Type {
-	case domain.BodyJSON:
-		if body.JSON != nil {
-			b, err := json.Marshal(body.JSON)
-			if err != nil {
-				return nil
-			}
-			return b
-		}
-	case domain.BodyForm:
-		if body.Form != nil {
-			vals := make([]string, 0, len(body.Form))
-			for k, v := range body.Form {
-				vals = append(vals, k+"="+v)
-			}
-			return []byte(strings.Join(vals, "&"))
-		}
-	case domain.BodyRaw:
-		if body.Raw != "" {
-			return []byte(body.Raw)
-		}
-	}
-	return nil
 }
 
 func copyHeaders(h domain.Headers) map[string]string {

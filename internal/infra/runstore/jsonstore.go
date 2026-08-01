@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -109,6 +111,7 @@ func (s *JSONStore) SaveRun(run domain.RunArtifact) (string, error) {
 	ts = ts.UTC()
 
 	toSave := run
+	toSave.SchemaVersion = domain.ArtifactSchemaVersion
 	if toSave.StartedAt.IsZero() {
 		toSave.StartedAt = ts
 	}
@@ -282,9 +285,13 @@ func (s *JSONStore) appendIndex(dir, id, filename string, run domain.RunArtifact
 	return nil
 }
 
+// runFilePattern matches only artifacts this store wrote (timestamp-prefixed),
+// so rotation never deletes unrelated files a user drops into runs/.
+var runFilePattern = regexp.MustCompile(`^\d{8}T\d{6}Z_.+\.json$`)
+
 // rotate removes the oldest run artifacts when the count exceeds maxRuns.
-// Files are sorted lexicographically (timestamp-prefixed → chronological order).
-// The index.jsonl is rewritten to match the surviving files.
+// Ordering uses the timestamp prefix plus the numeric collision suffix:
+// plain lexicographic order would delete "_10" before "_2".
 func (s *JSONStore) rotate(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -293,7 +300,7 @@ func (s *JSONStore) rotate(dir string) error {
 
 	var jsonFiles []string
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+		if !e.IsDir() && runFilePattern.MatchString(e.Name()) {
 			jsonFiles = append(jsonFiles, e.Name())
 		}
 	}
@@ -302,7 +309,9 @@ func (s *JSONStore) rotate(dir string) error {
 		return nil
 	}
 
-	sort.Strings(jsonFiles) // timestamp prefix → oldest first
+	sort.Slice(jsonFiles, func(i, j int) bool {
+		return runFileLess(jsonFiles[i], jsonFiles[j])
+	})
 
 	toDelete := jsonFiles[:len(jsonFiles)-s.maxRuns]
 	deleteSet := make(map[string]bool, len(toDelete))
@@ -320,7 +329,34 @@ func (s *JSONStore) rotate(dir string) error {
 	return nil
 }
 
+// runFileLess orders artifacts chronologically: timestamp prefix first, then
+// the numeric collision suffix ("_2" ... "_999") as a number.
+func runFileLess(a, b string) bool {
+	ta, na := splitRunFilename(a)
+	tb, nb := splitRunFilename(b)
+	if ta != tb {
+		return ta < tb
+	}
+	if na != nb {
+		return na < nb
+	}
+	return a < b
+}
+
+var collisionSuffix = regexp.MustCompile(`_(\d+)\.json$`)
+
+func splitRunFilename(name string) (prefix string, suffix int) {
+	prefix = strings.TrimSuffix(name, ".json")
+	if m := collisionSuffix.FindStringSubmatch(name); m != nil {
+		if n, err := strconv.Atoi(m[1]); err == nil {
+			return strings.TrimSuffix(name, m[0]), n
+		}
+	}
+	return prefix, 0
+}
+
 // pruneIndex rewrites index.jsonl to remove entries for deleted files.
+// The rewrite is atomic (tmp + rename), like the artifact writes.
 func (s *JSONStore) pruneIndex(dir string, deleted map[string]bool) {
 	indexPath := filepath.Join(dir, "index.jsonl")
 	b, err := os.ReadFile(indexPath)
@@ -328,7 +364,7 @@ func (s *JSONStore) pruneIndex(dir string, deleted map[string]bool) {
 		return // no index to prune
 	}
 
-	var kept [][]byte
+	var out []byte
 	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
 		if line == "" {
 			continue
@@ -337,16 +373,20 @@ func (s *JSONStore) pruneIndex(dir string, deleted map[string]bool) {
 			File string `json:"file"`
 		}
 		if json.Unmarshal([]byte(line), &entry) == nil && !deleted[entry.File] {
-			kept = append(kept, []byte(line))
+			out = append(out, line...)
+			out = append(out, '\n')
 		}
 	}
 
-	var out []byte
-	for _, line := range kept {
-		out = append(out, line...)
-		out = append(out, '\n')
+	tmp := indexPath + ".tmp"
+	if err := os.WriteFile(tmp, out, 0o600); err != nil {
+		s.log.Error("runstore.pruneIndex.write", "err", err)
+		return
 	}
-	_ = os.WriteFile(indexPath, out, 0o600)
+	if err := os.Rename(tmp, indexPath); err != nil {
+		_ = os.Remove(tmp)
+		s.log.Error("runstore.pruneIndex.rename", "err", err)
+	}
 }
 
 func cloneResponseSnapshot(in domain.ResponseSnapshot) domain.ResponseSnapshot {

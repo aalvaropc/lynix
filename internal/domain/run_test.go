@@ -1,9 +1,12 @@
 package domain
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net"
 	"net/url"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -104,5 +107,74 @@ func TestRequestResult_Failed_AllPass(t *testing.T) {
 	}
 	if r.Failed() {
 		t.Error("expected Failed()=false when all pass")
+	}
+}
+
+func TestBodyBytes_TextRoundtrip(t *testing.T) {
+	in := BodyBytes(`{"user":"alice"}`)
+	b, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if string(b) != `"{\"user\":\"alice\"}"` {
+		t.Fatalf("expected plain-text serialization, got %s", b)
+	}
+	var out BodyBytes
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if string(out) != string(in) {
+		t.Fatalf("roundtrip mismatch: %q != %q", out, in)
+	}
+}
+
+func TestBodyBytes_BinaryRoundtrip(t *testing.T) {
+	in := BodyBytes{0xff, 0xfe, 0x00, 0x01}
+	b, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), "base64:") {
+		t.Fatalf("expected base64 serialization for binary, got %s", b)
+	}
+	var out BodyBytes
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !bytes.Equal(out, in) {
+		t.Fatalf("roundtrip mismatch: %v != %v", out, in)
+	}
+}
+
+func TestRunResult_SnakeCaseArtifact(t *testing.T) {
+	run := RunResult{
+		SchemaVersion:  ArtifactSchemaVersion,
+		CollectionName: "col",
+		Results: []RequestResult{
+			{Name: "r", Method: MethodGet, URL: "http://x", StatusCode: 200, LatencyMS: 5},
+		},
+	}
+	b, err := json.Marshal(run)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	s := string(b)
+	for _, key := range []string{`"schema_version"`, `"collection_name"`, `"status_code"`, `"latency_ms"`, `"started_at"`} {
+		if !strings.Contains(s, key) {
+			t.Errorf("expected key %s in artifact JSON, got: %s", key, s)
+		}
+	}
+	for _, bad := range []string{`"CollectionName"`, `"StatusCode"`, `"LatencyMS"`} {
+		if strings.Contains(s, bad) {
+			t.Errorf("unexpected PascalCase key %s in artifact JSON", bad)
+		}
+	}
+}
+
+func TestBodySpec_Serialize_FormURLEncoded(t *testing.T) {
+	b := BodySpec{Type: BodyForm, Form: map[string]string{"b key": "v&1", "a": "2"}}
+	got := string(b.Serialize())
+	if got != "a=2&b+key=v%261" {
+		t.Fatalf("expected sorted URL-encoded form, got %q", got)
 	}
 }
