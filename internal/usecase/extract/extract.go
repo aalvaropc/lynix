@@ -1,8 +1,11 @@
 package extract
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -155,12 +158,51 @@ func lookupHeader(headers map[string][]string, name string) (string, bool) {
 	return "", false
 }
 
+// parseJSON decodes with UseNumber so large integers (e.g. int64 IDs) keep
+// their exact representation, then normalizes the document: json.Number stays
+// ONLY for integers float64 cannot represent exactly. Everything else becomes
+// float64 again, because gval-based JSONPath filters ($[?(@.id == 4)]) compare
+// float64 and would silently stop matching against json.Number.
 func parseJSON(body []byte) (any, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
 	var doc any
-	if err := json.Unmarshal(body, &doc); err != nil {
+	if err := dec.Decode(&doc); err != nil {
 		return nil, err
 	}
-	return doc, nil
+	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("unexpected data after JSON value")
+	}
+	return normalizeJSONNumbers(doc), nil
+}
+
+// float64Exact is the largest integer magnitude float64 represents exactly.
+const float64Exact = int64(1) << 53
+
+func normalizeJSONNumbers(v any) any {
+	switch t := v.(type) {
+	case json.Number:
+		s := t.String()
+		if !strings.ContainsAny(s, ".eE") {
+			if i, err := t.Int64(); err == nil && i >= -float64Exact && i <= float64Exact {
+				return float64(i)
+			}
+			return t // huge integer: keep the exact literal
+		}
+		if f, err := t.Float64(); err == nil {
+			return f
+		}
+		return t
+	case map[string]any:
+		for k, val := range t {
+			t[k] = normalizeJSONNumbers(val)
+		}
+	case []any:
+		for i, val := range t {
+			t[i] = normalizeJSONNumbers(val)
+		}
+	}
+	return v
 }
 
 func isEmptyValue(v any) bool {
@@ -186,6 +228,8 @@ func toString(v any) (string, error) {
 	switch t := v.(type) {
 	case string:
 		return t, nil
+	case json.Number:
+		return t.String(), nil
 	case float64, bool, int, int64, uint64:
 		return fmt.Sprint(t), nil
 	case map[string]any:

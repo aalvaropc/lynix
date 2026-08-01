@@ -101,7 +101,7 @@ func TestEvaluate_OnlyMaxLatency(t *testing.T) {
 func TestEvaluate_JSONPathExists_True(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		JSONPath: map[string]domain.ValueAssertion{
-			"$.data.id": {Exists: true},
+			"$.data.id": {Exists: boolPtr(true)},
 		},
 	}
 
@@ -119,7 +119,7 @@ func TestEvaluate_JSONPathExists_True(t *testing.T) {
 func TestEvaluate_JSONPathExists_False(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		JSONPath: map[string]domain.ValueAssertion{
-			"$.data.missing": {Exists: true},
+			"$.data.missing": {Exists: boolPtr(true)},
 		},
 	}
 
@@ -137,7 +137,7 @@ func TestEvaluate_JSONPathExists_False(t *testing.T) {
 func TestEvaluate_JSONPathExists_EmptyString_Pass(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		JSONPath: map[string]domain.ValueAssertion{
-			"$.msg": {Exists: true},
+			"$.msg": {Exists: boolPtr(true)},
 		},
 	}
 	body := []byte(`{"msg":""}`)
@@ -153,7 +153,7 @@ func TestEvaluate_JSONPathExists_EmptyString_Pass(t *testing.T) {
 func TestEvaluate_JSONPathExists_Null_Fail(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		JSONPath: map[string]domain.ValueAssertion{
-			"$.field": {Exists: true},
+			"$.field": {Exists: boolPtr(true)},
 		},
 	}
 	body := []byte(`{"field":null}`)
@@ -169,7 +169,7 @@ func TestEvaluate_JSONPathExists_Null_Fail(t *testing.T) {
 func TestEvaluate_JSONPathExists_EmptyArray_Pass(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		JSONPath: map[string]domain.ValueAssertion{
-			"$.items": {Exists: true},
+			"$.items": {Exists: boolPtr(true)},
 		},
 	}
 	body := []byte(`{"items":[]}`)
@@ -185,7 +185,7 @@ func TestEvaluate_JSONPathExists_EmptyArray_Pass(t *testing.T) {
 func TestEvaluate_JSONPathExists_EmptyObject_Pass(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		JSONPath: map[string]domain.ValueAssertion{
-			"$.meta": {Exists: true},
+			"$.meta": {Exists: boolPtr(true)},
 		},
 	}
 	body := []byte(`{"meta":{}}`)
@@ -201,7 +201,7 @@ func TestEvaluate_JSONPathExists_EmptyObject_Pass(t *testing.T) {
 func TestEvaluate_HeaderExists_EmptyValue_Pass(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		Headers: map[string]domain.ValueAssertion{
-			"X-Empty": {Exists: true},
+			"X-Empty": {Exists: boolPtr(true)},
 		},
 	}
 	headers := map[string][]string{"X-Empty": {""}}
@@ -217,7 +217,7 @@ func TestEvaluate_HeaderExists_EmptyValue_Pass(t *testing.T) {
 func TestEvaluate_JSONPath_NonJSONBody(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		JSONPath: map[string]domain.ValueAssertion{
-			"$.data.id": {Exists: true},
+			"$.data.id": {Exists: boolPtr(true)},
 		},
 	}
 
@@ -234,7 +234,7 @@ func TestEvaluate_JSONPath_NonJSONBody(t *testing.T) {
 func TestEvaluate_JSONPath_InvalidExpr(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		JSONPath: map[string]domain.ValueAssertion{
-			"$.data[": {Exists: true},
+			"$.data[": {Exists: boolPtr(true)},
 		},
 	}
 
@@ -252,8 +252,8 @@ func TestEvaluate_JSONPath_InvalidExpr(t *testing.T) {
 func TestEvaluate_InvalidBodyMarksAllJSONPathFailed(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		JSONPath: map[string]domain.ValueAssertion{
-			"$.name": {Exists: true},
-			"$.age":  {Exists: true},
+			"$.name": {Exists: boolPtr(true)},
+			"$.age":  {Exists: boolPtr(true)},
 		},
 	}
 	out := Evaluate(spec, 200, 50, []byte("not json"), nil, nil, false)
@@ -277,7 +277,7 @@ func TestEvaluate_MultipleAssertionsCombined(t *testing.T) {
 		Status:       &s,
 		MaxLatencyMS: &ms,
 		JSONPath: map[string]domain.ValueAssertion{
-			"$.id": {Exists: true},
+			"$.id": {Exists: boolPtr(true)},
 		},
 	}
 	results := Evaluate(spec, 200, 100, []byte(`{"id":42}`), nil, nil, false)
@@ -296,22 +296,101 @@ func TestEvaluate_MultipleAssertionsCombined(t *testing.T) {
 	}
 }
 
-func TestEvaluate_JSONPathExistsFalseSkipped(t *testing.T) {
-	// Exists: false entries produce no assertion result.
+func TestEvaluate_JSONPathExistsFalse_FailWhenPresent(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		JSONPath: map[string]domain.ValueAssertion{
-			"$.name": {Exists: false},
+			"$.name": {Exists: boolPtr(false)},
 		},
 	}
 	results := Evaluate(spec, 200, 50, []byte(`{"name":"alice"}`), nil, nil, false)
-	if len(results) != 0 {
-		t.Fatalf("expected 0 results for Exists=false, got %d", len(results))
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Passed {
+		t.Fatalf("expected fail when value exists: %s", results[0].Message)
+	}
+}
+
+func TestEvaluate_JSONPathExistsFalse_PassWhenAbsent(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.error": {Exists: boolPtr(false)},
+		},
+	}
+	results := Evaluate(spec, 200, 50, []byte(`{"name":"alice"}`), nil, nil, false)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].Passed {
+		t.Fatalf("expected pass when value absent: %s", results[0].Message)
+	}
+}
+
+func TestEvaluate_JSONPathExistsFalse_PassWhenNull(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.error": {Exists: boolPtr(false)},
+		},
+	}
+	results := Evaluate(spec, 200, 50, []byte(`{"error":null}`), nil, nil, false)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].Passed {
+		t.Fatalf("expected pass when value is null: %s", results[0].Message)
+	}
+}
+
+func TestEvaluate_JSONPathExistsFalse_FailOnInvalidBody(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.error": {Exists: boolPtr(false)},
+		},
+	}
+	results := Evaluate(spec, 200, 50, []byte(`not json`), nil, nil, false)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Passed {
+		t.Fatalf("invalid body must not satisfy exists=false: %s", results[0].Message)
+	}
+}
+
+func TestEvaluate_HeaderExistsFalse_PassWhenAbsent(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		Headers: map[string]domain.ValueAssertion{
+			"X-Debug": {Exists: boolPtr(false)},
+		},
+	}
+	results := Evaluate(spec, 200, 50, nil, nil, map[string][]string{"Content-Type": {"text/plain"}}, false)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].Passed {
+		t.Fatalf("expected pass when header absent: %s", results[0].Message)
+	}
+}
+
+func TestEvaluate_LargeIntegerPrecision(t *testing.T) {
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.id": {Eq: strPtr("7238905612345678901")},
+		},
+	}
+	results := Evaluate(spec, 200, 50, []byte(`{"id":7238905612345678901}`), nil, nil, false)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].Passed {
+		t.Fatalf("int64 id must compare without precision loss: %s", results[0].Message)
 	}
 }
 
 // --- JSONPath eq ---
 
 func strPtr(s string) *string { return &s }
+
+func boolPtr(b bool) *bool { return &b }
 
 func TestEvaluate_JSONPathEq_Pass(t *testing.T) {
 	spec := domain.AssertionsSpec{
@@ -620,7 +699,7 @@ func TestEvaluate_JSONPathNotContains_MissingPath(t *testing.T) {
 func TestEvaluate_HeaderExists_Pass(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		Headers: map[string]domain.ValueAssertion{
-			"Content-Type": {Exists: true},
+			"Content-Type": {Exists: boolPtr(true)},
 		},
 	}
 	headers := map[string][]string{"Content-Type": {"application/json"}}
@@ -639,7 +718,7 @@ func TestEvaluate_HeaderExists_Pass(t *testing.T) {
 func TestEvaluate_HeaderExists_Fail(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		Headers: map[string]domain.ValueAssertion{
-			"X-Custom": {Exists: true},
+			"X-Custom": {Exists: boolPtr(true)},
 		},
 	}
 	headers := map[string][]string{"Content-Type": {"text/html"}}
@@ -786,7 +865,7 @@ func TestEvaluate_HeaderMissing_AllFail(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		Headers: map[string]domain.ValueAssertion{
 			"X-Missing": {
-				Exists:      true,
+				Exists:      boolPtr(true),
 				Eq:          strPtr("val"),
 				Contains:    strPtr("v"),
 				NotEq:       strPtr("other"),
@@ -809,7 +888,7 @@ func TestEvaluate_HeaderMissing_AllFail(t *testing.T) {
 func TestEvaluate_JSONPath_TruncatedBody_MessageIncludesTruncation(t *testing.T) {
 	spec := domain.AssertionsSpec{
 		JSONPath: map[string]domain.ValueAssertion{
-			"$.data": {Exists: true},
+			"$.data": {Exists: boolPtr(true)},
 		},
 	}
 	body := []byte(`{"data": "value", "more": "da`)
@@ -845,5 +924,46 @@ func TestEvaluate_Schema_TruncatedBody_MessageIncludesTruncation(t *testing.T) {
 	}
 	if !strings.Contains(out.Message, "truncated") {
 		t.Errorf("expected message to mention truncation, got: %s", out.Message)
+	}
+}
+
+func TestEvaluate_NumericJSONPathFilterStillMatches(t *testing.T) {
+	// Regression: UseNumber alone made gval filters compare json.Number
+	// against float64 literals and never match.
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.items[?(@.id == 4)].name": {Eq: strPtr("b")},
+		},
+	}
+	body := []byte(`{"items":[{"id":1,"name":"a"},{"id":4,"name":"b"}]}`)
+	out := Evaluate(spec, 200, 10, body, nil, nil, false)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("numeric filter must still match: %+v", out)
+	}
+}
+
+func TestEvaluate_FloatFormattingUnchanged(t *testing.T) {
+	// 3.10 must stringify as "3.1" (float64 semantics), not the raw literal.
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.v": {Eq: strPtr("3.1")},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"v":3.10}`), nil, nil, false)
+	if len(out) != 1 || !out[0].Passed {
+		t.Fatalf("expected 3.10 to compare as \"3.1\": %+v", out)
+	}
+}
+
+func TestEvaluate_ExistsFalse_InvalidExpressionFails(t *testing.T) {
+	// A typo'd JSONPath must never satisfy exists:false.
+	spec := domain.AssertionsSpec{
+		JSONPath: map[string]domain.ValueAssertion{
+			"$.error[": {Exists: boolPtr(false)},
+		},
+	}
+	out := Evaluate(spec, 200, 10, []byte(`{"ok":true}`), nil, nil, false)
+	if len(out) != 1 || out[0].Passed {
+		t.Fatalf("invalid expression must fail exists:false: %+v", out)
 	}
 }

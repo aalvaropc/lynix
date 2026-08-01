@@ -146,7 +146,7 @@ type yamlAssertions struct {
 }
 
 type yamlJSONPathAssertion struct {
-	Exists      bool     `yaml:"exists"`
+	Exists      *bool    `yaml:"exists"`
 	Eq          *string  `yaml:"eq"`
 	Contains    *string  `yaml:"contains"`
 	Matches     *string  `yaml:"matches"`
@@ -194,6 +194,19 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 		if r.Assert.Schema != nil && r.Assert.SchemaInline != nil {
 			return domain.Collection{}, invalidField(path, fieldPrefix+".assert",
 				"schema and schema_inline cannot be used together")
+		}
+
+		for expr, a := range r.Assert.JSONPath {
+			if !assertionHasOperator(a) {
+				return domain.Collection{}, invalidField(path,
+					fmt.Sprintf("%s.assert.jsonpath[%q]", fieldPrefix, expr), noOperatorMsg)
+			}
+		}
+		for header, a := range r.Assert.Headers {
+			if !assertionHasOperator(a) {
+				return domain.Collection{}, invalidField(path,
+					fmt.Sprintf("%s.assert.headers[%q]", fieldPrefix, header), noOperatorMsg)
+			}
 		}
 
 		// Resolve schema path relative to collection file directory.
@@ -286,6 +299,13 @@ func mapAndValidate(path string, yc yamlCollection) (domain.Collection, error) {
 	}
 
 	return col, nil
+}
+
+const noOperatorMsg = "assertion has no operators (expected one of: exists, eq, not_eq, contains, not_contains, matches, gt, lt)"
+
+func assertionHasOperator(a yamlJSONPathAssertion) bool {
+	return a.Exists != nil || a.Eq != nil || a.Contains != nil || a.Matches != nil ||
+		a.Gt != nil || a.Lt != nil || a.NotEq != nil || a.NotContains != nil
 }
 
 func mapJSONPath(in map[string]yamlJSONPathAssertion) map[string]domain.ValueAssertion {

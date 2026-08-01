@@ -121,6 +121,7 @@
     "value_assertion": {
       "type": "object",
       "additionalProperties": false,
+      "minProperties": 1,
       "properties": {
         "exists": { "type": "boolean" },
         "eq": { "type": "string" },
