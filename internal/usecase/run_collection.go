@@ -10,7 +10,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/aalvaropc/lynix/internal/domain"
-	"github.com/aalvaropc/lynix/internal/infra/httprunner"
 	"github.com/aalvaropc/lynix/internal/ports"
 	ucassert "github.com/aalvaropc/lynix/internal/usecase/assert"
 	ucextract "github.com/aalvaropc/lynix/internal/usecase/extract"
@@ -388,7 +387,7 @@ func (uc *RunCollection) resolveOnly(vars domain.Vars, req domain.RequestSpec) (
 		URL:            resolved.URL,
 		ResolvedURL:    resolved.URL,
 		RequestHeaders: copyHeaders(resolved.Headers),
-		RequestBody:    httprunner.SerializeBody(resolved.Body),
+		RequestBody:    resolved.Body.Serialize(),
 		Assertions:     []domain.AssertionResult{},
 		Extracts:       []domain.ExtractResult{},
 		Extracted:      domain.Vars{},

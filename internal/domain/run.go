@@ -2,11 +2,15 @@ package domain
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/url"
+	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 )
 
 // RunErrorKind is a high-level classification of runtime errors.
@@ -23,37 +27,75 @@ const (
 
 // ExtractResult is the output of a single extraction rule.
 type ExtractResult struct {
-	Name    string
-	Success bool
-	Message string
+	Name    string `json:"name"`
+	Success bool   `json:"success"`
+	Message string `json:"message,omitempty"`
 }
 
 // RunError represents a structured error produced by a runner.
 type RunError struct {
-	Kind    RunErrorKind
-	Message string
+	Kind    RunErrorKind `json:"kind"`
+	Message string       `json:"message"`
 }
 
 // AssertionResult is the output of a single assertion.
 type AssertionResult struct {
-	Name    string
-	Passed  bool
-	Message string
+	Name    string `json:"name"`
+	Passed  bool   `json:"passed"`
+	Message string `json:"message,omitempty"`
+}
+
+// BodyBytes is a byte slice that serializes as readable text when it is valid
+// UTF-8 (keeping artifacts greppable and diffable) and as a "base64:"-prefixed
+// string otherwise.
+type BodyBytes []byte
+
+const base64Prefix = "base64:"
+
+func (b BodyBytes) MarshalJSON() ([]byte, error) {
+	if len(b) == 0 {
+		return []byte(`""`), nil
+	}
+	if utf8.Valid(b) && !strings.HasPrefix(string(b), base64Prefix) {
+		return json.Marshal(string(b))
+	}
+	return json.Marshal(base64Prefix + base64.StdEncoding.EncodeToString(b))
+}
+
+func (b *BodyBytes) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	if encoded, ok := strings.CutPrefix(s, base64Prefix); ok {
+		raw, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return err
+		}
+		*b = raw
+		return nil
+	}
+	if s == "" {
+		*b = nil
+		return nil
+	}
+	*b = []byte(s)
+	return nil
 }
 
 // ResponseSnapshot stores a bounded view of the response.
 // Keep it generic so the domain does not depend on net/http types.
 type ResponseSnapshot struct {
-	Headers   map[string][]string
-	Body      []byte
-	Truncated bool
+	Headers   map[string][]string `json:"headers,omitempty"`
+	Body      BodyBytes           `json:"body,omitempty"`
+	Truncated bool                `json:"truncated,omitempty"`
 }
 
 // RequestResult represents the result of executing a single request.
 type RequestResult struct {
-	Name   string
-	Method HTTPMethod
-	URL    string
+	Name   string     `json:"name"`
+	Method HTTPMethod `json:"method"`
+	URL    string     `json:"url"`
 
 	// ResolvedURL is the final URL after variable substitution (may contain query params).
 	ResolvedURL string `json:"resolved_url,omitempty"`
@@ -62,19 +104,19 @@ type RequestResult struct {
 	RequestHeaders map[string]string `json:"request_headers,omitempty"`
 
 	// RequestBody is the resolved request body (captured for artifact storage).
-	RequestBody []byte `json:"request_body,omitempty"`
+	RequestBody BodyBytes `json:"request_body,omitempty"`
 
-	StatusCode int
-	LatencyMS  int64
+	StatusCode int   `json:"status_code"`
+	LatencyMS  int64 `json:"latency_ms"`
 
-	Assertions []AssertionResult
+	Assertions []AssertionResult `json:"assertions"`
 
-	Extracts  []ExtractResult
-	Extracted Vars
+	Extracts  []ExtractResult `json:"extracts,omitempty"`
+	Extracted Vars            `json:"extracted,omitempty"`
 
-	Response ResponseSnapshot
-	Error    *RunError
-	Attempts int
+	Response ResponseSnapshot `json:"response"`
+	Error    *RunError        `json:"error,omitempty"`
+	Attempts int              `json:"attempts,omitempty"`
 }
 
 // Failed reports whether this request should be considered failed:
@@ -96,17 +138,23 @@ func (r RequestResult) Failed() bool {
 	return false
 }
 
+// ArtifactSchemaVersion identifies the persisted artifact format so it can
+// evolve without breaking consumers.
+const ArtifactSchemaVersion = 1
+
 // RunResult is a collection-level execution result suitable for UI and artifacts.
 type RunResult struct {
-	CollectionName string
-	CollectionPath string
+	SchemaVersion int `json:"schema_version,omitempty"`
 
-	EnvironmentName string
+	CollectionName string `json:"collection_name"`
+	CollectionPath string `json:"collection_path,omitempty"`
 
-	StartedAt time.Time
-	EndedAt   time.Time
+	EnvironmentName string `json:"environment_name,omitempty"`
 
-	Results []RequestResult
+	StartedAt time.Time `json:"started_at"`
+	EndedAt   time.Time `json:"ended_at"`
+
+	Results []RequestResult `json:"results"`
 }
 
 // RunArtifact is the persisted representation for a run.
