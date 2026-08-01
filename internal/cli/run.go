@@ -171,7 +171,17 @@ func runCmd() *cobra.Command {
 
 			fails := countFailures(run)
 			if fails > 0 {
-				return fmt.Errorf("run failed (%d failed request(s))", fails)
+				// Execution errors (network, timeouts) outrank assertion
+				// failures: "couldn't reach the API" is a different incident
+				// than "the API misbehaved".
+				code := exitAssertFailed
+				for _, rr := range run.Results {
+					if rr.Error != nil {
+						code = exitExecution
+						break
+					}
+				}
+				return &codedError{code: code, err: fmt.Errorf("run failed (%d failed request(s))", fails)}
 			}
 			return nil
 		},

@@ -15,7 +15,7 @@ func Execute() {
 	cmd := newRootCmd()
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error: "+friendlyError(err))
-		os.Exit(1)
+		os.Exit(exitCodeFor(err))
 	}
 }
 

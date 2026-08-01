@@ -110,7 +110,7 @@ requests:
     reporter: java-junit
 ```
 
-Exit codes: `0` all passed, `1` any failure.
+Exit codes: `0` all passed · `1` assertion failures · `2` usage/config error · `3` execution error (network, timeout).
 
 ---
 

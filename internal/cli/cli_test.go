@@ -2,7 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -799,5 +801,28 @@ func TestParseVarFlags(t *testing.T) {
 func TestParseVarFlags_RejectsBuiltinKeys(t *testing.T) {
 	if _, err := parseVarFlags([]string{"$uuid=x"}); err == nil {
 		t.Fatal("expected error for $-prefixed key (silently ignored otherwise)")
+	}
+}
+
+func TestExitCodeFor(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"nil", nil, exitOK},
+		{"assert failures", &codedError{code: exitAssertFailed, err: errors.New("run failed")}, exitAssertFailed},
+		{"execution coded", &codedError{code: exitExecution, err: errors.New("run failed")}, exitExecution},
+		{"canceled", context.Canceled, exitExecution},
+		{"deadline", context.DeadlineExceeded, exitExecution},
+		{"invalid config", &domain.OpError{Op: "x", Kind: domain.KindInvalidConfig, Err: errors.New("bad yaml")}, exitUsage},
+		{"not found", &domain.OpError{Op: "x", Kind: domain.KindNotFound, Err: errors.New("nope")}, exitUsage},
+		{"execution kind", &domain.OpError{Op: "x", Kind: domain.KindExecution, Err: errors.New("boom")}, exitExecution},
+		{"plain error", errors.New("unknown flag"), exitUsage},
+	}
+	for _, tc := range cases {
+		if got := exitCodeFor(tc.err); got != tc.want {
+			t.Errorf("%s: expected %d, got %d", tc.name, tc.want, got)
+		}
 	}
 }
