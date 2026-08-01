@@ -21,7 +21,7 @@ Lynix follows **Hexagonal Architecture (Ports & Adapters)**. The core rule: doma
        |  EnvironmentLoader      |
        |  RequestRunner          |
        |  ArtifactStore          |
-       |  WorkspaceLocator       |
+       |  WorkspaceInitializer   |
        +------------+------------+
                     |
          +----------v----------+
@@ -58,7 +58,7 @@ internal/
 |   +-- collection.go   # Collection, RequestSpec, AssertionsSpec, BodySpec
 |   +-- environment.go  # Environment, Vars, merge helpers
 |   +-- run.go          # RunResult, RequestResult, ResponseSnapshot
-|   +-- config.go       # WorkspaceConfig, defaults
+|   +-- config.go       # Config, defaults
 |   +-- vars_resolver.go# Template engine: resolves {{var}}, {{$uuid}}, etc.
 |   +-- errors.go       # Sentinel errors, OpError, IsKind()
 +-- ports/              # Interface definitions
