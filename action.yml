@@ -65,75 +65,56 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    # Inputs are passed exclusively through env vars and quoted argument
+    # arrays: interpolating ${{ }} into bash with eval allows command
+    # injection from any input value.
     - name: Install Lynix
       shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
       run: |
-        if [ "${{ inputs.version }}" != "latest" ]; then
-          export LYNIX_VERSION="${{ inputs.version }}"
+        if [ "$INPUT_VERSION" != "latest" ]; then
+          export LYNIX_VERSION="$INPUT_VERSION"
         fi
-        curl -sSfL https://raw.githubusercontent.com/aalvaropc/lynix/main/install.sh | sh
+        # The action ships its own installer: no fetch from a mutable branch.
+        sh "${{ github.action_path }}/install.sh"
         echo "/usr/local/bin" >> "$GITHUB_PATH"
 
     - name: Run API tests
       shell: bash
+      env:
+        INPUT_COLLECTION: ${{ inputs.collection }}
+        INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        INPUT_WORKSPACE: ${{ inputs.workspace }}
+        INPUT_FORMAT: ${{ inputs.format }}
+        INPUT_REPORT: ${{ inputs.report }}
+        INPUT_REPORT_PATH: ${{ inputs.report-path }}
+        INPUT_FAIL_FAST: ${{ inputs.fail-fast }}
+        INPUT_TAGS: ${{ inputs.tags }}
+        INPUT_ONLY: ${{ inputs.only }}
+        INPUT_NO_SAVE: ${{ inputs.no-save }}
+        INPUT_RETRIES: ${{ inputs.retries }}
+        INPUT_RETRY_DELAY: ${{ inputs.retry-delay }}
+        INPUT_RETRY_5XX: ${{ inputs.retry-5xx }}
+        INPUT_PARALLEL: ${{ inputs.parallel }}
+        INPUT_INSECURE: ${{ inputs.insecure }}
       run: |
-        CMD="lynix run -c ${{ inputs.collection }}"
+        args=(run -c "$INPUT_COLLECTION")
 
-        if [ -n "${{ inputs.environment }}" ]; then
-          CMD="$CMD -e ${{ inputs.environment }}"
-        fi
+        [ -n "$INPUT_ENVIRONMENT" ] && args+=(-e "$INPUT_ENVIRONMENT")
+        [ "$INPUT_WORKSPACE" != "." ] && args+=(-w "$INPUT_WORKSPACE")
+        [ "$INPUT_FORMAT" != "pretty" ] && args+=(--format "$INPUT_FORMAT")
+        [ -n "$INPUT_REPORT" ] && args+=(--report "$INPUT_REPORT")
+        [ -n "$INPUT_REPORT_PATH" ] && args+=(--report-path "$INPUT_REPORT_PATH")
+        [ "$INPUT_FAIL_FAST" = "true" ] && args+=(--fail-fast)
+        [ -n "$INPUT_TAGS" ] && args+=(--tags "$INPUT_TAGS")
+        [ -n "$INPUT_ONLY" ] && args+=(--only "$INPUT_ONLY")
+        [ "$INPUT_NO_SAVE" = "true" ] && args+=(--no-save)
+        [ -n "$INPUT_RETRIES" ] && args+=(--retries "$INPUT_RETRIES")
+        [ -n "$INPUT_RETRY_DELAY" ] && args+=(--retry-delay "$INPUT_RETRY_DELAY")
+        [ "$INPUT_RETRY_5XX" = "true" ] && args+=(--retry-5xx)
+        [ "$INPUT_PARALLEL" = "true" ] && args+=(--parallel)
+        [ "$INPUT_INSECURE" = "true" ] && args+=(--insecure)
 
-        if [ "${{ inputs.workspace }}" != "." ]; then
-          CMD="$CMD -w ${{ inputs.workspace }}"
-        fi
-
-        if [ "${{ inputs.format }}" != "pretty" ]; then
-          CMD="$CMD --format ${{ inputs.format }}"
-        fi
-
-        if [ -n "${{ inputs.report }}" ]; then
-          CMD="$CMD --report ${{ inputs.report }}"
-        fi
-
-        if [ -n "${{ inputs.report-path }}" ]; then
-          CMD="$CMD --report-path ${{ inputs.report-path }}"
-        fi
-
-        if [ "${{ inputs.fail-fast }}" = "true" ]; then
-          CMD="$CMD --fail-fast"
-        fi
-
-        if [ -n "${{ inputs.tags }}" ]; then
-          CMD="$CMD --tags ${{ inputs.tags }}"
-        fi
-
-        if [ -n "${{ inputs.only }}" ]; then
-          CMD="$CMD --only ${{ inputs.only }}"
-        fi
-
-        if [ "${{ inputs.no-save }}" = "true" ]; then
-          CMD="$CMD --no-save"
-        fi
-
-        if [ -n "${{ inputs.retries }}" ]; then
-          CMD="$CMD --retries ${{ inputs.retries }}"
-        fi
-
-        if [ -n "${{ inputs.retry-delay }}" ]; then
-          CMD="$CMD --retry-delay ${{ inputs.retry-delay }}"
-        fi
-
-        if [ "${{ inputs.retry-5xx }}" = "true" ]; then
-          CMD="$CMD --retry-5xx"
-        fi
-
-        if [ "${{ inputs.parallel }}" = "true" ]; then
-          CMD="$CMD --parallel"
-        fi
-
-        if [ "${{ inputs.insecure }}" = "true" ]; then
-          CMD="$CMD --insecure"
-        fi
-
-        echo "Running: $CMD"
-        eval $CMD
+        echo "Running: lynix ${args[*]}"
+        lynix "${args[@]}"

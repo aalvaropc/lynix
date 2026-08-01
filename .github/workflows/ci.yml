@@ -110,6 +110,21 @@ jobs:
             echo "::endgroup::"
           done
 
+  action-self-test:
+    name: GitHub Action self-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Exercises the composite action end to end (installer + arg building)
+      # using the released binary against a bundled example.
+      - name: Run bundled action
+        uses: ./
+        with:
+          collection: examples/health-check/collection.yaml
+          environment: examples/health-check/env.yaml
+
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-latest
