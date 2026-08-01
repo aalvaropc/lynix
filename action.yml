@@ -131,7 +131,8 @@ runs:
         fi
 
         # Log the command with --var VALUES hidden: GitHub only masks exact
-        # ${{ secrets.* }} strings, not values derived from them.
+        # secret strings, not values derived from them. (Note: GitHub parses
+        # dollar-brace expressions even inside YAML comments in action files.)
         display=()
         skip_value=false
         for a in "${args[@]}"; do
