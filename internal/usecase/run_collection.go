@@ -26,6 +26,10 @@ type RunOpts struct {
 	Retry5xx   bool
 	DryRun     bool
 	Parallel   bool
+
+	// Vars are CLI-level overrides (--var key=value). Highest precedence:
+	// they win over secrets, environment, and collection vars.
+	Vars domain.Vars
 }
 
 type RunCollection struct {
@@ -41,6 +45,7 @@ type RunCollection struct {
 	retry5xx    bool
 	dryRun      bool
 	parallel    bool
+	extraVars   domain.Vars
 }
 
 func NewRunCollection(
@@ -63,6 +68,7 @@ func NewRunCollection(
 		retry5xx:    opts.Retry5xx,
 		dryRun:      opts.DryRun,
 		parallel:    opts.Parallel,
+		extraVars:   opts.Vars,
 	}
 }
 
@@ -101,8 +107,8 @@ func (uc *RunCollection) Execute(
 		}
 	}
 
-	// collection vars < env vars < extracted runtime vars (updated per request)
-	vars := domain.Merge(col.Vars, env.Vars)
+	// collection vars < env vars < CLI --var overrides < extracted runtime vars
+	vars := domain.Merge(domain.Merge(col.Vars, env.Vars), uc.extraVars)
 
 	run := domain.RunResult{
 		CollectionName:  col.Name,

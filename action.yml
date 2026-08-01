@@ -61,6 +61,9 @@ inputs:
     description: 'Skip TLS verification'
     required: false
     default: 'false'
+  vars:
+    description: 'Newline-separated key=value variable overrides'
+    required: false
 
 runs:
   using: 'composite'
@@ -98,6 +101,7 @@ runs:
         INPUT_RETRY_5XX: ${{ inputs.retry-5xx }}
         INPUT_PARALLEL: ${{ inputs.parallel }}
         INPUT_INSECURE: ${{ inputs.insecure }}
+        INPUT_VARS: ${{ inputs.vars }}
       run: |
         args=(run -c "$INPUT_COLLECTION")
 
@@ -115,6 +119,12 @@ runs:
         [ "$INPUT_RETRY_5XX" = "true" ] && args+=(--retry-5xx)
         [ "$INPUT_PARALLEL" = "true" ] && args+=(--parallel)
         [ "$INPUT_INSECURE" = "true" ] && args+=(--insecure)
+
+        if [ -n "$INPUT_VARS" ]; then
+          while IFS= read -r kv; do
+            [ -n "$kv" ] && args+=(--var "$kv")
+          done <<< "$INPUT_VARS"
+        fi
 
         echo "Running: lynix ${args[*]}"
         lynix "${args[@]}"

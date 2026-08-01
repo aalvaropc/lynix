@@ -39,17 +39,45 @@ vars:
 When the same variable name appears in multiple places, the highest priority wins:
 
 ```
-secrets.local.yaml  >  environment YAML  >  collection vars  >  built-ins
+--var flags  >  secrets.local.yaml  >  environment YAML  >  collection vars  >  built-ins
 ```
 
 | Source | Priority | Description |
 |--------|----------|-------------|
-| `secrets.local.yaml` | Highest | Local overrides — gitignored |
-| Environment YAML | High | Selected environment file (`-e dev`) |
+| `--var key=value` | Highest | CLI overrides (repeatable) |
+| `secrets.local.yaml` | High | Local overrides — gitignored |
+| Environment YAML | Medium-high | Selected environment file (`-e dev`) |
 | Collection `vars` | Medium | Defined in the collection itself |
 | Built-ins (`$uuid`, `$timestamp`) | Lowest | Generated at request time |
 
 Variables extracted from responses are merged into the running set and available to the next request.
+
+---
+
+## Process Environment Variables
+
+`{{$env.NAME}}` reads directly from the process environment — the natural carrier
+for CI secrets, with no file materialization:
+
+```yaml
+headers:
+  Authorization: "Bearer {{$env.API_TOKEN}}"
+```
+
+```yaml
+# GitHub Actions
+- run: lynix run -c smoke -e prod --no-save
+  env:
+    API_TOKEN: ${{ secrets.API_TOKEN }}
+```
+
+An unset environment variable is a hard error, never an empty string.
+
+CLI overrides work the same way for ad-hoc values:
+
+```bash
+lynix run -c smoke -e dev --var base_url=http://localhost:8080 --var user=alice
+```
 
 ---
 

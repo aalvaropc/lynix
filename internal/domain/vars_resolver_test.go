@@ -451,3 +451,40 @@ func TestResolveString_RandomBool(t *testing.T) {
 		t.Fatalf("expected true or false, got %q", got)
 	}
 }
+
+func TestResolveString_EnvBuiltin(t *testing.T) {
+	r := NewVarResolver(WithLookupEnv(func(k string) (string, bool) {
+		if k == "API_TOKEN" {
+			return "tok-123", true
+		}
+		return "", false
+	}))
+	rt, err := r.NewRuntime(Vars{})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	got, err := rt.ResolveString("Bearer {{$env.API_TOKEN}}")
+	if err != nil {
+		t.Fatalf("ResolveString: %v", err)
+	}
+	if got != "Bearer tok-123" {
+		t.Fatalf("expected env var injected, got %q", got)
+	}
+}
+
+func TestResolveString_EnvBuiltin_UnsetFails(t *testing.T) {
+	r := NewVarResolver(WithLookupEnv(func(string) (string, bool) { return "", false }))
+	rt, err := r.NewRuntime(Vars{})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	_, err = rt.ResolveString("{{$env.MISSING_VAR}}")
+	if err == nil {
+		t.Fatal("expected error for unset environment variable")
+	}
+	if !IsKind(err, KindMissingVar) {
+		t.Fatalf("expected KindMissingVar, got: %v", err)
+	}
+}

@@ -68,6 +68,16 @@ func (r *Redactor) AddSecretValues(vals ...string) {
 	}
 }
 
+// AddSecretsFromVars registers the values of any var whose name looks
+// sensitive (e.g. --var api_token=... overrides).
+func (r *Redactor) AddSecretsFromVars(vars domain.Vars) {
+	for k, v := range vars {
+		if r.isKeySensitive(k) {
+			r.AddSecretValues(v)
+		}
+	}
+}
+
 // AddSecretsFromEnv registers every value from the environment's secrets file
 // plus any env var whose name looks sensitive. Known values are the most
 // reliable redaction signal: they are matched literally on all surfaces.
