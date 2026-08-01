@@ -361,3 +361,24 @@ func TestApply_LargeIntegerPrecision(t *testing.T) {
 		t.Errorf("int64 id must extract without precision loss, got %q", vars["id"])
 	}
 }
+
+func TestApply_NumericFilterStillMatches(t *testing.T) {
+	body := []byte(`{"items":[{"id":1,"name":"a"},{"id":4,"name":"b"}]}`)
+	vars, results := Apply(body, domain.ExtractSpec{"sel": "$.items[?(@.id == 4)].name"}, false)
+	if len(results) != 1 || !results[0].Success {
+		t.Fatalf("expected successful extract, got %+v", results)
+	}
+	if vars["sel"] != "b" {
+		t.Fatalf("numeric filter must still match, got %q", vars["sel"])
+	}
+}
+
+func TestApply_FloatFormattingUnchanged(t *testing.T) {
+	vars, results := Apply([]byte(`{"v":3.10}`), domain.ExtractSpec{"v": "$.v"}, false)
+	if len(results) != 1 || !results[0].Success {
+		t.Fatalf("expected successful extract, got %+v", results)
+	}
+	if vars["v"] != "3.1" {
+		t.Fatalf("expected float64 formatting \"3.1\", got %q", vars["v"])
+	}
+}

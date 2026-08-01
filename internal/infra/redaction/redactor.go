@@ -1,11 +1,13 @@
 package redaction
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/aalvaropc/lynix/internal/domain"
@@ -59,13 +61,29 @@ func New(cfg domain.MaskingConfig) *Redactor {
 
 // AddSecretValues registers literal values to scrub from every surface,
 // including free text (error messages, assertion messages, URLs, bodies).
+// Values are kept sorted longest-first: replacing a shorter secret that is a
+// substring of a longer one would leave a recognizable residue of the latter.
 func (r *Redactor) AddSecretValues(vals ...string) {
 	for _, v := range vals {
 		v = strings.TrimSpace(v)
-		if len(v) >= minSecretValueLen {
-			r.secretValues = append(r.secretValues, v)
+		if len(v) < minSecretValueLen {
+			continue
 		}
+		// Guard against values that would corrupt output or the check:
+		// mask-placeholder fragments and common literals that appear in
+		// virtually every payload (a secrets file may carry flags too).
+		if strings.Trim(v, "*") == "" {
+			continue
+		}
+		switch strings.ToLower(v) {
+		case "true", "false", "null":
+			continue
+		}
+		r.secretValues = append(r.secretValues, v)
 	}
+	sort.Slice(r.secretValues, func(i, j int) bool {
+		return len(r.secretValues[i]) > len(r.secretValues[j])
+	})
 }
 
 // AddSecretsFromVars registers the values of any var whose name looks
@@ -268,11 +286,21 @@ func (r *Redactor) maskQueryParams(rawURL string) string {
 	}
 	q := u.Query()
 	changed := false
-	for k := range q {
+	for k, vals := range q {
 		if r.isQueryParamSensitive(k) {
 			q.Set(k, maskValue)
 			changed = true
+			continue
 		}
+		// Known secret values hide under innocuous params too — and the
+		// URL carries them percent-encoded, so scrub the DECODED value.
+		for i, v := range vals {
+			if nv := r.scrubText(v); nv != v {
+				vals[i] = nv
+				changed = true
+			}
+		}
+		q[k] = vals
 	}
 	if !changed {
 		return rawURL
@@ -299,11 +327,15 @@ func (r *Redactor) maskBodyBytes(body []byte) []byte {
 }
 
 func (r *Redactor) maskJSONBody(body []byte) ([]byte, bool) {
+	// UseNumber keeps int64 IDs and decimal literals byte-exact through the
+	// mask round-trip (plain unmarshal would corrupt 9007199254740993).
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
 	var doc any
-	if err := json.Unmarshal(body, &doc); err != nil {
+	if err := dec.Decode(&doc); err != nil {
 		return nil, false
 	}
-	r.walkAndMask(doc)
+	doc = r.walkAndMask(doc)
 	masked, err := json.Marshal(doc)
 	if err != nil {
 		return nil, false
@@ -311,43 +343,71 @@ func (r *Redactor) maskJSONBody(body []byte) ([]byte, bool) {
 	return r.scrubBytes(masked), true
 }
 
-// maskFormBody handles urlencoded-style bodies (k=v&k=v).
+// maskFormBody handles urlencoded-style bodies (k=v&k=v). It deliberately
+// avoids strict url.Values parsing: real bodies contain spaces, semicolons,
+// or unencoded characters that ParseQuery rejects, and a rejected body used
+// to leak password=... verbatim. The original bytes pass through untouched
+// unless something actually needs masking.
 func (r *Redactor) maskFormBody(body []byte) ([]byte, bool) {
 	s := string(body)
-	if !strings.Contains(s, "=") || strings.ContainsAny(s, " \t\n{") {
+	if strings.Contains(s, "{") || !strings.Contains(s, "=") {
 		return nil, false
 	}
-	vals, err := url.ParseQuery(s)
-	if err != nil {
-		return nil, false
-	}
-	for k, vv := range vals {
-		if r.isKeySensitive(k) {
-			vals[k] = []string{maskValue}
+	segs := strings.Split(s, "&")
+	changed := false
+	for i, seg := range segs {
+		k, v, ok := strings.Cut(seg, "=")
+		if !ok || k == "" {
 			continue
 		}
-		for i := range vv {
-			vv[i] = r.scrubText(vv[i])
+		key := k
+		if uk, err := url.QueryUnescape(k); err == nil {
+			key = uk
+		}
+		if r.isKeySensitive(key) {
+			segs[i] = k + "=" + maskValue
+			changed = true
+			continue
+		}
+		nv := r.scrubText(v)
+		// The value may carry a known secret percent-encoded.
+		if uv, err := url.QueryUnescape(v); err == nil && r.scrubText(uv) != uv {
+			nv = maskValue
+		}
+		if nv != v {
+			segs[i] = k + "=" + nv
+			changed = true
 		}
 	}
-	return []byte(vals.Encode()), true
+	if !changed {
+		return nil, false
+	}
+	return []byte(strings.Join(segs, "&")), true
 }
 
-func (r *Redactor) walkAndMask(v any) {
+// walkAndMask masks sensitive keys and scrubs known secret values from
+// DECODED string leaves: matching on the marshaled bytes alone misses secrets
+// containing JSON-escapable characters (quotes, backslashes, newlines).
+func (r *Redactor) walkAndMask(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
 		for k, val := range t {
 			if r.isKeySensitive(k) {
 				t[k] = maskValue
 			} else {
-				r.walkAndMask(val)
+				t[k] = r.walkAndMask(val)
 			}
 		}
+		return t
 	case []any:
-		for _, item := range t {
-			r.walkAndMask(item)
+		for i, item := range t {
+			t[i] = r.walkAndMask(item)
 		}
+		return t
+	case string:
+		return r.scrubText(t)
 	}
+	return v
 }
 
 // CheckForSecrets scans a (presumably already-redacted) RunArtifact for any
