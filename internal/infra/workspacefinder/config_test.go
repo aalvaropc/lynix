@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/aalvaropc/lynix/internal/domain"
 )
 
 func TestLoadConfig_AppliesDefaults(t *testing.T) {
@@ -367,5 +369,21 @@ func TestLoadConfig_MaxRunsDefault_Zero(t *testing.T) {
 
 	if cfg.Artifacts.MaxRuns != 0 {
 		t.Fatalf("expected max_runs=0 (unlimited) by default, got=%d", cfg.Artifacts.MaxRuns)
+	}
+}
+
+func TestLoadConfig_UnknownFieldRejected(t *testing.T) {
+	tmp := t.TempDir()
+	content := []byte("lynix:\n  runz:\n    retries: 2\n")
+	if err := os.WriteFile(filepath.Join(tmp, "lynix.yaml"), content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := LoadConfig(tmp)
+	if err == nil {
+		t.Fatal("expected error for unknown field 'runz'")
+	}
+	if !domain.IsKind(err, domain.KindInvalidConfig) {
+		t.Fatalf("expected KindInvalidConfig, got: %v", err)
 	}
 }

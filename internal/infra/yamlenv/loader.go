@@ -1,8 +1,11 @@
 package yamlenv
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -62,10 +65,18 @@ func (l *Loader) LoadEnvironment(nameOrPath string) (domain.Environment, error) 
 		p1 := filepath.Join(l.rootDir, l.envDir, envName+".yaml")
 		p2 := filepath.Join(l.rootDir, l.envDir, envName+".yml")
 
-		envPath = p1
-		if _, err := os.Stat(p1); err != nil && os.IsNotExist(err) {
-			if _, err2 := os.Stat(p2); err2 == nil {
-				envPath = p2
+		switch {
+		case fileExists(p1):
+			envPath = p1
+		case fileExists(p2):
+			envPath = p2
+		default:
+			return domain.Environment{}, &domain.OpError{
+				Op:   "yamlenv.load",
+				Kind: domain.KindNotFound,
+				Path: p1,
+				Err: fmt.Errorf("%w: environment %q not found (tried %s and %s)",
+					domain.ErrNotFound, envName, p1, p2),
 			}
 		}
 	}
@@ -160,8 +171,12 @@ func readEnv(path string) (parsedEnv, error) {
 		}
 	}
 
+	// KnownFields rejects unknown keys so typos fail loudly instead of
+	// silently applying defaults.
+	dec := yaml.NewDecoder(bytes.NewReader(b))
+	dec.KnownFields(true)
 	var y yamlEnv
-	if err := yaml.Unmarshal(b, &y); err != nil {
+	if err := dec.Decode(&y); err != nil && !errors.Is(err, io.EOF) {
 		return parsedEnv{}, &domain.OpError{
 			Op:   "yamlenv.load",
 			Kind: domain.KindInvalidConfig,
@@ -183,6 +198,11 @@ func readEnv(path string) (parsedEnv, error) {
 		SchemaVersion: sv,
 		Vars:          domain.Vars(y.Vars),
 	}, nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func readVars(path string) (domain.Vars, error) {

@@ -570,3 +570,58 @@ requests:
 		t.Fatal("expected error for header assertion without operators")
 	}
 }
+
+func TestLoadCollection_UnknownFieldRejected(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "typo.yaml")
+
+	content := []byte(`
+name: Typo API
+requests:
+  - name: check
+    method: GET
+    url: "http://x/api"
+    assrt:
+      status: 200
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	_, err := l.LoadCollection(p)
+	if err == nil {
+		t.Fatal("expected error for unknown field 'assrt'")
+	}
+	if !domain.IsKind(err, domain.KindInvalidConfig) {
+		t.Fatalf("expected KindInvalidConfig, got: %v", err)
+	}
+}
+
+func TestLoadCollection_DuplicateRequestNamesRejected(t *testing.T) {
+	tmp := t.TempDir()
+	p := filepath.Join(tmp, "dup.yaml")
+
+	content := []byte(`
+name: Dup API
+requests:
+  - name: check
+    method: GET
+    url: "http://x/a"
+  - name: check
+    method: GET
+    url: "http://x/b"
+`)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader()
+	_, err := l.LoadCollection(p)
+	if err == nil {
+		t.Fatal("expected error for duplicate request names")
+	}
+	if !strings.Contains(err.Error(), "duplicate request name") {
+		t.Errorf("expected duplicate name error, got: %v", err)
+	}
+}

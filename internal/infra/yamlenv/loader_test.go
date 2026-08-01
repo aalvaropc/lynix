@@ -3,7 +3,10 @@ package yamlenv
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/aalvaropc/lynix/internal/domain"
 )
 
 func TestLoadEnvironment_MergesSecrets(t *testing.T) {
@@ -121,5 +124,42 @@ func TestLoadEnvironment_WhitespaceOnly_ReturnsEmptyEnv(t *testing.T) {
 	}
 	if env.Name != "(none)" {
 		t.Errorf("expected name=(none), got=%q", env.Name)
+	}
+}
+
+func TestLoadEnvironment_UnknownFieldRejected(t *testing.T) {
+	tmp := t.TempDir()
+	envDir := filepath.Join(tmp, "env")
+	if err := os.MkdirAll(envDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	content := []byte("varz:\n  key: value\n")
+	if err := os.WriteFile(filepath.Join(envDir, "dev.yaml"), content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	l := NewLoader(tmp)
+	_, err := l.LoadEnvironment("dev")
+	if err == nil {
+		t.Fatal("expected error for unknown field 'varz'")
+	}
+	if !domain.IsKind(err, domain.KindInvalidConfig) {
+		t.Fatalf("expected KindInvalidConfig, got: %v", err)
+	}
+}
+
+func TestLoadEnvironment_NotFoundMentionsBothExtensions(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, "env"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	l := NewLoader(tmp)
+	_, err := l.LoadEnvironment("missing")
+	if err == nil {
+		t.Fatal("expected error for missing environment")
+	}
+	if !strings.Contains(err.Error(), ".yaml") || !strings.Contains(err.Error(), ".yml") {
+		t.Errorf("expected both extensions in error, got: %v", err)
 	}
 }
