@@ -3,6 +3,7 @@ package fsworkspace
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -24,12 +25,15 @@ func TestInitializer_Init_CreatesWorkspaceFiles(t *testing.T) {
 
 	secretPath := filepath.Join(tmp, "env", "secrets.local.yaml")
 	assertFileExists(t, secretPath)
-	info, err := os.Stat(secretPath)
-	if err != nil {
-		t.Fatalf("stat secrets file: %v", err)
-	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("expected secrets file mode 600, got %o", got)
+	// POSIX permission bits are not meaningful on Windows.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(secretPath)
+		if err != nil {
+			t.Fatalf("stat secrets file: %v", err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("expected secrets file mode 600, got %o", got)
+		}
 	}
 }
 

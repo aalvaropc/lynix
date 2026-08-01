@@ -35,6 +35,7 @@ jobs:
           git diff --exit-code
 
       - name: Tests
+        shell: bash
         run: go test -race -coverprofile=coverage.out ./...
 
       - name: Coverage summary
