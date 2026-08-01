@@ -72,6 +72,9 @@ runs:
       shell: bash
       env:
         INPUT_VERSION: ${{ inputs.version }}
+        # Authenticated API calls avoid the unauthenticated rate limit that
+        # shared runners regularly exhaust when resolving "latest".
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
         if [ "$INPUT_VERSION" != "latest" ]; then
           export LYNIX_VERSION="$INPUT_VERSION"
