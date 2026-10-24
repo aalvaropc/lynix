@@ -81,7 +81,8 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.25"
+          go-version: "1.26"
+          check-latest: true
 
       - name: govulncheck
         run: make vulncheck
