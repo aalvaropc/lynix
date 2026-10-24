@@ -15,10 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: ["1.25"]
-        include:
-          - os: ubuntu-latest
-            go: "1.26"
+        go: ["1.26"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,7 +61,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.25"
+          go-version: "1.26"
 
       # make lint compiles golangci-lint with the repo's Go toolchain, so the
       # linter version and the language version can never drift apart.
@@ -81,7 +78,8 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.25"
+          go-version: "1.26"
+          check-latest: true
 
       - name: govulncheck
         run: make vulncheck
@@ -96,7 +94,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.25"
+          go-version: "1.26"
 
       - name: Build binary
         run: make build
@@ -149,7 +147,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.25"
+          go-version: "1.26"
 
       - name: Build
         env:

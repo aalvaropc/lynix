@@ -40,7 +40,7 @@ Hexagonal architecture (ports & adapters). **Core rule: `domain` never imports `
 
 ## Build Requirements
 
-- Go 1.25+
+- Go 1.26+
 - CI runs `go mod tidy` + `git diff --exit-code` — always run `make tidy` before committing if you change dependencies.
 
 ## Key Conventions
